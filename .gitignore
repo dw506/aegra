@@ -4,5 +4,6 @@ __pycache__/
 .venv/
 venv/
 var/
+tmp-orchestrator-*/
 .env
 *.log
