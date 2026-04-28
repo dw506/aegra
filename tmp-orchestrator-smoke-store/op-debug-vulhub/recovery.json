@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-04-22T09:08:17.647446+00:00",
+  "event_cursor": 0,
+  "inflight_task_ids": [],
+  "last_phase_checkpoint": {
+    "applied_task_ids": [
+      "tg-task::d36864e29f449fca"
+    ],
+    "at": "2026-04-22T09:08:17.642672+00:00",
+    "cycle_index": 1,
+    "phase": "cycle_completed",
+    "runtime_event_count": 0,
+    "selected_task_ids": [
+      "tg-task::d36864e29f449fca"
+    ],
+    "status": "completed",
+    "stopped": false
+  },
+  "last_updated": "2026-04-22T09:08:17.642672+00:00",
+  "operation_id": "op-debug-vulhub",
+  "operation_status": "ready",
+  "pending_event_count": 0,
+  "recovery_metadata": {
+    "last_cycle_completed_at": "2026-04-22T09:08:17.642672+00:00",
+    "last_cycle_index": 1,
+    "last_cycle_started_at": "2026-04-22T09:08:17.299558+00:00",
+    "last_phase": "cycle_completed",
+    "last_phase_at": "2026-04-22T09:08:17.642672+00:00",
+    "last_phase_checkpoint": {
+      "applied_task_ids": [
+        "tg-task::d36864e29f449fca"
+      ],
+      "at": "2026-04-22T09:08:17.642672+00:00",
+      "cycle_index": 1,
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [
+        "tg-task::d36864e29f449fca"
+      ],
+      "status": "completed",
+      "stopped": false
+    },
+    "last_phase_status": "completed",
+    "phase_checkpoint_count": 6,
+    "unclean_shutdown": false
+  },
+  "replan_request_count": 0,
+  "replay_plan": {},
+  "unclean_shutdown": false
+}
