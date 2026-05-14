@@ -39,6 +39,7 @@ from src.core.models.events import (
     RuntimeControlRequest,
     RuntimeControlType,
 )
+from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.runtime.budgets import RuntimeBudgetManager
@@ -59,6 +60,7 @@ from src.core.runtime.lease_manager import RuntimeLeaseManager
 from src.core.runtime.locks import RuntimeLockManager
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
+from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
 
 
@@ -141,6 +143,7 @@ class PhaseTwoResultApplier:
         self._apply_task_lifecycle(state=state, result=canonical_result)
         self._record_recent_outcome(state=state, result=canonical_result)
         self._audit_tool_invocations(state=state, result=canonical_result)
+        self._record_evidence_and_findings(state=state, result=canonical_result)
 
         state_writer_result = self._run_state_writer(result=canonical_result, state=state, kg_ref=resolved_kg_ref)
         if state_writer_result is not None:
@@ -620,6 +623,181 @@ class PhaseTwoResultApplier:
         self._sync_credential_view(state=state, result=result)
         self._sync_pivot_route_view(state=state, result=result)
 
+    def _record_evidence_and_findings(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        normalized_evidence = self._normalize_evidence_records(result)
+        if normalized_evidence:
+            bucket = state.execution.metadata.setdefault("evidence_artifacts", [])
+            existing_indexes = {
+                str(item.get("evidence_id")): index
+                for index, item in enumerate(bucket)
+                if isinstance(item, dict) and item.get("evidence_id")
+            }
+            for evidence in normalized_evidence:
+                payload = evidence.model_dump(mode="json")
+                index = existing_indexes.get(evidence.evidence_id)
+                if index is None:
+                    existing_indexes[evidence.evidence_id] = len(bucket)
+                    bucket.append(payload)
+                else:
+                    bucket[index] = payload
+
+        validation = self._dict(result.outcome_payload.get("validation"))
+        if not validation and result.outcome_payload.get("outcome_type") == "vulnerability_validation":
+            validation = dict(result.outcome_payload)
+        status = self._string(validation.get("status"))
+        if status == "blocked":
+            self._record_finding_audit(
+                state=state,
+                result=result,
+                event_type="validation_blocked",
+                validation=validation,
+                reason=self._string(validation.get("failure_reason")) or result.error_message or result.summary,
+            )
+            return
+        if status == "not_detected":
+            return
+        if status not in {"validated", "suspected"}:
+            return
+
+        finding = self._finding_from_validation(
+            state=state,
+            result=result,
+            validation=validation,
+            evidence_refs=[item.evidence_id for item in normalized_evidence],
+        )
+        bucket = state.execution.metadata.setdefault("findings", [])
+        existing_index = next(
+            (
+                index
+                for index, item in enumerate(bucket)
+                if isinstance(item, dict) and item.get("finding_id") == finding.finding_id
+            ),
+            None,
+        )
+        payload = finding.model_dump(mode="json")
+        if existing_index is None:
+            bucket.append(payload)
+            event_type = "finding_created"
+        else:
+            original_created_at = bucket[existing_index].get("created_at") if isinstance(bucket[existing_index], dict) else None
+            if original_created_at:
+                payload["created_at"] = original_created_at
+            bucket[existing_index] = payload
+            event_type = "finding_updated"
+        self._record_finding_audit(
+            state=state,
+            result=result,
+            event_type=event_type,
+            validation=validation,
+            finding_id=finding.finding_id,
+            evidence_refs=list(finding.evidence_refs),
+        )
+
+    def _normalize_evidence_records(self, result: AgentTaskResult) -> list[EvidenceArtifactRecord]:
+        records: list[EvidenceArtifactRecord] = []
+        for evidence in result.evidence:
+            records.append(
+                EvidenceArtifactRecord(
+                    evidence_id=evidence.evidence_id,
+                    kind=evidence.kind,
+                    summary=evidence.summary,
+                    payload_ref=evidence.payload_ref,
+                    task_ref=result.task_id,
+                    tool_output_ref=evidence.tool_output_ref or evidence.payload_ref,
+                    refs=[ref.model_dump(mode="json") for ref in evidence.refs],
+                    metadata={
+                        **dict(evidence.metadata),
+                        "operation_id": result.operation_id,
+                        "worker_result_id": result.result_id,
+                        "source_agent": result.agent_role.value,
+                        "tg_node_id": result.tg_node_id,
+                        "timestamp": evidence.created_at.isoformat(),
+                    },
+                    created_at=evidence.created_at,
+                )
+            )
+        return records
+
+    def _finding_from_validation(
+        self,
+        *,
+        state: RuntimeState,
+        result: AgentTaskResult,
+        validation: dict[str, Any],
+        evidence_refs: list[str],
+    ) -> Finding:
+        service_ref = self._string(result.outcome_payload.get("service_id")) or self._ref_id_for_type(result, "Service") or "unknown-service"
+        vulnerability_ref = (
+            self._string(result.outcome_payload.get("vulnerability_id"))
+            or self._string(validation.get("vulnerability_id"))
+            or self._ref_id_for_type(result, "Vulnerability")
+            or "unknown-vulnerability"
+        )
+        title = self._string(validation.get("vulnerability_name")) or self._string(validation.get("summary")) or vulnerability_ref
+        cvss = self._coerce_float(validation.get("cvss"))
+        epss = self._coerce_float(validation.get("epss"))
+        kev = bool(validation.get("kev", False))
+        confidence = self._coerce_float(result.outcome_payload.get("confidence")) or self._coerce_float(validation.get("confidence")) or 0.5
+        requires_auth = bool(
+            validation.get("requires_auth")
+            or validation.get("requires_authentication")
+            or result.outcome_payload.get("requires_auth")
+        )
+        public_exposed = self._is_publicly_exposed(state=state, service_ref=service_ref, validation=validation)
+        critical_asset = self._is_critical_asset(state=state, service_ref=service_ref, validation=validation)
+        validated = str(validation.get("status")) == "validated"
+        risk_score = RiskScorer.score(
+            cvss=cvss,
+            epss=epss,
+            kev=kev,
+            public_exposed=public_exposed,
+            validated=validated,
+            requires_auth=requires_auth,
+            critical_asset=critical_asset,
+            confidence=confidence,
+        )
+        remediation = self._string(validation.get("remediation")) or self._default_remediation(validation)
+        return Finding(
+            finding_id=f"finding::{vulnerability_ref}::{service_ref}",
+            title=title,
+            affected_asset_refs=self._affected_asset_refs(state=state, service_ref=service_ref, result=result),
+            service_ref=service_ref,
+            vulnerability_ref=vulnerability_ref,
+            evidence_refs=evidence_refs,
+            validation_status=str(validation.get("status")),  # type: ignore[arg-type]
+            severity=risk_score.severity,
+            cvss=cvss,
+            epss=epss,
+            kev=kev,
+            confidence=confidence,
+            false_positive_risk=round(1.0 - confidence, 3),
+            remediation=remediation,
+            risk_score=risk_score,
+            provenance={
+                "operation_id": state.operation_id,
+                "task_ref": result.task_id,
+                "tg_node_id": result.tg_node_id,
+                "worker_result_id": result.result_id,
+                "tool_output_refs": [item.payload_ref for item in result.evidence],
+                "timestamp": result.created_at.isoformat(),
+            },
+        )
+
+    def _record_finding_audit(self, *, state: RuntimeState, result: AgentTaskResult, event_type: str, validation: dict[str, Any], **payload: Any) -> None:
+        entry = {
+            "event_type": event_type,
+            "at": utc_now().isoformat(),
+            "source_task_id": result.task_id,
+            "worker_result_id": result.result_id,
+            "validation_status": validation.get("status"),
+            "vulnerability_id": validation.get("vulnerability_id") or result.outcome_payload.get("vulnerability_id"),
+            "service_id": result.outcome_payload.get("service_id"),
+            **payload,
+        }
+        finding_audit = state.execution.metadata.setdefault("finding_audit", [])
+        finding_audit.append(dict(entry))
+        self._append_audit_log(state, entry)
+
     def _sync_credential_view(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         raw = self._dict(result.outcome_payload.get("credential_validation"))
         credential_id = self._string(raw.get("credential_id"))
@@ -726,6 +904,79 @@ class PhaseTwoResultApplier:
     @staticmethod
     def _lease_id(session_id: str, task_id: str) -> str:
         return f"lease::{session_id}::{task_id}"
+
+    @staticmethod
+    def _ref_id_for_type(result: AgentTaskResult, ref_type: str) -> str | None:
+        expected = ref_type.lower()
+        for collection in (result.observations, result.evidence):
+            for item in collection:
+                for ref in getattr(item, "refs", []):
+                    if str(getattr(ref, "ref_type", "")).lower() == expected:
+                        return str(getattr(ref, "ref_id"))
+        for request in result.fact_write_requests:
+            for ref in (request.subject_ref, request.object_ref):
+                if ref is not None and str(getattr(ref, "ref_type", "")).lower() == expected:
+                    return str(getattr(ref, "ref_id"))
+        return None
+
+    @staticmethod
+    def _coerce_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _default_remediation(validation: dict[str, Any]) -> str:
+        cve = validation.get("cve")
+        if cve:
+            return f"Review vendor guidance for {cve}, apply the relevant patch, and validate compensating controls."
+        return "Review vendor guidance, apply the relevant patch, and validate compensating controls."
+
+    def _affected_asset_refs(self, *, state: RuntimeState, service_ref: str, result: AgentTaskResult) -> list[str]:
+        refs = [service_ref]
+        for ref_type in ("Host", "DataAsset"):
+            ref_id = self._ref_id_for_type(result, ref_type)
+            if ref_id is not None:
+                refs.append(ref_id)
+        for target in self._target_inventory(state):
+            target_id = self._string(target.get("asset_id")) or self._string(target.get("value")) or self._string(target.get("address"))
+            if target_id and (target_id in service_ref or service_ref in target_id):
+                refs.append(target_id)
+        return list(dict.fromkeys(refs))
+
+    def _is_publicly_exposed(self, *, state: RuntimeState, service_ref: str, validation: dict[str, Any]) -> bool:
+        explicit = validation.get("public_exposed")
+        if explicit is not None:
+            return bool(explicit)
+        for target in self._target_inventory(state):
+            text = " ".join(str(target.get(key, "")) for key in ("value", "address", "hostname", "url"))
+            if text and (text in service_ref or service_ref in text):
+                tags = {str(item).lower() for item in target.get("tags", []) if item is not None}
+                metadata = self._dict(target.get("metadata"))
+                return bool(metadata.get("public_exposed") or metadata.get("internet_exposed") or tags & {"public", "internet", "external"})
+        return False
+
+    def _is_critical_asset(self, *, state: RuntimeState, service_ref: str, validation: dict[str, Any]) -> bool:
+        explicit = validation.get("critical_asset")
+        if explicit is not None:
+            return bool(explicit)
+        for target in self._target_inventory(state):
+            text = " ".join(str(target.get(key, "")) for key in ("value", "address", "hostname", "url"))
+            if text and (text in service_ref or service_ref in text):
+                tags = {str(item).lower() for item in target.get("tags", []) if item is not None}
+                metadata = self._dict(target.get("metadata"))
+                return bool(metadata.get("critical_asset") or metadata.get("business_critical") or tags & {"critical", "crown-jewel"})
+        return False
+
+    @staticmethod
+    def _target_inventory(state: RuntimeState) -> list[dict[str, Any]]:
+        value = state.execution.metadata.get("target_inventory", [])
+        if not isinstance(value, list):
+            return []
+        return [dict(item) for item in value if isinstance(item, dict)]
 
     @staticmethod
     def _dict(value: Any) -> dict[str, Any]:

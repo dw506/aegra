@@ -10,6 +10,25 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from src.core.models.runtime import RuntimeState, utc_now
+from src.core.models.scope import DenylistRule, Engagement, RiskPolicy, ScanWindow, Workspace
+
+
+PolicyDecisionStatus = Literal["allow", "deny", "requires_approval"]
+
+
+class PolicyDecision(BaseModel):
+    """Normalized decision emitted by platform policy gates."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    decision: PolicyDecisionStatus
+    reason: str = Field(min_length=1)
+    gate: str = Field(min_length=1)
+    target: str | None = None
+    task_id: str | None = None
+    approval_id: str | None = None
+    matched_rule_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RuntimePolicy(BaseModel):
@@ -27,6 +46,15 @@ class RuntimePolicy(BaseModel):
     session_policies: dict[str, Literal["exclusive", "shared_readonly", "shared"]] = Field(default_factory=dict)
     max_concurrent_per_host: dict[str, int] = Field(default_factory=dict)
     rate_limit_per_subnet_per_min: dict[str, int] = Field(default_factory=dict)
+    workspace: Workspace | None = None
+    engagement: Engagement | None = None
+    denylist: list[DenylistRule] = Field(default_factory=list)
+    scan_windows: list[ScanWindow] = Field(default_factory=list)
+    risk_policy: RiskPolicy = Field(default_factory=RiskPolicy)
+    allow_safe_probe: bool = True
+    allow_fingerprint: bool = True
+    disabled_tools: list[str] = Field(default_factory=list)
+    command_allowlist: list[str] = Field(default_factory=list)
     retry_backoff_base_sec: int = Field(default=0, ge=0)
     default_task_timeout_sec: int = Field(default=900, ge=1)
     policy_version: str = "v1"
@@ -39,6 +67,8 @@ class RuntimePolicy(BaseModel):
         "cidr_whitelist",
         "sensitive_task_types",
         "sensitive_tags",
+        "disabled_tools",
+        "command_allowlist",
         mode="before",
     )
     @classmethod
@@ -97,6 +127,24 @@ class RuntimePolicy(BaseModel):
             normalized[mapping_key] = int(item)
         return normalized
 
+    @field_validator("denylist", "scan_windows", mode="before")
+    @classmethod
+    def _normalize_model_list(cls, value: Any) -> list[Any]:
+        if value is None or value == "":
+            return []
+        if not isinstance(value, list):
+            raise TypeError("policy model list fields must be arrays")
+        return value
+
+    @field_validator("workspace", "engagement", mode="before")
+    @classmethod
+    def _empty_mapping_to_none(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, dict) and not value:
+            return None
+        return value
+
     @field_validator("max_concurrent_per_host", "rate_limit_per_subnet_per_min")
     @classmethod
     def _validate_positive_int_mapping(cls, value: dict[str, int]) -> dict[str, int]:
@@ -109,6 +157,22 @@ class RuntimePolicy(BaseModel):
         """导出到 RuntimeState metadata 的稳定 JSON 结构。"""
 
         return self.model_dump(mode="json")
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
+        payload = super().model_dump(*args, **kwargs)
+        optional_defaults = {
+            "workspace": None,
+            "engagement": None,
+            "denylist": [],
+            "scan_windows": [],
+            "risk_policy": RiskPolicy().model_dump(mode=kwargs.get("mode", "python")),
+            "allow_safe_probe": True,
+            "allow_fingerprint": True,
+        }
+        for key, default in optional_defaults.items():
+            if key not in self.model_fields_set and payload.get(key) == default:
+                payload.pop(key, None)
+        return payload
 
 
 def load_runtime_policy_payload(
@@ -155,4 +219,10 @@ def policy_from_runtime_state(runtime_state: RuntimeState) -> RuntimePolicy:
         raise ValueError(f"invalid runtime policy in runtime metadata: {exc}") from exc
 
 
-__all__ = ["RuntimePolicy", "load_runtime_policy_payload", "policy_from_runtime_state"]
+__all__ = [
+    "PolicyDecision",
+    "PolicyDecisionStatus",
+    "RuntimePolicy",
+    "load_runtime_policy_payload",
+    "policy_from_runtime_state",
+]

@@ -1,0 +1,46 @@
+{
+  "nodes": [
+    {
+      "id": "127.0.0.1",
+      "type": "Host",
+      "label": "127.0.0.1"
+    },
+    {
+      "id": "svc-http-8080",
+      "type": "Service",
+      "label": "http 127.0.0.1:8080",
+      "host": "127.0.0.1",
+      "port": 8080,
+      "protocol": "tcp",
+      "service_name": "http"
+    },
+    {
+      "id": "vuln-struts2-s2045",
+      "type": "Vulnerability",
+      "label": "Apache Struts2 S2-045 remote code execution",
+      "cve": "CVE-2017-5638"
+    },
+    {
+      "id": "evidence-s2045",
+      "type": "Evidence",
+      "label": "S2-045 validation evidence"
+    }
+  ],
+  "edges": [
+    {
+      "source": "127.0.0.1",
+      "target": "svc-http-8080",
+      "type": "EXPOSES"
+    },
+    {
+      "source": "svc-http-8080",
+      "target": "vuln-struts2-s2045",
+      "type": "HAS_VULNERABILITY"
+    },
+    {
+      "source": "vuln-struts2-s2045",
+      "target": "evidence-s2045",
+      "type": "SUPPORTED_BY"
+    }
+  ]
+}

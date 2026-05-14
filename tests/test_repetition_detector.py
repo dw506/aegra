@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
+from src.core.agents.planner import PlannerAgent
+from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.tg_builder import TaskCandidate
+from src.core.models.ag import GraphRef as AGGraphRef
+from src.core.models.kg import Goal, Host, Service, TargetsEdge
+from src.core.models.kg_enums import EntityStatus
+from src.core.models.tg import TaskType
+from src.core.graph.kg_store import KnowledgeGraph
+from src.core.runtime.repetition_detector import RepetitionAction, RepetitionDetector
+
+
+def _task(port: int = 80, *, tool: str = "nmap") -> TaskCandidate:
+    return TaskCandidate(
+        source_action_id=f"scan-{port}",
+        task_type=TaskType.SERVICE_VALIDATION,
+        input_bindings={
+            "tool_hint": tool,
+            "port": port,
+            "flags": ["-sV"],
+            "expected_evidence": ["service banner"],
+        },
+        target_refs=[AGGraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
+        expected_output_refs=[AGGraphRef(graph="query", ref_id="service-evidence", ref_type="ExpectedEvidence")],
+    )
+
+
+def test_repetition_detector_matches_same_target_same_task() -> None:
+    detector = RepetitionDetector()
+    detector.record_task(_task(80), task_id="task-old", status="failed")
+
+    decision = detector.decide(_task(80))
+
+    assert decision.action == RepetitionAction.REJECT
+    assert decision.matched_task_ids == ["task-old"]
+    assert decision.similarity == 1.0
+
+
+def test_repetition_detector_does_not_match_different_port() -> None:
+    detector = RepetitionDetector()
+    detector.record_task(_task(80), task_id="task-old", status="failed")
+
+    decision = detector.decide(_task(443))
+
+    assert decision.action == RepetitionAction.ALLOW
+    assert decision.matched_task_ids == []
+
+
+def test_repetition_detector_rejects_repeated_failed_task() -> None:
+    detector = RepetitionDetector()
+    failed = detector.record_task(_task(8080), task_id="task-failed", status="blocked")
+
+    decision = detector.decide(
+        {
+            "task_id": "task-new",
+            "task_type": TaskType.SERVICE_VALIDATION.value,
+            "input_bindings": {
+                "tool": "nmap",
+                "port": 8080,
+                "flags": ["-sV"],
+                "expected_evidence": ["service banner"],
+            },
+            "target_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
+            "expected_output_refs": [{"graph": "query", "ref_id": "service-evidence", "ref_type": "ExpectedEvidence"}],
+        }
+    )
+
+    assert failed.signature_hash == decision.signature_hash
+    assert decision.action == RepetitionAction.REJECT
+    assert decision.reason == "exact repeat of failed or blocked task"
+
+
+def test_repetition_detector_warns_for_repeated_completed_task() -> None:
+    detector = RepetitionDetector()
+    detector.record_task(_task(80), task_id="task-complete", status="succeeded")
+
+    decision = detector.decide(_task(80))
+
+    assert decision.action == RepetitionAction.WARN
+    assert decision.allow is True
+    assert decision.warn is True
+    assert decision.matched_task_ids == ["task-complete"]
+
+
+def _planner_input(repetition_history: list[dict] | None = None) -> AgentInput:
+    kg = KnowledgeGraph()
+    kg.add_node(Host(id="host-1", label="Gateway", status=EntityStatus.VALIDATED, confidence=0.95))
+    kg.add_node(Service(id="svc-1", label="HTTP", confidence=0.75))
+    kg.add_node(Goal(id="goal-1", label="Validate target", category="service", confidence=0.9))
+    kg.add_edge(TargetsEdge(id="e-goal-host", label="targets", source="goal-1", target="host-1"))
+    ag = AttackGraphProjector().project(kg)
+    goal_node = ag.get_goal_nodes()[0]
+    return AgentInput(
+        graph_refs=[
+            GraphRef(graph=GraphScope.AG, ref_id="ag-root", ref_type="graph"),
+            GraphRef(graph=GraphScope.AG, ref_id=goal_node.id, ref_type="GoalNode"),
+        ],
+        context=AgentContext(operation_id="op-repetition-planner-test"),
+        raw_payload={
+            "ag_graph": ag.to_dict(),
+            "goal_refs": [GraphRef(graph=GraphScope.AG, ref_id=goal_node.id, ref_type="GoalNode").model_dump(mode="json")],
+            "planning_context": {
+                "top_k": 3,
+                "max_depth": 2,
+                "repetition_history": repetition_history or [],
+            },
+        },
+    )
+
+
+def test_planner_repetition_history_rejects_failed_candidate() -> None:
+    first = PlannerAgent().run(_planner_input())
+    candidate = first.output.decisions[0]["payload"]["planning_candidate"]
+    task = candidate["task_candidates"][0]
+    history = [{"task_id": "old-failed-task", "status": "failed", "task": task}]
+
+    result = PlannerAgent().run(_planner_input(history))
+
+    assert result.success is True
+    assert len(result.output.decisions) < len(first.output.decisions)
+    assert any("repetition detector rejected" in log for log in result.output.logs)
+
+
+def test_planner_repetition_history_downranks_completed_candidate() -> None:
+    first = PlannerAgent().run(_planner_input())
+    candidate = first.output.decisions[0]["payload"]["planning_candidate"]
+    task = candidate["task_candidates"][0]
+    history = [{"task_id": "old-completed-task", "status": "succeeded", "task": task}]
+
+    result = PlannerAgent().run(_planner_input(history))
+
+    repeated = [
+        decision["payload"]["planning_candidate"]
+        for decision in result.output.decisions
+        if decision["payload"]["planning_candidate"]["task_candidates"][0]["source_action_id"] == task["source_action_id"]
+    ][0]
+    assert repeated["score"] == round(candidate["score"] - 0.2, 6)
+    assert repeated["metadata"]["repetition_decisions"][0]["action"] == "warn"

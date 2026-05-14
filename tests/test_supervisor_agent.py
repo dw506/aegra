@@ -13,6 +13,8 @@ from src.core.agents.scheduler_agent import SchedulerAgent
 from src.core.agents.supervisor import SupervisorAgent, SupervisorContext, SupervisorDecision, SupervisorStrategy
 from src.core.agents.task_builder import TaskBuilderAgent
 
+from src.core.models.runtime import WorkerRuntime, WorkerStatus
+
 from test_app_orchestrator import FakePlannerAgent, FakeWorkerAgent, build_runtime_state
 
 
@@ -31,6 +33,13 @@ def _graph_refs() -> list[GraphRef]:
         GraphRef(graph=GraphScope.AG, ref_id="ag-root", ref_type="graph"),
         GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph"),
     ]
+
+
+def _runtime_state_for(orchestrator: AppOrchestrator, operation_id: str):
+    state = orchestrator.get_operation_state(operation_id)
+    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    state.execution.metadata["runtime_policy"] = {"sensitive_task_types": []}
+    return state
 
 
 def test_pipeline_builder_does_not_include_supervisor_by_default() -> None:
@@ -151,3 +160,211 @@ def test_orchestrator_does_not_run_supervisor_in_main_cycle(tmp_path) -> None:
     assert all(step.agent_kind != AgentKind.SUPERVISOR for step in result.execution.steps)
     assert all(step.agent_kind != AgentKind.SUPERVISOR for step in result.feedback.steps)
     assert result.runtime_state.execution.metadata.get("last_control_cycle", {}).get("cycle_index") == 1
+
+
+def test_run_until_quiescent_ignores_supervisor_when_llm_disabled(tmp_path) -> None:
+    advisor = StaticSupervisorAdvisor(
+        SupervisorDecision(
+            strategy=SupervisorStrategy.PAUSE_FOR_REVIEW,
+            rationale="would pause if enabled",
+            confidence=0.9,
+            requires_human_review=True,
+        )
+    )
+    settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
+    pipeline = AgentPipeline(
+        agents=[
+            FakePlannerAgent(emit_once=True),
+            TaskBuilderAgent(),
+            SchedulerAgent(),
+            FakeWorkerAgent(),
+            CriticAgent(),
+            SupervisorAgent(llm_advisor=advisor),
+        ]
+    )
+    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator.create_operation("op-supervisor-disabled")
+    runtime_state = _runtime_state_for(orchestrator, "op-supervisor-disabled")
+    orchestrator.runtime_store.save_state(runtime_state)
+
+    results = orchestrator.run_until_quiescent(
+        "op-supervisor-disabled",
+        graph_refs=_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        max_cycles=3,
+    )
+    state = orchestrator.get_operation_state("op-supervisor-disabled")
+
+    assert len(results) == 2
+    assert results[-1].stopped is True
+    assert state.operation_status.value == "completed"
+    assert "last_supervisor_control_strategy" not in state.execution.metadata
+
+
+def test_run_until_quiescent_adopts_supervisor_pause_strategy(tmp_path) -> None:
+    advisor = StaticSupervisorAdvisor(
+        SupervisorDecision(
+            strategy=SupervisorStrategy.PAUSE_FOR_REVIEW,
+            rationale="operator review requested",
+            confidence=0.9,
+            requires_human_review=True,
+        )
+    )
+    settings = AppSettings(
+        runtime_store_backend="file",
+        runtime_store_dir=tmp_path / "runtime-store",
+        enable_supervisor_llm_advisor=True,
+    )
+    pipeline = AgentPipeline(
+        agents=[
+            FakePlannerAgent(),
+            TaskBuilderAgent(),
+            SchedulerAgent(),
+            FakeWorkerAgent(),
+            CriticAgent(),
+            SupervisorAgent(llm_advisor=advisor),
+        ]
+    )
+    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator.create_operation("op-supervisor-pause")
+    runtime_state = _runtime_state_for(orchestrator, "op-supervisor-pause")
+    orchestrator.runtime_store.save_state(runtime_state)
+
+    results = orchestrator.run_until_quiescent(
+        "op-supervisor-pause",
+        graph_refs=_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        max_cycles=3,
+    )
+    state = orchestrator.get_operation_state("op-supervisor-pause")
+
+    assert len(results) == 1
+    assert state.operation_status.value == "paused"
+    assert state.execution.metadata["pause_reason"] == "operator review requested"
+    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "pause_for_review"
+    assert state.execution.metadata["control_cycle_history"][-1]["supervisor_control_strategy"]["accepted"] is True
+    assert state.execution.metadata["llm_decision_history"][-1]["agent_kind"] == "supervisor"
+    assert state.execution.metadata["llm_decision_history"][-1]["accepted"] is True
+
+
+def test_run_until_quiescent_supervisor_can_request_existing_replan_flow(tmp_path) -> None:
+    advisor = StaticSupervisorAdvisor(
+        SupervisorDecision(
+            strategy=SupervisorStrategy.REQUEST_REPLAN,
+            rationale="use existing replan flow",
+            confidence=0.8,
+        )
+    )
+    settings = AppSettings(
+        runtime_store_backend="file",
+        runtime_store_dir=tmp_path / "runtime-store",
+        enable_supervisor_llm_advisor=True,
+    )
+    pipeline = AgentPipeline(
+        agents=[
+            FakePlannerAgent(emit_once=True),
+            TaskBuilderAgent(),
+            SchedulerAgent(),
+            FakeWorkerAgent(),
+            CriticAgent(),
+            SupervisorAgent(llm_advisor=advisor),
+        ]
+    )
+    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator.create_operation("op-supervisor-replan")
+    runtime_state = _runtime_state_for(orchestrator, "op-supervisor-replan")
+    orchestrator.runtime_store.save_state(runtime_state)
+
+    results = orchestrator.run_until_quiescent(
+        "op-supervisor-replan",
+        graph_refs=_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        max_cycles=2,
+        max_replans=1,
+    )
+    state = orchestrator.get_operation_state("op-supervisor-replan")
+
+    assert len(results) == 2
+    assert state.replan_requests
+    assert state.replan_requests[0].metadata["source"] == "supervisor"
+    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "request_replan"
+
+
+def test_run_until_quiescent_rejected_supervisor_strategy_falls_back(tmp_path) -> None:
+    advisor = StaticSupervisorAdvisor(
+        SupervisorDecision(
+            strategy=SupervisorStrategy.PAUSE_FOR_REVIEW,
+            rationale="illegal write attempt",
+            confidence=0.9,
+            metadata={"patch": {"tg": "forbidden"}},
+        )
+    )
+    settings = AppSettings(
+        runtime_store_backend="file",
+        runtime_store_dir=tmp_path / "runtime-store",
+        enable_supervisor_llm_advisor=True,
+    )
+    pipeline = AgentPipeline(
+        agents=[
+            FakePlannerAgent(emit_once=True),
+            TaskBuilderAgent(),
+            SchedulerAgent(),
+            FakeWorkerAgent(),
+            CriticAgent(),
+            SupervisorAgent(llm_advisor=advisor),
+        ]
+    )
+    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator.create_operation("op-supervisor-reject-fallback")
+    runtime_state = _runtime_state_for(orchestrator, "op-supervisor-reject-fallback")
+    orchestrator.runtime_store.save_state(runtime_state)
+
+    results = orchestrator.run_until_quiescent(
+        "op-supervisor-reject-fallback",
+        graph_refs=_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        max_cycles=3,
+    )
+    state = orchestrator.get_operation_state("op-supervisor-reject-fallback")
+
+    assert len(results) == 2
+    assert state.operation_status.value == "completed"
+    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "deterministic_fallback"
+    assert state.execution.metadata["last_supervisor_control_strategy"]["accepted"] is False
+    assert any(
+        item["agent_kind"] == "supervisor" and item["accepted"] is False
+        for item in state.execution.metadata["llm_decision_history"]
+    )
+
+
+def test_run_until_quiescent_budget_guard_pauses_before_next_cycle(tmp_path) -> None:
+    settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
+    pipeline = AgentPipeline(
+        agents=[
+            FakePlannerAgent(),
+            TaskBuilderAgent(),
+            SchedulerAgent(),
+            FakeWorkerAgent(),
+            CriticAgent(),
+        ]
+    )
+    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator.create_operation("op-budget-guard")
+    runtime_state = _runtime_state_for(orchestrator, "op-budget-guard")
+    runtime_state.budgets.operation_budget_used = 1
+    runtime_state.budgets.operation_budget_max = 1
+    orchestrator.runtime_store.save_state(runtime_state)
+
+    results = orchestrator.run_until_quiescent(
+        "op-budget-guard",
+        graph_refs=_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        max_cycles=3,
+    )
+    state = orchestrator.get_operation_state("op-budget-guard")
+
+    assert results == []
+    assert state.operation_status.value == "paused"
+    assert state.execution.metadata["pause_reason"] == "budget guard triggered"
+    assert state.execution.metadata["control_cycle_history"][-1]["cycle_type"] == "control_guard"
+    assert state.execution.metadata["control_cycle_history"][-1]["supervisor_control_strategy"]["strategy"] == "budget_guard"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pprint import pprint
 
 from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
@@ -8,6 +9,14 @@ from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.kg import DataAsset, Goal, Host, HostsEdge, Service, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
+
+
+def _llm_config_summary() -> str:
+    api_key = os.getenv("AEGRA_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("AEGRA_LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://www.packyapi.com/v1"
+    model = os.getenv("AEGRA_LLM_MODEL") or "gpt-5.2"
+    key_status = "set" if api_key else "unset"
+    return f"key={key_status} base_url={base_url} model={model}"
 
 
 def build_agent_context(operation_id: str = "op-packy-planner-smoke") -> AgentContext:
@@ -74,9 +83,19 @@ def main() -> None:
     )
 
     print("=== Packy Planner Smoke ===")
+    print("LLM config:", _llm_config_summary())
     print("Planner success:", result.success)
     print("Decision count:", len(result.final_output.decisions))
     print("Log count:", len(result.logs))
+    print("Step logs:")
+    steps = getattr(result, "steps", [])
+    if steps:
+        for step in steps:
+            for log in step.agent_output.logs:
+                print(f"- [{step.step_name}] {log}")
+    else:
+        for log in result.logs:
+            print(f"- {log}")
     print()
 
     if result.errors:
@@ -90,7 +109,11 @@ def main() -> None:
 
     decision = result.final_output.decisions[0]
     candidate = decision["payload"]["planning_candidate"]
-    llm_advice = candidate["metadata"].get("llm_advice")
+    metadata = candidate["metadata"]
+    llm_advice = metadata.get("llm_advice")
+    llm_decision_summary = metadata.get("llm_decision_summary")
+    llm_planner_decision = metadata.get("llm_planner_decision")
+    llm_decision_validation = metadata.get("llm_decision_validation")
 
     print("=== First Decision ===")
     print("Summary:", decision["summary"])
@@ -100,10 +123,19 @@ def main() -> None:
     print()
 
     print("=== LLM Advice ===")
-    if llm_advice is None:
-        print("本次调用未返回 llm_advice，Planner 已按基线逻辑继续运行。")
-    else:
+    if llm_advice is not None:
         pprint(llm_advice)
+    elif llm_decision_summary is not None:
+        print("本次调用返回的是 planner strategy decision。")
+        print("Summary:")
+        pprint(llm_decision_summary)
+        print("Planner decision:")
+        pprint(llm_planner_decision)
+        print("Validation:")
+        pprint(llm_decision_validation)
+    else:
+        print("本次调用未返回可采纳的 LLM 建议，Planner 已按基线逻辑继续运行。")
+        print("诊断提示：如果 key/base/model 已设置，通常是网关返回了非 JSON、候选 ID 不匹配，或输出被 validator 拒绝。")
 
 
 if __name__ == "__main__":

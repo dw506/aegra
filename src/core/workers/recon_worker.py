@@ -29,11 +29,15 @@ from src.core.models.tg import BaseTaskNode, TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 from src.core.workers.probe_adapters import (
     CustomProbeAdapter,
+    HttpxFingerprintAdapter,
     MasscanAdapter,
     NmapAdapter,
+    NucleiSafeTemplateAdapter,
     ParsedProbeResult,
     ProbeAdapter,
     ProbeAdapterUnavailable,
+    SSLScanAdapter,
+    WhatWebFingerprintAdapter,
 )
 from src.core.workers.tool_runner import ToolExecutionResult, ToolExecutionSpec, ToolRunner
 
@@ -62,7 +66,15 @@ class ReconWorker(BaseWorkerAgent):
     ) -> None:
         super().__init__(name=name)
         self._tool_runner = tool_runner or ToolRunner()
-        adapters = probe_adapters or [NmapAdapter(), MasscanAdapter(), CustomProbeAdapter()]
+        adapters = probe_adapters or [
+            NmapAdapter(),
+            MasscanAdapter(),
+            HttpxFingerprintAdapter(),
+            WhatWebFingerprintAdapter(),
+            SSLScanAdapter(),
+            NucleiSafeTemplateAdapter(),
+            CustomProbeAdapter(),
+        ]
         self._probe_adapters = {adapter.adapter_name: adapter for adapter in adapters}
 
     def supports_task(self, task_spec: WorkerTaskSpec) -> bool:
@@ -396,7 +408,25 @@ class ReconWorker(BaseWorkerAgent):
                 retries=int(metadata.get("tool_retries", 0)),
                 cwd=metadata.get("tool_cwd"),
                 env={str(key): str(value) for key, value in dict(metadata.get("tool_env", {})).items()},
+                env_allowlist={str(item) for item in metadata.get("tool_env_allowlist", [])}
+                if isinstance(metadata.get("tool_env_allowlist", []), list)
+                else set(),
+                command_allowlist={str(item) for item in metadata.get("command_allowlist", [])}
+                if isinstance(metadata.get("command_allowlist", []), list)
+                else set(),
                 acceptable_exit_codes=adapter.acceptable_exit_codes(mode=mode, metadata=metadata),
+                stdout_max_bytes=int(metadata.get("stdout_max_bytes", metadata.get("tool_stdout_max_bytes", 262144))),
+                stderr_max_bytes=int(metadata.get("stderr_max_bytes", metadata.get("tool_stderr_max_bytes", 65536))),
+                rate_limit_per_sec=float(metadata.get("tool_rate_limit_per_sec", 0.0)),
+                min_interval_sec=float(metadata.get("tool_min_interval_sec", 0.0)),
+                rate_limit_key=str(metadata.get("tool_rate_limit_key", adapter.adapter_name)),
+                policy_metadata={
+                    "kind": adapter.adapter_name,
+                    "name": adapter.adapter_name,
+                    "operation": mode,
+                    "tags": metadata.get("tool_tags", ["safe_probe", "fingerprint"]),
+                },
+                isolation=dict(metadata.get("tool_isolation", {})) if isinstance(metadata.get("tool_isolation"), dict) else {},
             )
             tool_result = self._tool_runner.run(spec)
             parsed = adapter.parse_output(

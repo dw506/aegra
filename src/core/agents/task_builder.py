@@ -35,6 +35,7 @@ from src.core.models.tg import (
     TaskNode,
     stable_node_id,
 )
+from src.core.models.vulnerability_candidate import VulnerabilityCandidate
 
 
 class TaskBuildRequest(BaseModel):
@@ -45,6 +46,7 @@ class TaskBuildRequest(BaseModel):
     decision: dict[str, Any]
     candidate_actions: list[str] = Field(default_factory=list)
     task_candidates: list[TaskCandidate] = Field(default_factory=list)
+    vulnerability_candidates: list[VulnerabilityCandidate] = Field(default_factory=list)
     tg_refs: list[GraphRef] = Field(default_factory=list)
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
 
@@ -264,6 +266,7 @@ class TaskBuilderAgent(BaseAgent):
             decision=raw_decision if isinstance(raw_decision, dict) else raw_decision.model_dump(mode="json"),
             candidate_actions=self._coerce_string_list(agent_input.raw_payload.get("candidate_actions")),
             task_candidates=self._parse_task_candidates(agent_input.raw_payload.get("task_candidates")),
+            vulnerability_candidates=self._parse_vulnerability_candidates(agent_input.raw_payload.get("vulnerability_candidates")),
             tg_refs=[ref for ref in agent_input.graph_refs if ref.graph == GraphScope.TG],
             runtime_hints=self._coerce_mapping(agent_input.raw_payload.get("runtime_hints")),
         )
@@ -288,6 +291,8 @@ class TaskBuilderAgent(BaseAgent):
 
         if request.task_candidates:
             return list(request.task_candidates)
+        if request.vulnerability_candidates:
+            return [candidate.to_task_candidate() for candidate in request.vulnerability_candidates]
 
         planning_candidate = self._coerce_mapping(request.decision.get("payload", {})).get("planning_candidate")
         if isinstance(planning_candidate, dict):
@@ -295,6 +300,16 @@ class TaskBuilderAgent(BaseAgent):
             parsed = self._parse_task_candidates(raw_task_candidates)
             if parsed:
                 return parsed
+            parsed_vulnerability_candidates = self._parse_vulnerability_candidates(
+                planning_candidate.get("vulnerability_candidates")
+            )
+            if parsed_vulnerability_candidates:
+                return [candidate.to_task_candidate() for candidate in parsed_vulnerability_candidates]
+        payload_vulnerability_candidates = self._parse_vulnerability_candidates(
+            self._coerce_mapping(request.decision.get("payload", {})).get("vulnerability_candidates")
+        )
+        if payload_vulnerability_candidates:
+            return [candidate.to_task_candidate() for candidate in payload_vulnerability_candidates]
 
         candidate_actions = request.candidate_actions
         if not candidate_actions and isinstance(planning_candidate, dict):
@@ -473,6 +488,18 @@ class TaskBuilderAgent(BaseAgent):
         items = value if isinstance(value, list) else [value]
         return [
             item if isinstance(item, TaskCandidate) else TaskCandidate.model_validate(item)
+            for item in items
+        ]
+
+    @staticmethod
+    def _parse_vulnerability_candidates(value: Any) -> list[VulnerabilityCandidate]:
+        """Normalize serialized vulnerability candidates into typed models."""
+
+        if value is None:
+            return []
+        items = value if isinstance(value, list) else [value]
+        return [
+            item if isinstance(item, VulnerabilityCandidate) else VulnerabilityCandidate.model_validate(item)
             for item in items
         ]
 

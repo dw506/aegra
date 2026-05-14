@@ -48,6 +48,8 @@ class AgentRole(str, Enum):
 
     GOAL_WORKER = "goal_worker"
     RECON_WORKER = "recon_worker"
+    FINGERPRINT_WORKER = "fingerprint_worker"
+    VULNERABILITY_VALIDATION_WORKER = "vulnerability_validation_worker"
     ACCESS_WORKER = "access_worker"
     STATE_WRITER = "state_writer"
     GRAPH_PROJECTION = "graph_projection"
@@ -63,6 +65,7 @@ class AgentTaskIntent(str, Enum):
     EXECUTE_TASK = "execute_task"
     COLLECT_EVIDENCE = "collect_evidence"
     VALIDATE_ACCESS = "validate_access"
+    VALIDATE_VULNERABILITY = "validate_vulnerability"
     VALIDATE_GOAL = "validate_goal"
 
 
@@ -166,8 +169,10 @@ class EvidenceArtifact(BaseProtocolModel):
     kind: str = Field(min_length=1)
     summary: str = Field(min_length=1)
     payload_ref: str = Field(min_length=1)
+    tool_output_ref: str | None = None
     refs: list[GraphRef] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class FactWriteRequest(BaseProtocolModel):

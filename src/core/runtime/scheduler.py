@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.models.runtime import RuntimeState, TaskRuntimeStatus, WorkerStatus, utc_now
+from src.core.models.runtime import RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerStatus, utc_now
 from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -21,6 +21,7 @@ from src.core.runtime.lease_manager import RuntimeLeaseManager
 from src.core.runtime.locks import RuntimeLockManager
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.policy import RuntimePolicy, policy_from_runtime_state
+from src.core.runtime.policy_engine import PolicyEngine
 from src.core.runtime.runtime_queries import RuntimeQueryService
 from src.core.runtime.session_manager import RuntimeSessionManager
 
@@ -62,6 +63,7 @@ class RuntimeScheduler:
         self.leases = RuntimeLeaseManager()
         self.credentials = RuntimeCredentialManager()
         self.pivot_routes = RuntimePivotRouteManager()
+        self.policy_engine = PolicyEngine()
 
     def tick(self, task_graph: TaskGraph, runtime_state: RuntimeState) -> SchedulerTickResult:
         """Run one scheduling tick and return a structured decision summary."""
@@ -316,6 +318,11 @@ class RuntimeScheduler:
     ) -> str | None:
         del task_graph
         policy = self._policy(runtime_state)
+        policy_decision = self.policy_engine.evaluate_task_policy(task, runtime_state)
+        self.policy_engine.audit(runtime_state, policy_decision)
+        if policy_decision.decision != "allow":
+            self._record_policy_block(runtime_state, task, policy_decision)
+            return policy_decision.reason
         target_hosts = self._task_host_ids(task)
         if policy.safety_stop:
             return "runtime safety stop active"
@@ -365,6 +372,20 @@ class RuntimeScheduler:
         if reserved_workers is None and not self.queries.find_idle_workers(runtime_state):
             return "no idle worker available"
         return None
+
+    @staticmethod
+    def _record_policy_block(runtime_state: RuntimeState, task: BaseTaskNode, decision: Any) -> None:
+        runtime_task = runtime_state.execution.tasks.get(task.id)
+        if runtime_task is None:
+            runtime_task = TaskRuntime(task_id=task.id, tg_node_id=task.id)
+            runtime_state.register_task(runtime_task)
+        runtime_task.status = (
+            TaskRuntimeStatus.WAITING_APPROVAL
+            if getattr(decision, "decision", None) == "requires_approval"
+            else TaskRuntimeStatus.BLOCKED
+        )
+        runtime_task.metadata["policy_decision"] = decision.model_dump(mode="json")
+        runtime_task.metadata["runtime_blocked_reason"] = getattr(decision, "reason", "policy denied")
 
     def _required_lock_keys(self, runtime_state: RuntimeState, task: BaseTaskNode) -> set[str]:
         return self.locks.expand_policy_lock_keys(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
+from src.core.models.tg import TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 
 
@@ -28,6 +29,7 @@ class GoalValidationWorker(BaseWorkerAgent):
     )
     supported_task_types = frozenset(
         {
+            TaskType.GOAL_CONDITION_VALIDATION.value,
             "goal_reached_verification",
             "target_state_confirmation",
         }
@@ -44,7 +46,7 @@ class GoalValidationWorker(BaseWorkerAgent):
     def execute_task(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> AgentOutput:
         """Execute one goal-validation task and return outcome plus raw result."""
 
-        if task_spec.task_type == "goal_reached_verification":
+        if task_spec.task_type in {TaskType.GOAL_CONDITION_VALIDATION.value, "goal_reached_verification"}:
             raw_result = self._execute_goal_reached_verification(task_spec, agent_input)
         elif task_spec.task_type == "target_state_confirmation":
             raw_result = self._execute_target_state_confirmation(task_spec, agent_input)

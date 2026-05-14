@@ -11,6 +11,8 @@ from typing import Any, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.agents.graph_context import GraphContext, GraphContextBuilder
+from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvice
 from src.core.agents.agent_models import DecisionRecord, new_record_id
 from src.core.agents.agent_protocol import (
     AgentInput,
@@ -29,6 +31,7 @@ from src.core.agents.llm_decision import (
     LLMDecisionValidator,
 )
 from src.core.graph.tg_builder import TaskCandidate
+from src.core.models.tg import TaskType
 from src.core.models.ag import (
     AGEdgeType,
     ActionNode,
@@ -39,6 +42,7 @@ from src.core.models.ag import (
 )
 from src.core.planner.planner import ActionChainCandidate, AttackGraphPlanner, PlanningResult
 from src.core.planner.scorer import HeuristicScorer, ScoringContext
+from src.core.runtime.repetition_detector import RepetitionAction, RepetitionDetector
 
 
 class PlanningContext(BaseModel):
@@ -53,6 +57,11 @@ class PlanningContext(BaseModel):
     runtime_summary: dict[str, Any] = Field(default_factory=dict)
     critic_hints: list[dict[str, Any]] = Field(default_factory=list)
     scorer_config: dict[str, Any] = Field(default_factory=dict)
+    enable_graph_llm_planning: bool = False
+    recent_signals: list[dict[str, Any]] = Field(default_factory=list)
+    repetition_history: list[dict[str, Any]] = Field(default_factory=list)
+    repetition_similarity_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
+    repetition_warn_penalty: float = Field(default=0.2, ge=0.0, le=1.0)
 
 
 class PlanningCandidate(BaseModel):
@@ -131,6 +140,20 @@ class PlannerLLMAdvisor(Protocol):
         """Return optional bounded planner strategy advice."""
 
 
+class GraphLLMPlannerAdvisorProtocol(Protocol):
+    """Optional graph-driven LLM advisor that proposes new task candidates."""
+
+    def advise(
+        self,
+        *,
+        graph_context: GraphContext,
+        goal_refs: Sequence[AGGraphRef],
+        policy_context: dict[str, Any] | None = None,
+        recent_signals: Sequence[dict[str, Any]] | None = None,
+    ) -> GraphLLMPlannerAdvice:
+        """Return validated graph task proposals."""
+
+
 class PlannerAgent(BaseAgent):
     """Read AG plus goals and emit ranked planning decisions only."""
 
@@ -140,10 +163,12 @@ class PlannerAgent(BaseAgent):
         planner: AttackGraphPlanner | None = None,
         scorer: HeuristicScorer | None = None,
         llm_advisor: PlannerLLMAdvisor | None = None,
+        graph_llm_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
     ) -> None:
         self._scorer = scorer or HeuristicScorer()
         self._planner = planner or AttackGraphPlanner(scorer=self._scorer)
         self._llm_advisor = llm_advisor
+        self._graph_llm_advisor = graph_llm_advisor
         self._llm_decision_validator = LLMDecisionValidator()
         super().__init__(
             name=name,
@@ -182,17 +207,24 @@ class PlannerAgent(BaseAgent):
 
         for goal_ref in goal_refs:
             goal_id = self._resolve_goal_node_id(graph=graph, goal_ref=goal_ref)
-            planning_result = self._plan_with_existing_modules(
-                graph=graph,
-                goal_id=goal_id,
-                planning_context=planning_context,
-            )
-            candidate_paths = self._collect_candidate_paths(
-                graph=graph,
-                planning_result=planning_result,
+            candidate_paths = self._graph_llm_candidate_paths(
                 goal_ref=goal_ref,
+                graph=graph,
                 planning_context=planning_context,
+                logs=logs,
             )
+            if not candidate_paths:
+                planning_result = self._plan_with_existing_modules(
+                    graph=graph,
+                    goal_id=goal_id,
+                    planning_context=planning_context,
+                )
+                candidate_paths = self._collect_candidate_paths(
+                    graph=graph,
+                    planning_result=planning_result,
+                    goal_ref=goal_ref,
+                    planning_context=planning_context,
+                )
             scored_candidates = [
                 self._score_candidate(
                     candidate=candidate,
@@ -204,6 +236,11 @@ class PlannerAgent(BaseAgent):
             scored_candidates = self._apply_llm_advice(
                 graph=graph,
                 goal_ref=goal_ref,
+                candidates=scored_candidates,
+                planning_context=planning_context,
+                logs=logs,
+            )
+            scored_candidates = self._apply_repetition_detector(
                 candidates=scored_candidates,
                 planning_context=planning_context,
                 logs=logs,
@@ -302,11 +339,14 @@ class PlannerAgent(BaseAgent):
     ) -> PlanningCandidate:
         """Score one candidate path with scorer and budget/policy adjustments."""
 
-        actions = [
-            graph.get_node(action_id)
-            for action_id in candidate.action_ids
-            if isinstance(graph.get_node(action_id), ActionNode)
-        ]
+        actions: list[Any] = []
+        for action_id in candidate.action_ids:
+            try:
+                node = graph.get_node(action_id)
+            except KeyError:
+                continue
+            if isinstance(node, ActionNode):
+                actions.append(node)
         action_nodes = [action for action in actions if isinstance(action, ActionNode)]
         score = self._scorer.score_path(action_nodes) if action_nodes else candidate.score
         score += self._goal_alignment_bonus(candidate)
@@ -524,6 +564,181 @@ class PlannerAgent(BaseAgent):
             ),
         )
 
+    def _apply_repetition_detector(
+        self,
+        *,
+        candidates: Sequence[PlanningCandidate],
+        planning_context: PlanningContext,
+        logs: list[str],
+    ) -> list[PlanningCandidate]:
+        if not planning_context.repetition_history:
+            return list(candidates)
+
+        detector = RepetitionDetector(
+            planning_context.repetition_history,
+            similarity_threshold=planning_context.repetition_similarity_threshold,
+        )
+        accepted: list[PlanningCandidate] = []
+        rejected_count = 0
+        warned_count = 0
+        for candidate in candidates:
+            task_decisions = [detector.decide(task) for task in candidate.task_candidates]
+            reject_decisions = [decision for decision in task_decisions if decision.action == RepetitionAction.REJECT]
+            if reject_decisions:
+                rejected_count += 1
+                metadata = dict(candidate.metadata)
+                metadata["repetition_decisions"] = [
+                    decision.model_dump(mode="json") for decision in reject_decisions
+                ]
+                logs.append(
+                    "repetition detector rejected "
+                    f"candidate={candidate.candidate_id} matches={self._matched_task_ids(reject_decisions)}"
+                )
+                continue
+
+            warn_decisions = [decision for decision in task_decisions if decision.action == RepetitionAction.WARN]
+            if warn_decisions:
+                warned_count += 1
+                metadata = dict(candidate.metadata)
+                metadata["repetition_decisions"] = [
+                    decision.model_dump(mode="json") for decision in warn_decisions
+                ]
+                accepted.append(
+                    candidate.model_copy(
+                        update={
+                            "score": round(candidate.score - planning_context.repetition_warn_penalty, 6),
+                            "rationale": f"{candidate.rationale}; repetition detector warning applied",
+                            "metadata": metadata,
+                        }
+                    )
+                )
+                continue
+            accepted.append(candidate)
+
+        logs.append(
+            f"repetition detector reviewed {len(candidates)} candidate(s): "
+            f"rejected={rejected_count} warned={warned_count}"
+        )
+        return accepted
+
+    def _graph_llm_candidate_paths(
+        self,
+        *,
+        goal_ref: GraphRef,
+        graph: AttackGraph,
+        planning_context: PlanningContext,
+        logs: list[str],
+    ) -> list[PlanningCandidate]:
+        if not planning_context.enable_graph_llm_planning:
+            return []
+        if self._graph_llm_advisor is None:
+            logs.append("graph llm planning enabled but no advisor configured; using heuristic fallback")
+            return []
+
+        graph_context = GraphContextBuilder().build(
+            attack_graph=graph,
+            policy_context=planning_context.policy_context,
+        )
+        graph_goal_refs = [self._to_ag_ref(goal_ref)]
+        advice = self._graph_llm_advisor.advise(
+            graph_context=graph_context,
+            goal_refs=graph_goal_refs,
+            policy_context=planning_context.policy_context,
+            recent_signals=planning_context.recent_signals,
+        )
+        if not advice.validation.accepted:
+            logs.append(f"graph llm planner proposal rejected: {advice.validation.reason}; using heuristic fallback")
+            return []
+        candidates = self._planning_candidates_from_graph_llm(
+            advice=advice,
+            goal_ref=goal_ref,
+            graph_context=graph_context,
+        )
+        if not candidates:
+            logs.append("graph llm planner returned no task proposals; using heuristic fallback")
+            return []
+        logs.append(
+            "graph llm planner accepted "
+            f"proposal={advice.proposal.proposal_id} tasks={len(candidates)} "
+            f"requires_human_review={advice.validation.requires_human_review}"
+        )
+        return candidates
+
+    def _planning_candidates_from_graph_llm(
+        self,
+        *,
+        advice: GraphLLMPlannerAdvice,
+        goal_ref: GraphRef,
+        graph_context: GraphContext,
+    ) -> list[PlanningCandidate]:
+        candidates: list[PlanningCandidate] = []
+        graph_summary = {
+            "operation_id": graph_context.operation_id,
+            "graph_versions": graph_context.graph_versions,
+            "context_stats": graph_context.context_stats,
+            "frontier_action_count": len(graph_context.frontier_actions),
+            "known_service_count": len(graph_context.known_services),
+            "goal_count": len(graph_context.goals),
+        }
+        for index, task_proposal in enumerate(advice.proposal.task_proposals, start=1):
+            try:
+                task_type = TaskType(task_proposal.task_type)
+            except ValueError:
+                continue
+            task_target_refs = list(task_proposal.target_refs)
+            source_action_id = self._graph_llm_source_action_id(task_proposal.proposal_id, index)
+            task_candidate = TaskCandidate(
+                source_action_id=source_action_id,
+                task_type=task_type,
+                input_bindings={
+                    "graph_llm_proposal_id": advice.proposal.proposal_id,
+                    "graph_llm_task_proposal_id": task_proposal.proposal_id,
+                    **dict(task_proposal.params),
+                },
+                target_refs=task_target_refs,
+                expected_output_refs=[
+                    AGGraphRef(graph="query", ref_id=f"evidence::{task_proposal.proposal_id}", ref_type="ExpectedEvidence")
+                ],
+                estimated_cost=0.1,
+                estimated_risk=task_proposal.estimated_risk,
+                estimated_noise=task_proposal.estimated_noise,
+                goal_relevance=0.8,
+                approval_required=task_proposal.requires_human_review or advice.validation.requires_human_review,
+                tags={"graph_llm_proposal"},
+            )
+            candidates.append(
+                PlanningCandidate(
+                    goal_ref=goal_ref,
+                    action_ids=[source_action_id],
+                    score=self._graph_llm_base_score(task_proposal.priority),
+                    rationale=task_proposal.rationale or "graph llm planner proposed the next graph task",
+                    target_refs=[self._to_agent_ref(ref) for ref in task_target_refs if ref.graph in {"kg", "ag", "tg"}],
+                    task_candidates=[task_candidate],
+                    metadata={
+                        "source": "graph_llm_plan_proposal",
+                        "graph_context_summary": graph_summary,
+                        "graph_llm_proposal_id": advice.proposal.proposal_id,
+                        "graph_llm_task_proposal_id": task_proposal.proposal_id,
+                        "graph_llm_validation": advice.validation.model_dump(mode="json"),
+                        "graph_llm_metadata": dict(advice.llm_metadata),
+                        "graph_llm_rank_adjustments": [
+                            adjustment.model_dump(mode="json")
+                            for adjustment in advice.proposal.rank_adjustments
+                        ],
+                        "requires_human_review": task_candidate.approval_required,
+                    },
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def _graph_llm_source_action_id(task_proposal_id: str, index: int) -> str:
+        return f"graph-llm::{task_proposal_id or index}"
+
+    @staticmethod
+    def _graph_llm_base_score(priority: int) -> float:
+        return round(0.4 + (max(0, min(100, priority)) / 200.0), 6)
+
     @staticmethod
     def _planner_decision_from_advice(advice: PlannerLLMAdvice) -> LLMDecision:
         return LLMDecision(
@@ -605,6 +820,7 @@ class PlannerAgent(BaseAgent):
             "policy_context": self._coerce_mapping(agent_input.raw_payload.get("policy_context")),
             "runtime_summary": self._coerce_mapping(agent_input.raw_payload.get("runtime_summary")),
             "critic_hints": self._coerce_list_of_mappings(agent_input.raw_payload.get("critic_hints")),
+            "recent_signals": self._coerce_list_of_mappings(agent_input.raw_payload.get("recent_signals")),
             **self._coerce_mapping(agent_input.raw_payload.get("planning_context")),
         }
         return PlanningContext.model_validate(payload)
@@ -751,6 +967,10 @@ class PlannerAgent(BaseAgent):
         return GraphRef(graph=scope, ref_id=ref.ref_id, ref_type=ref.ref_type)
 
     @staticmethod
+    def _to_ag_ref(ref: GraphRef) -> AGGraphRef:
+        return AGGraphRef(graph=ref.graph.value, ref_id=ref.ref_id, ref_type=ref.ref_type)
+
+    @staticmethod
     def _coerce_mapping(value: Any) -> dict[str, Any]:
         """Return a shallow mapping copy or an empty mapping."""
 
@@ -767,6 +987,17 @@ class PlannerAgent(BaseAgent):
         items = value if isinstance(value, list) else [value]
         return [dict(item) for item in items if isinstance(item, dict)]
 
+    @staticmethod
+    def _matched_task_ids(decisions: Sequence[Any]) -> list[str]:
+        matched: list[str] = []
+        seen: set[str] = set()
+        for decision in decisions:
+            for task_id in getattr(decision, "matched_task_ids", []):
+                if task_id not in seen:
+                    seen.add(task_id)
+                    matched.append(task_id)
+        return matched
+
 
 __all__ = [
     "PlannerAgent",
@@ -774,6 +1005,7 @@ __all__ = [
     "PlannerLLMAdvisor",
     "PlannerLLMDecision",
     "PlannerLLMRankAdjustment",
+    "GraphLLMPlannerAdvisorProtocol",
     "PlanningCandidate",
     "PlanningContext",
 ]

@@ -16,11 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.agents.agent_pipeline import AgentPipeline
 from src.core.agents.agent_protocol import BaseAgent
 from src.core.agents.critic import CriticAgent, CriticLLMAdvisor
+from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvisor
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig
 from src.core.agents.packy_critic_advisor import PackyCriticAdvisor
 from src.core.agents.packy_planner_advisor import PackyPlannerAdvisor
 from src.core.agents.packy_supervisor_advisor import PackySupervisorAdvisor
-from src.core.agents.planner import PlannerAgent, PlannerLLMAdvisor
+from src.core.agents.planner import GraphLLMPlannerAdvisorProtocol, PlannerAgent, PlannerLLMAdvisor
 from src.core.agents.scheduler_agent import SchedulerAgent
 from src.core.agents.supervisor import SupervisorAgent, SupervisorLLMAdvisor
 from src.core.agents.task_builder import TaskBuilderAgent
@@ -30,6 +31,7 @@ class AgentPipelineAssemblyOptions(BaseModel):
     """Configuration for optional pipeline assembly."""
 
     enable_packy_planner_advisor: bool = False
+    enable_graph_llm_planner_advisor: bool = False
     enable_packy_critic_advisor: bool = False
     enable_packy_supervisor_advisor: bool = False
     include_task_builder: bool = True
@@ -45,6 +47,7 @@ def build_optional_agent_pipeline(
     *,
     options: AgentPipelineAssemblyOptions | None = None,
     planner_llm_advisor: PlannerLLMAdvisor | None = None,
+    graph_llm_planner_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
     critic_llm_advisor: CriticLLMAdvisor | None = None,
     supervisor_llm_advisor: SupervisorLLMAdvisor | None = None,
     llm_client_config: PackyLLMConfig | None = None,
@@ -67,6 +70,13 @@ def build_optional_agent_pipeline(
             if llm_client_config is not None
             else PackyPlannerAdvisor.from_env()
         )
+    resolved_graph_advisor = graph_llm_planner_advisor
+    if resolved_graph_advisor is None and resolved_options.enable_graph_llm_planner_advisor:
+        resolved_graph_advisor = (
+            GraphLLMPlannerAdvisor(client=PackyLLMClient(llm_client_config))
+            if llm_client_config is not None
+            else GraphLLMPlannerAdvisor.from_env()
+        )
     resolved_critic_advisor = critic_llm_advisor
     if resolved_critic_advisor is None and resolved_options.enable_packy_critic_advisor:
         resolved_critic_advisor = (
@@ -82,7 +92,12 @@ def build_optional_agent_pipeline(
             else PackySupervisorAdvisor.from_env()
         )
 
-    agents: list[BaseAgent] = [PlannerAgent(llm_advisor=resolved_advisor)]
+    agents: list[BaseAgent] = [
+        PlannerAgent(
+            llm_advisor=resolved_advisor,
+            graph_llm_advisor=resolved_graph_advisor,
+        )
+    ]
     if resolved_options.include_task_builder:
         agents.append(TaskBuilderAgent())
     if resolved_options.include_scheduler:

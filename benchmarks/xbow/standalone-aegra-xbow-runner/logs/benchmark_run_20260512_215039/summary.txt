@@ -1,0 +1,57 @@
+============================================================
+Aegra Benchmark Results
+============================================================
+Run Date: 2026-05-12 21:50:39
+Duration: 0h 1m
+
+Total Benchmarks: 1
+Successful: 0 (0.0%)
+Failed: 0
+Timeout: 0
+Errors: 1
+
+Cost Analysis:
+  Total Cost: $0.00
+  Average Cost: $0.00
+
+Time Analysis:
+  Average Duration: 1m 34s
+
+Error Details:
+  [ERROR] XBEN-001-24: Docker start failed: Build failed: Dockerfile:3
+
+--------------------
+
+   2 |     
+
+   3 | >>> RUN apt-get update && apt-get install -y apache2 \
+
+   4 | >>>     libapache2-mod-wsgi-py3 \
+
+   5 | >>>     python3 \
+
+   6 | >>>     python3-pip \
+
+   7 | >>>     curl \
+
+   8 | >>>     && apt-get clean \
+
+   9 | >>>     && apt-get autoremove \
+
+  10 | >>>     && rm -rf /var/lib/apt/lists/*
+
+  11 |     
+
+--------------------
+
+target idor_broken_authz_trading_platform: failed to solve: process "/bin/sh -c apt-get update && apt-get install -y apache2     libapache2-mod-wsgi-py3     python3     python3-pip     curl     && apt-get clean     && apt-get autoremove     && rm -rf /var/lib/apt/lists/*" did not complete successfully: exit code: 100
+
+
+
+View build details: docker-desktop://dashboard/build/default/default/uag2nqg5moq01z0khym4670ty
+
+
+
+============================================================
+Detailed logs: logs\benchmark_run_20260512_215039
+============================================================

@@ -37,7 +37,7 @@ from src.core.models.kg import Goal, Host, HostsEdge, Service, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
 from src.core.models.runtime import WorkerRuntime, WorkerStatus
 from src.core.models.tg import TaskType
-from src.core.workers.goal_worker import GoalWorker
+from src.core.workers.goal_validation_worker import GoalValidationWorker
 from src.core.workers.recon_worker import ReconWorker
 
 
@@ -118,8 +118,9 @@ def _build_probe_command(*, host: str, port: int, base_url: str) -> list[str]:
         "status = None\n"
         "reachable = False\n"
         "failure_reason = None\n"
+        "opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))\n"
         "try:\n"
-        "    response = urllib.request.urlopen(url, timeout=5)\n"
+        "    response = opener.open(url, timeout=5)\n"
         "    status = response.getcode()\n"
         "    body = response.read(256).decode('utf-8', 'ignore')\n"
         "    reachable = True\n"
@@ -614,7 +615,7 @@ def test_vulhub_default_orchestrator_pipeline_enables_planner_and_critic_llm_smo
     )
     orchestrator = AppOrchestrator(settings=settings)
     orchestrator.pipeline.registry.register(VulhubReconWorkerAgent(base_url=base_url))
-    orchestrator.pipeline.registry.register(GoalWorker())
+    orchestrator.pipeline.registry.register(GoalValidationWorker())
     orchestrator.create_operation("op-vulhub-default-llm")
 
     state = orchestrator.get_operation_state("op-vulhub-default-llm")
@@ -630,7 +631,7 @@ def test_vulhub_default_orchestrator_pipeline_enables_planner_and_critic_llm_smo
         "op-vulhub-default-llm",
         graph_refs=_build_graph_refs(),
         planner_payload=_build_vulhub_goal_planner_payload(host=host, port=port),
-        feedback_payload={"critic_context": {"low_value_threshold": 1.1}},
+        feedback_payload={"critic_context": {"low_value_threshold": 1.0}},
     )
 
     assert result.planning is not None and result.planning.success is True

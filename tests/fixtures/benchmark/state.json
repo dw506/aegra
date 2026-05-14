@@ -1,0 +1,11 @@
+{
+  "operation_id": "op-benchmark-fixture",
+  "execution": {
+    "metadata": {
+      "cost": 0.0
+    }
+  },
+  "budgets": {
+    "time_budget_used_sec": 3.5
+  }
+}

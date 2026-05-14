@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
 from src.core.agents.critic import CriticAgent, CriticLLMReview
+from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvisor
 from src.core.agents.packy_critic_advisor import PackyCriticAdvisor
 from src.core.agents.packy_llm import PackyLLMConfig
 from src.core.agents.packy_planner_advisor import PackyPlannerAdvisor
@@ -43,6 +44,14 @@ class StaticCriticAdvisor:
         ]
 
 
+class StaticGraphPlannerAdvisor:
+    def advise(self, *, graph_context, goal_refs, policy_context=None, recent_signals=None):  # noqa: ANN001
+        del graph_context, goal_refs, policy_context, recent_signals
+        from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvice
+
+        return GraphLLMPlannerAdvice.empty(reason="not used by this assembly test")
+
+
 def _build_goal_focused_kg() -> KnowledgeGraph:
     kg = KnowledgeGraph()
     kg.add_node(Host(id="host-1", label="Gateway", status=EntityStatus.VALIDATED, confidence=0.95))
@@ -78,6 +87,7 @@ def test_optional_pipeline_builder_keeps_default_planner_behavior_without_packy(
 
     assert isinstance(planner, PlannerAgent)
     assert planner._llm_advisor is None  # noqa: SLF001
+    assert planner._graph_llm_advisor is None  # noqa: SLF001
 
 
 def test_optional_pipeline_builder_can_inject_explicit_planner_advisor() -> None:
@@ -96,6 +106,16 @@ def test_optional_pipeline_builder_can_inject_explicit_planner_advisor() -> None
     candidate = result.final_output.decisions[0]["payload"]["planning_candidate"]
     assert candidate["metadata"]["llm_advice"]["metadata"]["reason"] == "goal_alignment"
     assert "llm 认为该候选最贴近目标" in result.final_output.decisions[0]["rationale"]
+
+
+def test_optional_pipeline_builder_can_inject_explicit_graph_llm_planner_advisor() -> None:
+    graph_advisor = StaticGraphPlannerAdvisor()
+    pipeline = build_optional_agent_pipeline(graph_llm_planner_advisor=graph_advisor)
+
+    planner = pipeline.registry.get("planner_agent")
+
+    assert isinstance(planner, PlannerAgent)
+    assert planner._graph_llm_advisor is graph_advisor  # noqa: SLF001
 
 
 def test_optional_pipeline_builder_can_enable_packy_via_env_when_factory_is_monkeypatched(
@@ -135,6 +155,29 @@ def test_optional_pipeline_builder_can_use_explicit_llm_client_config_without_en
     assert isinstance(planner, PlannerAgent)
     assert planner._llm_advisor is not None  # noqa: SLF001
     assert planner._llm_advisor._client.config.model == "gpt-5.4"  # noqa: SLF001
+
+
+def test_optional_pipeline_builder_can_enable_graph_llm_advisor_with_explicit_config_without_env(monkeypatch) -> None:
+    def fail_from_env(cls):  # noqa: ANN001
+        raise AssertionError("from_env should not be called when llm_client_config is provided")
+
+    monkeypatch.setattr(GraphLLMPlannerAdvisor, "from_env", classmethod(fail_from_env))
+
+    pipeline = build_optional_agent_pipeline(
+        options=AgentPipelineAssemblyOptions(enable_graph_llm_planner_advisor=True),
+        llm_client_config=PackyLLMConfig(
+            api_key="graph-planner-key",
+            base_url="https://graph-planner.example/v1",
+            model="gpt-5.4",
+            timeout_sec=45.0,
+        ),
+    )
+
+    planner = pipeline.registry.get("planner_agent")
+
+    assert isinstance(planner, PlannerAgent)
+    assert planner._graph_llm_advisor is not None  # noqa: SLF001
+    assert planner._graph_llm_advisor._client.config.model == "gpt-5.4"  # noqa: SLF001
 
 
 def test_optional_pipeline_builder_can_inject_explicit_critic_advisor() -> None:

@@ -168,3 +168,100 @@ def test_llm_decision_history_query_returns_recent_n(tmp_path) -> None:
     history = orchestrator.get_llm_decision_history("op-history", limit=2)
 
     assert [item["cycle_index"] for item in history] == [2, 3]
+
+
+def test_llm_decision_history_query_filters_by_agent_kind_and_accepted(tmp_path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.create_operation("op-history")
+    planner_output = AgentOutput(logs=["planner llm strategy decision rejected: invalid candidate"])
+    supervisor_output = AgentOutput(
+        decisions=[
+            {
+                "decision_type": "supervisor_strategy",
+                "payload": {
+                    "supervisor_decision": {"strategy": "pause_for_review"},
+                    "llm_decision_validation": _validation(accepted=True),
+                },
+            }
+        ]
+    )
+
+    orchestrator.record_llm_decision_cycle("op-history", cycle_index=1, cycle=_cycle(AgentKind.PLANNER, planner_output))
+    orchestrator.record_llm_decision_cycle("op-history", cycle_index=2, cycle=_cycle(AgentKind.SUPERVISOR, supervisor_output))
+
+    supervisor_history = orchestrator.get_llm_decision_history("op-history", agent_kind="supervisor", accepted=True)
+    rejected_history = orchestrator.get_llm_decision_history("op-history", accepted=False)
+
+    assert len(supervisor_history) == 1
+    assert supervisor_history[0]["agent_kind"] == "supervisor"
+    assert supervisor_history[0]["accepted"] is True
+    assert len(rejected_history) == 1
+    assert rejected_history[0]["agent_kind"] == "planner"
+    assert rejected_history[0]["accepted"] is False
+
+
+def test_operation_audit_report_query_reuses_runtime_report(tmp_path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.create_operation("op-history")
+    output = AgentOutput(logs=["planner llm strategy decision rejected: invalid candidate"])
+    orchestrator.record_llm_decision_cycle("op-history", cycle_index=1, cycle=_cycle(AgentKind.PLANNER, output))
+    state = orchestrator.get_operation_state("op-history")
+    state.execution.metadata["control_cycle_history"] = [
+        {"cycle_index": 1, "stopped": False},
+        {"cycle_index": 2, "stopped": True},
+    ]
+    orchestrator.runtime_store.save_state(state)
+
+    report = orchestrator.get_operation_audit_report("op-history", limit=1, agent_kind="planner", accepted=False)
+    control_history = orchestrator.get_control_cycle_history("op-history", limit=1)
+
+    assert report["operation_id"] == "op-history"
+    assert report["filters"] == {"limit": 1, "agent_kind": "planner", "accepted": False}
+    assert [item["cycle_index"] for item in report["llm_decision_history"]] == [1]
+    assert [item["cycle_index"] for item in report["control_cycle_history"]] == [2]
+    assert control_history == [{"cycle_index": 2, "stopped": True}]
+
+
+def test_orchestrator_history_queries_return_sanitized_views(tmp_path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.create_operation("op-history")
+    state = orchestrator.get_operation_state("op-history")
+    state.execution.metadata["llm_decision_history"] = [
+        {
+            "cycle_index": 1,
+            "agent_kind": "supervisor",
+            "advisor_type": "injected",
+            "enabled": True,
+            "configured": True,
+            "decision_type": "supervisor_strategy",
+            "accepted": False,
+            "prompt": "full prompt should not leak",
+            "raw_response": "raw response should not leak",
+            "api_key": "secret-key",
+        }
+    ]
+    state.execution.metadata["control_cycle_history"] = [
+        {
+            "cycle_index": 1,
+            "supervisor_control_strategy": {
+                "strategy": "deterministic_fallback",
+                "accepted": False,
+                "reason": "authorization: Bearer secret-token",
+                "raw_response": "raw control response should not leak",
+            },
+        }
+    ]
+    orchestrator.runtime_store.save_state(state)
+
+    llm_history = orchestrator.get_llm_decision_history("op-history")
+    control_history = orchestrator.get_control_cycle_history("op-history")
+    combined = f"{llm_history} {control_history}"
+
+    assert "secret-key" not in combined
+    assert "full prompt should not leak" not in combined
+    assert "raw response should not leak" not in combined
+    assert "Bearer secret-token" not in combined
+    assert "raw control response should not leak" not in combined
+    assert llm_history[0]["prompt"] == "[REDACTED]"
+    assert llm_history[0]["raw_response"] == "[REDACTED]"
+    assert control_history[0]["supervisor_control_strategy"]["raw_response"] == "[REDACTED]"

@@ -383,6 +383,285 @@ class MasscanAdapter(ProbeAdapter):
         )
 
 
+class NucleiSafeTemplateAdapter(ProbeAdapter):
+    """Adapter for nuclei JSONL output constrained to safe templates by default."""
+
+    adapter_name = "nuclei"
+    blocked_tags = {"destructive", "intrusive", "exploit"}
+
+    def can_handle(self, *, mode: str) -> bool:
+        return mode in {"vulnerability_validation", "vulnerability_validation_result", "service_validation", "service_validation_result"}
+
+    def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
+        blocked = self._blocked_template_tags(metadata)
+        if blocked:
+            raise ProbeAdapterUnavailable(f"nuclei template rejected by safe policy: {', '.join(sorted(blocked))}")
+        command = [str(metadata.get("nuclei_path", "nuclei")), "-u", str(metadata.get("target_url", target_hint)), "-jsonl"]
+        templates = metadata.get("nuclei_templates") or metadata.get("templates")
+        if isinstance(templates, list):
+            for template in templates:
+                command.extend(["-t", str(template)])
+        elif isinstance(templates, str) and templates.strip():
+            command.extend(["-t", templates.strip()])
+        tags = metadata.get("nuclei_include_tags") or metadata.get("safe_tags")
+        if isinstance(tags, list) and tags:
+            command.extend(["-tags", ",".join(str(tag) for tag in tags)])
+        return command
+
+    def parse_output(
+        self,
+        *,
+        execution_result: ToolExecutionResult,
+        target_hint: str,
+        mode: str,
+        metadata: dict[str, Any],
+    ) -> ParsedProbeResult:
+        blocked = self._blocked_template_tags(metadata)
+        if blocked:
+            return ParsedProbeResult(
+                summary=f"nuclei template rejected for {target_hint}",
+                confidence=0.0,
+                reachable=False,
+                success=False,
+                blocked=True,
+                blocked_reason="unsafe_nuclei_template",
+                evidence={"adapter": self.adapter_name, "blocked_tags": sorted(blocked), "tool": execution_result.to_payload()},
+                runtime_hints={"blocked_by": "tool_policy"},
+            )
+        if execution_result.category == "command_not_found":
+            return self.unavailable_result(target_hint=target_hint, mode=mode, reason=execution_result.error_message or "")
+        findings: list[dict[str, Any]] = []
+        for item in _json_lines(execution_result.stdout):
+            info = item.get("info") if isinstance(item.get("info"), dict) else {}
+            findings.append(
+                {
+                    "template_id": item.get("template-id") or item.get("template_id"),
+                    "name": info.get("name") or item.get("matcher-name"),
+                    "severity": info.get("severity"),
+                    "matched_at": item.get("matched-at") or item.get("host") or target_hint,
+                    "tags": sorted(_coerce_tags(info.get("tags"))),
+                }
+            )
+        payload = {
+            "summary": f"nuclei safe scan found {len(findings)} finding(s) for {target_hint}",
+            "confidence": float(metadata.get("confidence", 0.8 if findings else 0.55)),
+            "reachable": execution_result.success or bool(findings),
+            "success": execution_result.success,
+            "partial_success": bool(findings) and not execution_result.success,
+            "failure_reason": None if execution_result.success else execution_result.stderr.strip() or execution_result.error_message,
+            "entities": [
+                {
+                    "id": f"vuln::{finding.get('template_id') or index}::{target_hint}",
+                    "type": "VulnerabilityCandidate",
+                    **finding,
+                }
+                for index, finding in enumerate(findings, start=1)
+            ],
+            "evidence": {"adapter": self.adapter_name, "findings": findings, "tool": execution_result.to_payload()},
+            "runtime_hints": {"nuclei_findings": len(findings), "safe_templates_only": True},
+        }
+        return _normalize_payload(
+            payload=payload,
+            target_hint=target_hint,
+            mode=mode,
+            adapter_name=self.adapter_name,
+            execution_result=execution_result,
+            default_confidence=0.7,
+        )
+
+    @classmethod
+    def _blocked_template_tags(cls, metadata: dict[str, Any]) -> set[str]:
+        if bool(metadata.get("allow_unsafe_nuclei_templates", False)):
+            return set()
+        tags = set()
+        for key in ("nuclei_template_tags", "template_tags", "tags"):
+            tags.update(_coerce_tags(metadata.get(key)))
+        return {tag for tag in tags if tag in cls.blocked_tags}
+
+
+class HttpxFingerprintAdapter(ProbeAdapter):
+    """Adapter for httpx JSONL fingerprint output."""
+
+    adapter_name = "httpx"
+
+    def can_handle(self, *, mode: str) -> bool:
+        return mode in {"service_validation", "service_validation_result", "fingerprint", "fingerprint_result"}
+
+    def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
+        command = [str(metadata.get("httpx_path", "httpx")), "-json", "-title", "-tech-detect", "-status-code"]
+        command.extend(["-u", str(metadata.get("target_url", target_hint))])
+        rate_limit = metadata.get("rate_limit") or metadata.get("httpx_rate_limit")
+        if rate_limit is not None:
+            command.extend(["-rate-limit", str(rate_limit)])
+        return command
+
+    def parse_output(
+        self,
+        *,
+        execution_result: ToolExecutionResult,
+        target_hint: str,
+        mode: str,
+        metadata: dict[str, Any],
+    ) -> ParsedProbeResult:
+        item = next(iter(_json_lines(execution_result.stdout)), {})
+        technologies = item.get("tech") if isinstance(item.get("tech"), list) else []
+        status_code = item.get("status-code") or item.get("status_code")
+        url = item.get("url") or item.get("input") or target_hint
+        service = {
+            "id": metadata.get("service_id") or str(url),
+            "type": "Service",
+            "host_id": metadata.get("host_id") or str(url),
+            "port": metadata.get("port"),
+            "protocol": "https" if str(url).startswith("https://") else "http",
+            "service_name": "http",
+            "banner": item.get("webserver"),
+            "title": item.get("title"),
+            "status_code": status_code,
+            "technologies": technologies,
+            "validated": bool(status_code),
+        }
+        payload = {
+            "summary": f"httpx fingerprint completed for {url}",
+            "confidence": float(metadata.get("confidence", 0.82 if item else 0.45)),
+            "reachable": bool(status_code) or execution_result.success,
+            "success": execution_result.success and bool(item),
+            "partial_success": bool(item) and not execution_result.success,
+            "service": service if item else {},
+            "entities": [service] if item else [],
+            "evidence": {"adapter": self.adapter_name, "fingerprint": item, "tool": execution_result.to_payload()},
+            "runtime_hints": {"http_status": status_code, "technologies": technologies},
+        }
+        return _normalize_payload(
+            payload=payload,
+            target_hint=target_hint,
+            mode=mode,
+            adapter_name=self.adapter_name,
+            execution_result=execution_result,
+            default_confidence=0.7,
+        )
+
+
+class WhatWebFingerprintAdapter(ProbeAdapter):
+    """Adapter for WhatWeb JSON fingerprint output."""
+
+    adapter_name = "whatweb"
+
+    def can_handle(self, *, mode: str) -> bool:
+        return mode in {"service_validation", "service_validation_result", "fingerprint", "fingerprint_result"}
+
+    def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
+        return [str(metadata.get("whatweb_path", "whatweb")), "--log-json=-", str(metadata.get("target_url", target_hint))]
+
+    def parse_output(
+        self,
+        *,
+        execution_result: ToolExecutionResult,
+        target_hint: str,
+        mode: str,
+        metadata: dict[str, Any],
+    ) -> ParsedProbeResult:
+        decoded = _json_payload(execution_result.stdout)
+        records = decoded if isinstance(decoded, list) else ([decoded] if isinstance(decoded, dict) else [])
+        record = records[0] if records else {}
+        plugins = record.get("plugins") if isinstance(record.get("plugins"), dict) else {}
+        plugin_names = sorted(str(name) for name in plugins)
+        target = record.get("target") or target_hint
+        service = {
+            "id": metadata.get("service_id") or str(target),
+            "type": "Service",
+            "host_id": metadata.get("host_id") or str(target),
+            "service_name": "http",
+            "plugins": plugin_names,
+            "validated": bool(record),
+        }
+        payload = {
+            "summary": f"whatweb fingerprint completed for {target}",
+            "confidence": float(metadata.get("confidence", 0.78 if record else 0.45)),
+            "reachable": bool(record) or execution_result.success,
+            "success": execution_result.success and bool(record),
+            "partial_success": bool(record) and not execution_result.success,
+            "service": service if record else {},
+            "entities": [service] if record else [],
+            "evidence": {"adapter": self.adapter_name, "fingerprint": record, "tool": execution_result.to_payload()},
+            "runtime_hints": {"whatweb_plugins": plugin_names},
+        }
+        return _normalize_payload(
+            payload=payload,
+            target_hint=target_hint,
+            mode=mode,
+            adapter_name=self.adapter_name,
+            execution_result=execution_result,
+            default_confidence=0.65,
+        )
+
+
+class SSLScanAdapter(ProbeAdapter):
+    """Adapter for sslscan output."""
+
+    adapter_name = "sslscan"
+    _subject_re = re.compile(r"Subject:\s*(?P<subject>.+)")
+    _issuer_re = re.compile(r"Issuer:\s*(?P<issuer>.+)")
+    _protocol_re = re.compile(r"^\s*(?P<protocol>TLSv[0-9.]+|SSLv[0-9.]+)\s+(?P<status>enabled|disabled)", re.MULTILINE | re.IGNORECASE)
+
+    def can_handle(self, *, mode: str) -> bool:
+        return mode in {"service_validation", "service_validation_result", "fingerprint", "fingerprint_result"}
+
+    def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
+        port = metadata.get("port") or metadata.get("service_port")
+        target = f"{target_hint}:{port}" if port and ":" not in target_hint else target_hint
+        return [str(metadata.get("sslscan_path", "sslscan")), "--no-colour", str(target)]
+
+    def parse_output(
+        self,
+        *,
+        execution_result: ToolExecutionResult,
+        target_hint: str,
+        mode: str,
+        metadata: dict[str, Any],
+    ) -> ParsedProbeResult:
+        stdout = execution_result.stdout.strip()
+        subject = _first_match(self._subject_re, stdout, "subject")
+        issuer = _first_match(self._issuer_re, stdout, "issuer")
+        protocols = [
+            {"protocol": match.group("protocol"), "status": match.group("status").lower()}
+            for match in self._protocol_re.finditer(stdout)
+        ]
+        service = {
+            "id": metadata.get("service_id") or target_hint,
+            "type": "Service",
+            "host_id": metadata.get("host_id") or target_hint.split(":", 1)[0],
+            "service_name": "tls",
+            "tls_subject": subject,
+            "tls_issuer": issuer,
+            "tls_protocols": protocols,
+            "validated": bool(subject or issuer or protocols),
+        }
+        payload = {
+            "summary": f"sslscan fingerprint completed for {target_hint}",
+            "confidence": float(metadata.get("confidence", 0.8 if service["validated"] else 0.45)),
+            "reachable": service["validated"] or execution_result.success,
+            "success": execution_result.success and service["validated"],
+            "partial_success": service["validated"] and not execution_result.success,
+            "service": service if service["validated"] else {},
+            "entities": [service] if service["validated"] else [],
+            "evidence": {
+                "adapter": self.adapter_name,
+                "certificate": {"subject": subject, "issuer": issuer, "protocols": protocols},
+                "stdout_excerpt": stdout[:400],
+                "tool": execution_result.to_payload(),
+            },
+            "runtime_hints": {"tls_protocols": protocols},
+        }
+        return _normalize_payload(
+            payload=payload,
+            target_hint=target_hint,
+            mode=mode,
+            adapter_name=self.adapter_name,
+            execution_result=execution_result,
+            default_confidence=0.65,
+        )
+
+
 def _normalize_payload(
     *,
     payload: dict[str, Any],
@@ -479,11 +758,59 @@ def _normalize_payload(
     )
 
 
+def _json_payload(value: str) -> Any:
+    try:
+        return json.loads(value.strip())
+    except json.JSONDecodeError:
+        return None
+
+
+def _json_lines(value: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in value.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        decoded = _json_payload(line)
+        if isinstance(decoded, dict):
+            records.append(decoded)
+    if not records:
+        decoded = _json_payload(value)
+        if isinstance(decoded, dict):
+            records.append(decoded)
+        elif isinstance(decoded, list):
+            records.extend(item for item in decoded if isinstance(item, dict))
+    return records
+
+
+def _coerce_tags(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        raw_items = re.split(r"[,;\s]+", value)
+    elif isinstance(value, list | tuple | set):
+        raw_items = [str(item) for item in value]
+    else:
+        raw_items = [str(value)]
+    return {item.strip().lower() for item in raw_items if item and item.strip()}
+
+
+def _first_match(pattern: re.Pattern[str], value: str, group_name: str) -> str | None:
+    match = pattern.search(value)
+    if not match:
+        return None
+    return match.group(group_name).strip()
+
+
 __all__ = [
     "CustomProbeAdapter",
+    "HttpxFingerprintAdapter",
     "MasscanAdapter",
     "NmapAdapter",
+    "NucleiSafeTemplateAdapter",
     "ParsedProbeResult",
     "ProbeAdapter",
     "ProbeAdapterUnavailable",
+    "SSLScanAdapter",
+    "WhatWebFingerprintAdapter",
 ]

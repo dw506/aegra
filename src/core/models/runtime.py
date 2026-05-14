@@ -44,6 +44,7 @@ class TaskRuntimeStatus(str, Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     BLOCKED = "blocked"
+    WAITING_APPROVAL = "waiting_approval"
     SKIPPED = "skipped"
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"

@@ -11,9 +11,12 @@ from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, P
 from src.core.agents.agent_protocol import AgentKind, GraphRef as AgentGraphRef, GraphScope
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
 from src.core.models.events import AgentTaskResult
-from src.core.models.runtime import OperationRuntime, RuntimeState, RuntimeStatus, utc_now
+from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, utc_now
+from src.core.models.scope import Asset, Engagement
 from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
+from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import append_operation_log, mark_clean_shutdown, mark_unclean_shutdown, record_phase_checkpoint
+from src.core.runtime.report_generator import ReportFormat, ReportGenerator
 from src.core.runtime.llm_history import (
     LLMDecisionHistoryRecord,
     append_llm_decision_history,
@@ -25,15 +28,38 @@ from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, Runti
 
 
 class TargetHost(BaseModel):
-    """Small inventory record used by the first-stage control plane."""
+    """Inventory record for host/domain/cidr/url/service target import."""
 
     model_config = ConfigDict(extra="forbid")
 
-    address: str = Field(min_length=1)
+    address: str | None = None
+    kind: str = "host"
+    value: str | None = None
     hostname: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    protocol: str | None = None
+    url: str | None = None
     platform: str | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def to_asset(self) -> Asset:
+        value = self.value or self.address or self.url or self.hostname
+        if not value:
+            raise ValueError("target requires one of value, address, url or hostname")
+        return Asset(
+            asset_id=str(self.metadata.get("asset_id")) if self.metadata.get("asset_id") else None,
+            kind=self.kind,  # type: ignore[arg-type]
+            value=value,
+            address=self.address,
+            hostname=self.hostname,
+            port=self.port,
+            protocol=self.protocol,
+            url=self.url,
+            platform=self.platform,
+            tags=list(self.tags),
+            metadata=dict(self.metadata),
+        )
 
 
 class OperationSummary(BaseModel):
@@ -139,12 +165,29 @@ class AppOrchestrator:
         """Persist the current target inventory in operation metadata."""
 
         state = self.runtime_store.snapshot(operation_id)
-        inventory = {target.address: target for target in targets}
+        assets = [target.to_asset() for target in targets]
+        inventory = {asset.normalized_value: asset for asset in assets}
         ordered_targets = [inventory[address] for address in sorted(inventory)]
         state.execution.metadata["target_inventory"] = [
             target.model_dump(mode="json")
             for target in ordered_targets
         ]
+        policy_payload = dict(state.execution.metadata.get("runtime_policy", {}))
+        policy_payload["engagement"] = Engagement(
+            engagement_id=f"engagement::{operation_id}",
+            assets=ordered_targets,
+            scope_rules=[
+                {
+                    "rule_id": f"allow::{index}",
+                    "action": "allow",
+                    "kind": asset.kind,
+                    "value": asset.normalized_value,
+                    "reason": "imported target",
+                }
+                for index, asset in enumerate(ordered_targets)
+            ],
+        ).model_dump(mode="json")
+        state.execution.metadata["runtime_policy"] = policy_payload
         state.execution.metadata["target_count"] = len(ordered_targets)
         state.execution.summary = f"{len(ordered_targets)} targets imported"
         state.last_updated = utc_now()
@@ -229,11 +272,75 @@ class AppOrchestrator:
 
         return self.runtime_store.export_audit_report(operation_id)
 
-    def get_llm_decision_history(self, operation_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    def get_operation_audit_report(
+        self,
+        operation_id: str,
+        *,
+        limit: int = 100,
+        agent_kind: str | None = None,
+        accepted: bool | None = None,
+    ) -> dict[str, Any]:
+        """Return the operation-level LLM/control observability report."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        return build_operation_audit_report(
+            state,
+            limit=limit,
+            agent_kind=agent_kind,
+            accepted=accepted,
+        )
+
+    def get_control_cycle_history(self, operation_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent operation control cycle records."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        report = build_operation_audit_report(state, limit=limit)
+        return list(report["control_cycle_history"])
+
+    def get_llm_decision_history(
+        self,
+        operation_id: str,
+        *,
+        limit: int = 20,
+        agent_kind: str | None = None,
+        accepted: bool | None = None,
+    ) -> list[dict[str, Any]]:
         """Return recent operation-level LLM decision history entries."""
 
         state = self.runtime_store.snapshot(operation_id)
-        return recent_llm_decision_history(state, limit=limit)
+        report = build_operation_audit_report(
+            state,
+            limit=limit,
+            agent_kind=agent_kind,
+            accepted=accepted,
+        )
+        return list(report["llm_decision_history"])
+
+    def list_findings(self, operation_id: str) -> list[dict[str, Any]]:
+        """Return sanitized findings for one operation."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        report = ReportGenerator().build_report(state)
+        return list(report["findings"])
+
+    def list_evidence(self, operation_id: str) -> list[dict[str, Any]]:
+        """Return sanitized evidence artifacts for one operation."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        report = ReportGenerator().build_report(state)
+        return list(report["evidence"])
+
+    def get_findings_graph(self, operation_id: str) -> dict[str, Any]:
+        """Return a lightweight traceability graph for findings and evidence."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        return ReportGenerator().graph(state)
+
+    def export_findings_report(self, operation_id: str, *, format: ReportFormat = "json") -> dict[str, Any] | str:
+        """Export a sanitized findings report."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        return ReportGenerator().export(state, format=format)
 
     def record_llm_decision_cycle(
         self,
@@ -481,11 +588,33 @@ class AppOrchestrator:
         feedback_payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
         max_cycles: int = 5,
+        max_replans: int = 3,
+        consecutive_llm_rejections: int = 3,
+        stop_when_quiescent: bool = True,
     ) -> list[OperationCycleResult]:
         """持续运行主循环，直到静止或达到上限。"""
 
         results: list[OperationCycleResult] = []
+        llm_rejection_count = 0
+        supervisor_replan_count = 0
         for _ in range(max_cycles):
+            state_before = self.runtime_store.snapshot(operation_id)
+            if self._budget_guard_triggered(state_before):
+                guard_cycle_index = self._next_cycle_index(state_before)
+                self._record_control_strategy(
+                    state_before,
+                    cycle_index=guard_cycle_index,
+                    strategy="budget_guard",
+                    accepted=True,
+                    reason="budget guard triggered",
+                )
+                self._pause_for_review(
+                    state_before,
+                    reason="budget guard triggered",
+                    cycle_index=guard_cycle_index,
+                )
+                self.runtime_store.save_state(state_before)
+                break
             cycle_result = self.run_operation_cycle(
                 operation_id,
                 graph_refs=graph_refs,
@@ -495,9 +624,135 @@ class AppOrchestrator:
                 context=context,
             )
             results.append(cycle_result)
-            if cycle_result.stopped:
+            supervisor_control = self._apply_supervisor_control_strategy(
+                operation_id=operation_id,
+                graph_refs=graph_refs,
+                cycle_result=cycle_result,
+                context=context,
+                max_replans=max_replans,
+                supervisor_replan_count=supervisor_replan_count,
+            )
+            if supervisor_control.get("llm_rejected"):
+                llm_rejection_count += 1
+            elif supervisor_control.get("llm_accepted"):
+                llm_rejection_count = 0
+            if supervisor_control.get("replan_requested"):
+                supervisor_replan_count += 1
+            if llm_rejection_count >= consecutive_llm_rejections:
+                state = self.runtime_store.snapshot(operation_id)
+                self._record_control_strategy(
+                    state,
+                    cycle_index=cycle_result.cycle_index,
+                    strategy="deterministic_fallback",
+                    accepted=False,
+                    reason="consecutive llm rejections threshold reached",
+                )
+                self.runtime_store.save_state(state)
+                llm_rejection_count = 0
+            if supervisor_control.get("stop"):
+                break
+            if stop_when_quiescent and cycle_result.stopped:
                 break
         return results
+
+    def stop_operation(self, operation_id: str, *, reason: str = "manual_stop") -> RuntimeState:
+        """Request a conservative operation stop without dispatching new work."""
+
+        state = self.runtime_store.snapshot(operation_id)
+        state.operation_status = RuntimeStatus.CANCELLED
+        state.execution.status = RuntimeStatus.CANCELLED
+        state.execution.metadata["stop_request"] = {
+            "reason": reason,
+            "requested_at": utc_now().isoformat(),
+        }
+        state.execution.summary = f"operation stopped: {reason}"
+        state.last_updated = utc_now()
+        self._log_operation_event(
+            state,
+            event_type="operation_stopped",
+            stop_reason=reason,
+            status=RuntimeStatus.CANCELLED.value,
+        )
+        self.runtime_store.save_state(state)
+        return state.model_copy(deep=True)
+
+    def _apply_supervisor_control_strategy(
+        self,
+        *,
+        operation_id: str,
+        graph_refs: list[AgentGraphRef],
+        cycle_result: OperationCycleResult,
+        context: dict[str, Any] | None,
+        max_replans: int,
+        supervisor_replan_count: int,
+    ) -> dict[str, Any]:
+        """Apply a validated supervisor LLM strategy between deterministic cycles."""
+
+        pipeline = self._require_pipeline()
+        if not self.settings.enable_supervisor_llm_advisor:
+            return {}
+        if not pipeline.registry.list_by_kind(AgentKind.SUPERVISOR):
+            return {}
+
+        state = self.runtime_store.snapshot(operation_id)
+        supervisor_cycle = pipeline.run_supervisor_cycle(
+            operation_id=operation_id,
+            graph_refs=graph_refs,
+            supervisor_payload=self._supervisor_payload_from_cycle(state, cycle_result),
+            context=context,
+        )
+        self._append_llm_decision_history_from_cycle(
+            state,
+            cycle_index=cycle_result.cycle_index,
+            cycle=supervisor_cycle,
+        )
+        decision = self._validated_supervisor_strategy(supervisor_cycle)
+        if decision is None:
+            self._record_control_strategy(
+                state,
+                cycle_index=cycle_result.cycle_index,
+                strategy="deterministic_fallback",
+                accepted=False,
+                reason="supervisor llm strategy unavailable or rejected",
+            )
+            self.runtime_store.save_state(state)
+            return {"llm_rejected": True}
+
+        strategy = decision["strategy"]
+        self._record_control_strategy(
+            state,
+            cycle_index=cycle_result.cycle_index,
+            strategy=strategy,
+            accepted=True,
+            reason=str(decision.get("rationale") or "accepted supervisor strategy"),
+        )
+        result: dict[str, Any] = {"llm_accepted": True}
+        if strategy == "pause_for_review" or bool(decision.get("requires_human_review")):
+            self._pause_for_review(
+                state,
+                reason=str(decision.get("rationale") or "supervisor requested human review"),
+                cycle_index=cycle_result.cycle_index,
+            )
+            result["stop"] = True
+        elif strategy == "request_replan":
+            if supervisor_replan_count >= max_replans:
+                self._pause_for_review(
+                    state,
+                    reason="max supervisor replans reached",
+                    cycle_index=cycle_result.cycle_index,
+                )
+                result["stop"] = True
+            else:
+                self._request_supervisor_replan(
+                    state,
+                    cycle_index=cycle_result.cycle_index,
+                    rationale=str(decision.get("rationale") or "supervisor requested existing replan flow"),
+                )
+                result["replan_requested"] = True
+        elif strategy == "stop_when_quiescent" and cycle_result.stopped:
+            result["stop"] = True
+        self.runtime_store.save_state(state)
+        return result
 
     def resume_operation(self, operation_id: str, *, reason: str = "manual_resume") -> RuntimeState:
         """Normalize in-flight runtime state so the operation can resume safely."""
@@ -509,6 +764,167 @@ class AppOrchestrator:
         self._log_operation_event(state, event_type="operation_resumed", **summary)
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
+
+    def _supervisor_payload_from_cycle(
+        self,
+        state: RuntimeState,
+        cycle_result: OperationCycleResult,
+    ) -> dict[str, Any]:
+        last_control_cycle = self._mapping(state.execution.metadata.get("last_control_cycle"))
+        return {
+            "runtime_summary": self._runtime_summary(state),
+            "last_control_cycle": last_control_cycle,
+            "planner_summary": {
+                "success": cycle_result.planning.success if cycle_result.planning is not None else False,
+                "step_count": len(cycle_result.planning.steps) if cycle_result.planning is not None else 0,
+            },
+            "critic_summary": {
+                "success": cycle_result.feedback.success if cycle_result.feedback is not None else False,
+                "finding_count": self._critic_finding_count(cycle_result.feedback),
+                "replan_request_count": len(state.replan_requests),
+            },
+            "budget_summary": self._budget_summary(state),
+        }
+
+    def _validated_supervisor_strategy(self, cycle: PipelineCycleResult) -> dict[str, Any] | None:
+        for decision in cycle.final_output.decisions:
+            payload = self._mapping(decision.get("payload"))
+            validation = self._mapping(payload.get("llm_decision_validation"))
+            if not bool(payload.get("control_only")):
+                continue
+            if not bool(payload.get("llm_adopted")) or not bool(validation.get("accepted")):
+                continue
+            supervisor_decision = self._mapping(payload.get("supervisor_decision"))
+            strategy = supervisor_decision.get("strategy")
+            if strategy not in {
+                "continue_planning",
+                "continue_execution",
+                "request_replan",
+                "pause_for_review",
+                "stop_when_quiescent",
+            }:
+                continue
+            return {
+                "strategy": str(strategy),
+                "rationale": supervisor_decision.get("rationale"),
+                "requires_human_review": bool(supervisor_decision.get("requires_human_review", False)),
+            }
+        return None
+
+    def _record_control_strategy(
+        self,
+        state: RuntimeState,
+        *,
+        cycle_index: int,
+        strategy: str,
+        accepted: bool,
+        reason: str,
+    ) -> None:
+        record = {
+            "cycle_index": cycle_index,
+            "strategy": strategy,
+            "accepted": accepted,
+            "reason": reason,
+            "created_at": utc_now().isoformat(),
+        }
+        state.execution.metadata["last_supervisor_control_strategy"] = record
+        history = state.execution.metadata.setdefault("control_cycle_history", [])
+        if history and isinstance(history[-1], dict) and history[-1].get("cycle_index") == cycle_index:
+            history[-1]["supervisor_control_strategy"] = record
+        else:
+            history.append(
+                {
+                    "cycle_index": cycle_index,
+                    "cycle_type": "control_guard",
+                    "stopped": True,
+                    "stop_reason": reason,
+                    "supervisor_control_strategy": record,
+                }
+            )
+        self._log_operation_event(
+            state,
+            event_type="supervisor_control_strategy_recorded",
+            cycle_index=cycle_index,
+            strategy=strategy,
+            accepted=accepted,
+            reason=reason,
+        )
+
+    def _pause_for_review(self, state: RuntimeState, *, reason: str, cycle_index: int) -> None:
+        state.operation_status = RuntimeStatus.PAUSED
+        state.execution.status = RuntimeStatus.PAUSED
+        state.execution.metadata["pause_reason"] = reason
+        state.execution.metadata["pause_cycle_index"] = cycle_index
+        state.last_updated = utc_now()
+        self._log_operation_event(
+            state,
+            event_type="operation_paused_for_review",
+            cycle_index=cycle_index,
+            reason=reason,
+        )
+
+    def _request_supervisor_replan(self, state: RuntimeState, *, cycle_index: int, rationale: str) -> None:
+        request = ReplanRequest(
+            request_id=f"supervisor-replan-{cycle_index}-{len(state.replan_requests) + 1}",
+            reason="supervisor requested existing replan flow",
+            scope="local",
+            metadata={
+                "source": "supervisor",
+                "cycle_index": cycle_index,
+                "rationale": rationale,
+            },
+        )
+        state.request_replan(request)
+        self._log_operation_event(
+            state,
+            event_type="supervisor_replan_requested",
+            cycle_index=cycle_index,
+            request_id=request.request_id,
+        )
+
+    @staticmethod
+    def _budget_summary(state: RuntimeState) -> dict[str, Any]:
+        budgets = state.budgets
+        guards = {
+            "operation": AppOrchestrator._budget_exhausted(budgets.operation_budget_used, budgets.operation_budget_max),
+            "time": AppOrchestrator._budget_exhausted(budgets.time_budget_used_sec, budgets.time_budget_max_sec),
+            "token": AppOrchestrator._budget_exhausted(budgets.token_budget_used, budgets.token_budget_max),
+            "noise": AppOrchestrator._budget_exhausted(budgets.noise_budget_used, budgets.noise_budget_max),
+            "risk": AppOrchestrator._budget_exhausted(budgets.risk_budget_used, budgets.risk_budget_max),
+        }
+        return {
+            "operation_budget_used": budgets.operation_budget_used,
+            "operation_budget_max": budgets.operation_budget_max,
+            "time_budget_used_sec": budgets.time_budget_used_sec,
+            "time_budget_max_sec": budgets.time_budget_max_sec,
+            "token_budget_used": budgets.token_budget_used,
+            "token_budget_max": budgets.token_budget_max,
+            "noise_budget_used": budgets.noise_budget_used,
+            "noise_budget_max": budgets.noise_budget_max,
+            "risk_budget_used": budgets.risk_budget_used,
+            "risk_budget_max": budgets.risk_budget_max,
+            "requires_human_review": any(guards.values()),
+            "guards": guards,
+        }
+
+    @staticmethod
+    def _budget_guard_triggered(state: RuntimeState) -> bool:
+        return bool(AppOrchestrator._budget_summary(state)["requires_human_review"])
+
+    @staticmethod
+    def _budget_exhausted(used: float | int, maximum: float | int | None) -> bool:
+        return maximum is not None and used >= maximum
+
+    @staticmethod
+    def _critic_finding_count(feedback: PipelineCycleResult | None) -> int:
+        if feedback is None:
+            return 0
+        count = 0
+        for decision in feedback.final_output.decisions:
+            payload = decision.get("payload") if isinstance(decision, dict) else None
+            if isinstance(payload, dict) and "recommendation" in payload:
+                count += 1
+        return count
 
     def _run_planning_phase(
         self,

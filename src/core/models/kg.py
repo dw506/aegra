@@ -68,6 +68,10 @@ class BaseGraphEntity(BaseModel):
     properties: Properties = Field(default_factory=dict)
     status: EntityStatus = EntityStatus.OBSERVED
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_chain: JsonDict = Field(default_factory=dict)
+    source_task_id: str | None = None
+    fact_kind: str | None = None
     source_refs: list[GraphEntityRef] = Field(default_factory=list)
     first_seen: datetime = Field(default_factory=utc_now)
     last_seen: datetime = Field(default_factory=utc_now)
@@ -145,6 +149,22 @@ class PrivilegeState(BaseNode):
     scope: str | None = None
 
 
+class Vulnerability(BaseNode):
+    type: Literal[NodeType.VULNERABILITY] = NodeType.VULNERABILITY
+    vulnerability_name: str | None = None
+    cve: str | None = None
+    cwe: str | None = None
+    advisory_refs: list[str] = Field(default_factory=list)
+    cvss: float | None = Field(default=None, ge=0.0, le=10.0)
+    epss: float | None = Field(default=None, ge=0.0, le=1.0)
+    kev: bool = False
+    validation_status: str | None = None
+    indicators: list[str] = Field(default_factory=list)
+    remediation: str | None = None
+    safe_payload_summary: str | None = None
+    summary: str | None = None
+
+
 class DataAsset(BaseNode):
     type: Literal[NodeType.DATA_ASSET] = NodeType.DATA_ASSET
     asset_kind: str | None = None
@@ -162,13 +182,25 @@ class Evidence(BaseNode):
     type: Literal[NodeType.EVIDENCE] = NodeType.EVIDENCE
     evidence_kind: str | None = None
     content_hash: str | None = None
+    content_ref: str | None = None
     summary: str | None = None
 
 
 class Finding(BaseNode):
     type: Literal[NodeType.FINDING] = NodeType.FINDING
     finding_kind: str | None = None
+    affected_asset_refs: list[str] = Field(default_factory=list)
+    service_ref: str | None = None
+    vulnerability_ref: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    validation_status: str | None = None
     severity: str | None = None
+    cvss: float | None = Field(default=None, ge=0.0, le=10.0)
+    epss: float | None = Field(default=None, ge=0.0, le=1.0)
+    kev: bool = False
+    false_positive_risk: float | None = Field(default=None, ge=0.0, le=1.0)
+    remediation: str | None = None
+    risk_score: float | None = Field(default=None, ge=0.0, le=100.0)
     summary: str | None = None
 
 
@@ -232,6 +264,15 @@ class CanReachEdge(BaseEdge):
     type: Literal[EdgeType.CAN_REACH] = EdgeType.CAN_REACH
 
 
+class HasVulnerabilityEdge(BaseEdge):
+    type: Literal[EdgeType.HAS_VULNERABILITY] = EdgeType.HAS_VULNERABILITY
+    validation_status: str | None = None
+
+
+class AffectsEdge(BaseEdge):
+    type: Literal[EdgeType.AFFECTS] = EdgeType.AFFECTS
+
+
 class PivotsToEdge(BaseEdge):
     type: Literal[EdgeType.PIVOTS_TO] = EdgeType.PIVOTS_TO
 
@@ -242,6 +283,7 @@ class ObservedOnEdge(BaseEdge):
 
 class SupportedByEdge(BaseEdge):
     type: Literal[EdgeType.SUPPORTED_BY] = EdgeType.SUPPORTED_BY
+    evidence_kind: str | None = None
 
 
 class DerivedFromEdge(BaseEdge):
@@ -271,6 +313,7 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.CREDENTIAL: Credential,
     NodeType.SESSION: Session,
     NodeType.PRIVILEGE_STATE: PrivilegeState,
+    NodeType.VULNERABILITY: Vulnerability,
     NodeType.DATA_ASSET: DataAsset,
     NodeType.OBSERVATION: Observation,
     NodeType.EVIDENCE: Evidence,
@@ -293,6 +336,8 @@ EDGE_MODEL_BY_TYPE: dict[EdgeType, type[BaseEdge]] = {
     EdgeType.PRIVILEGE_SOURCE: PrivilegeSourceEdge,
     EdgeType.APPLIES_TO_HOST: AppliesToHostEdge,
     EdgeType.CAN_REACH: CanReachEdge,
+    EdgeType.HAS_VULNERABILITY: HasVulnerabilityEdge,
+    EdgeType.AFFECTS: AffectsEdge,
     EdgeType.PIVOTS_TO: PivotsToEdge,
     EdgeType.OBSERVED_ON: ObservedOnEdge,
     EdgeType.SUPPORTED_BY: SupportedByEdge,
