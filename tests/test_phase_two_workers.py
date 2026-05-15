@@ -107,6 +107,36 @@ def test_nmap_adapter_parses_text_output_into_unified_result() -> None:
     assert parsed.relations[0]["type"] == "HOSTS"
 
 
+def test_nmap_adapter_uses_canonical_kg_ids_when_present() -> None:
+    adapter = NmapAdapter()
+    execution_result = ToolExecutionResult(
+        command=["nmap", "-n", "-Pn", "-p", "8080", "127.0.0.1"],
+        success=True,
+        category="success",
+        exit_code=0,
+        stdout=(
+            "Nmap scan report for 127.0.0.1\n"
+            "Host is up (0.0010s latency).\n"
+            "PORT     STATE SERVICE\n"
+            "8080/tcp open  http\n"
+        ),
+    )
+
+    parsed = adapter.parse_output(
+        execution_result=execution_result,
+        target_hint="127.0.0.1",
+        mode="host_discovery",
+        metadata={"canonical_host_id": "kg-host::abc"},
+    )
+
+    assert parsed.entities[0]["id"] == "kg-host::abc"
+    assert parsed.entities[0]["observed_host"] == "127.0.0.1"
+    assert parsed.entities[1]["id"] == "kg-host::abc:8080/tcp"
+    assert parsed.entities[1]["host_id"] == "kg-host::abc"
+    assert parsed.relations[0]["source"] == "kg-host::abc"
+    assert parsed.relations[0]["target"] == "kg-host::abc:8080/tcp"
+
+
 def test_custom_probe_adapter_parses_json_output_into_unified_result() -> None:
     adapter = CustomProbeAdapter()
     execution_result = ToolExecutionResult(

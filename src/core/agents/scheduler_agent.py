@@ -31,6 +31,8 @@ from src.core.runtime.events import (
     TaskQueuedEvent,
     WorkerAssignedEvent,
 )
+from src.core.runtime.policy_gate import PolicyGate, PolicyGateAction, PolicyGateDecision
+from src.core.runtime.repetition_detector import RepetitionAction, RepetitionDetector
 from src.core.runtime.runtime_queries import RuntimeQueryService
 from src.core.runtime.scheduler import RuntimeScheduler, SchedulerTickResult
 
@@ -108,13 +110,79 @@ class SchedulerAgent(BaseAgent):
             runtime_state=runtime_state,
             context=context,
         )
+        repetition_detector = self._resolve_repetition_detector(
+            task_graph=task_graph,
+            runtime_state=runtime_state,
+            agent_input=agent_input,
+        )
+        policy_gate = PolicyGate()
         decisions: list[SchedulingDecisionRecord] = []
         emitted_events: list[dict[str, Any]] = []
         state_deltas: list[dict[str, Any]] = []
         assigned_count = 0
+        repetition_rejected_count = 0
+        repetition_skipped_count = 0
+        policy_gate_blocked_count = 0
         reserved_workers: set[str] = set()
 
         for task in schedulable_tasks:
+            if repetition_detector is not None:
+                repetition_decision = repetition_detector.decide(task)
+                if repetition_decision.action == RepetitionAction.REJECT:
+                    repetition_rejected_count += 1
+                    decisions.append(
+                        self._emit_assignment_decision(
+                            task=task,
+                            action="reject",
+                            accepted=False,
+                            rationale=(
+                                "repetition detector rejected task before scheduling: "
+                                f"{repetition_decision.reason}"
+                            ),
+                        )
+                    )
+                    continue
+                if repetition_decision.action == RepetitionAction.SKIP:
+                    repetition_skipped_count += 1
+                    decisions.append(
+                        self._emit_assignment_decision(
+                            task=task,
+                            action="skip",
+                            accepted=False,
+                            rationale=(
+                                "repetition detector found satisfied task before scheduling: "
+                                f"{repetition_decision.reason}"
+                            ),
+                        )
+                    )
+                    state_deltas.extend(
+                        self._build_repetition_satisfied_state_deltas(
+                            task=task,
+                            decision=repetition_decision.model_dump(mode="json"),
+                        )
+                    )
+                    continue
+
+            policy_decision = policy_gate.evaluate(
+                task,
+                runtime_state=runtime_state,
+                budget_summary=context.budget_summary,
+            )
+            if runtime_state is not None:
+                policy_gate.audit(runtime_state, policy_decision)
+            if policy_decision.action != PolicyGateAction.ALLOW:
+                policy_gate_blocked_count += 1
+                decisions.append(
+                    self._emit_assignment_decision(
+                        task=task,
+                        action="need_approval" if policy_decision.action == PolicyGateAction.NEED_APPROVAL else "deny",
+                        accepted=False,
+                        rationale=f"policy gate {policy_decision.action.value}: {policy_decision.reason}",
+                    )
+                )
+                state_deltas.extend(self._build_policy_gate_state_deltas(task=task, decision=policy_decision))
+                continue
+
             blockers = self._check_runtime_blockers(
                 task=task,
                 runtime_state=runtime_state,
@@ -197,6 +265,9 @@ class SchedulerAgent(BaseAgent):
         logs = [
             f"found {len(schedulable_tasks)} ready TG task(s) for scheduling evaluation",
             f"assigned {assigned_count} task(s) during this tick",
+            f"repetition detector rejected {repetition_rejected_count} task(s) before scheduling",
+            f"repetition detector skipped {repetition_skipped_count} satisfied task(s) before scheduling",
+            f"policy gate blocked {policy_gate_blocked_count} task(s) before scheduling",
             f"emitted {len(emitted_events)} runtime-compatible event(s)",
             f"generated {len(state_deltas)} TG/Runtime state delta(s)",
             "scheduler only updates TG/Runtime surfaces and never writes KG facts",
@@ -210,6 +281,56 @@ class SchedulerAgent(BaseAgent):
             state_deltas=state_deltas,
             logs=logs,
         )
+
+    def _resolve_repetition_detector(
+        self,
+        *,
+        task_graph: TaskGraph,
+        runtime_state: RuntimeState | None,
+        agent_input: AgentInput,
+    ) -> RepetitionDetector | None:
+        """Build a detector from explicit history plus terminal runtime tasks."""
+
+        records: list[dict[str, Any]] = []
+        for key in ("repetition_history",):
+            value = agent_input.raw_payload.get(key)
+            if isinstance(value, list):
+                records.extend(dict(item) for item in value if isinstance(item, dict))
+        scheduling_context = self._coerce_mapping(agent_input.raw_payload.get("scheduling_context"))
+        value = scheduling_context.get("repetition_history")
+        if isinstance(value, list):
+            records.extend(dict(item) for item in value if isinstance(item, dict))
+
+        if runtime_state is not None:
+            terminal_statuses = {
+                TaskRuntimeStatus.SUCCEEDED,
+                TaskRuntimeStatus.FAILED,
+                TaskRuntimeStatus.BLOCKED,
+                TaskRuntimeStatus.TIMED_OUT,
+            }
+            for runtime_task in runtime_state.execution.tasks.values():
+                if runtime_task.status not in terminal_statuses:
+                    continue
+                node = task_graph.get_node(runtime_task.tg_node_id or runtime_task.task_id)
+                if not isinstance(node, BaseTaskNode):
+                    continue
+                records.append(
+                    {
+                        "task_id": runtime_task.task_id,
+                        "status": runtime_task.status.value,
+                        "task": node.model_dump(mode="json"),
+                    }
+                )
+
+        if not records:
+            return None
+        threshold = float(
+            scheduling_context.get(
+                "repetition_similarity_threshold",
+                agent_input.raw_payload.get("repetition_similarity_threshold", 0.95),
+            )
+        )
+        return RepetitionDetector(records, similarity_threshold=threshold)
 
     def schedule_with_runtime_scheduler(
         self,
@@ -425,6 +546,96 @@ class SchedulerAgent(BaseAgent):
             },
             payload={"patch_kind": "runtime_retry"},
         ).to_agent_output_fragment()
+
+    def _build_repetition_satisfied_state_deltas(
+        self,
+        *,
+        task: BaseTaskNode,
+        decision: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Mark a ready duplicate as satisfied by prior completed evidence."""
+
+        matched_task_ids = [str(item) for item in decision.get("matched_task_ids", [])]
+        return [
+            StateDeltaRecord(
+                source_agent=self.name,
+                summary=f"Skip TG task {task.id} because equivalent evidence already succeeded",
+                graph_scope=GraphScope.TG,
+                delta_type="task_status_update",
+                target_ref=GraphRef(graph=GraphScope.TG, ref_id=task.id, ref_type="Task"),
+                patch={
+                    "status": TaskStatus.SKIPPED.value,
+                    "reason": "equivalent task already succeeded",
+                    "satisfied_by_task_ids": matched_task_ids,
+                    "repetition_decision": decision,
+                },
+                payload={"patch_kind": "tg_task_state"},
+            ).to_agent_output_fragment(),
+            StateDeltaRecord(
+                source_agent=self.name,
+                summary=f"Skip runtime task {task.id} because equivalent evidence already succeeded",
+                graph_scope=GraphScope.RUNTIME,
+                delta_type="task_runtime_update",
+                target_ref=GraphRef(graph=GraphScope.RUNTIME, ref_id=task.id, ref_type="TaskRuntime"),
+                patch={
+                    "task_id": task.id,
+                    "tg_node_id": task.id,
+                    "status": TaskRuntimeStatus.SKIPPED.value,
+                    "runtime_blocked_reason": "equivalent task already succeeded",
+                    "satisfied_by_task_ids": matched_task_ids,
+                    "repetition_decision": decision,
+                },
+                payload={"patch_kind": "runtime_task_state"},
+            ).to_agent_output_fragment(),
+        ]
+
+    def _build_policy_gate_state_deltas(
+        self,
+        *,
+        task: BaseTaskNode,
+        decision: PolicyGateDecision,
+    ) -> list[dict[str, Any]]:
+        """Build TG/Runtime deltas for tasks stopped by the pre-scheduler gate."""
+
+        runtime_status = (
+            TaskRuntimeStatus.WAITING_APPROVAL
+            if decision.action == PolicyGateAction.NEED_APPROVAL
+            else TaskRuntimeStatus.BLOCKED
+        )
+        deltas = [
+            StateDeltaRecord(
+                source_agent=self.name,
+                summary=f"Record policy gate result for runtime task {task.id}",
+                graph_scope=GraphScope.RUNTIME,
+                delta_type="task_runtime_update",
+                target_ref=GraphRef(graph=GraphScope.RUNTIME, ref_id=task.id, ref_type="TaskRuntime"),
+                patch={
+                    "task_id": task.id,
+                    "tg_node_id": task.id,
+                    "status": runtime_status.value,
+                    "policy_decision": decision.model_dump(mode="json"),
+                    "runtime_blocked_reason": decision.reason,
+                },
+                payload={"patch_kind": "runtime_task_state"},
+            ).to_agent_output_fragment()
+        ]
+        if decision.action == PolicyGateAction.DENY:
+            deltas.append(
+                StateDeltaRecord(
+                    source_agent=self.name,
+                    summary=f"Block TG task {task.id} by policy gate",
+                    graph_scope=GraphScope.TG,
+                    delta_type="task_status_update",
+                    target_ref=GraphRef(graph=GraphScope.TG, ref_id=task.id, ref_type="Task"),
+                    patch={
+                        "status": TaskStatus.BLOCKED.value,
+                        "reason": decision.reason,
+                        "policy_decision": decision.model_dump(mode="json"),
+                    },
+                    payload={"patch_kind": "tg_task_state"},
+                ).to_agent_output_fragment()
+            )
+        return deltas
 
     def _build_assignment_state_deltas(
         self,

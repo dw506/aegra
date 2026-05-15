@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.core.agents.packy_llm import DEFAULT_PACKY_BASE_URL, DEFAULT_PACKY_MODEL, PackyLLMConfig
+from src.core.agents.packy_llm import DEFAULT_PACKY_BASE_URL, DEFAULT_PACKY_MODEL, PackyLLMConfig, load_llm_env_file
 from src.core.runtime.policy import RuntimePolicy, load_runtime_policy_payload
 
 
@@ -88,6 +88,8 @@ class AppSettings(BaseModel):
     def from_env(cls) -> "AppSettings":
         """Build settings from the current process environment."""
 
+        if not os.getenv("AEGRA_LLM_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+            load_llm_env_file()
         environ = os.environ
         values: dict[str, object] = {}
         if "AEGRA_RUNTIME_STORE_BACKEND" in environ:

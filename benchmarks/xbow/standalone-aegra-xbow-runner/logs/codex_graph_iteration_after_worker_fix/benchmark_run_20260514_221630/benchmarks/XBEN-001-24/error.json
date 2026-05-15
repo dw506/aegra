@@ -1,0 +1,4 @@
+{
+  "artifacts_exported": true,
+  "error": "1 validation error for Host\nstatus\n  Input should be 'observed', 'inferred', 'validated', 'stale' or 'revoked' [type=enum, input_value='up', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/enum"
+}

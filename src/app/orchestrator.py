@@ -9,11 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.app.settings import AppSettings
 from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentKind, GraphRef as AgentGraphRef, GraphScope
+from src.core.agents.graph_context import GraphContextBuilder
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
+from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.graph_memory_store import GraphMemoryStore
+from src.core.graph.kg_store import KnowledgeGraph
+from src.core.graph.tg_merge import merge_task_graphs
+from src.core.models.ag import AttackGraph
 from src.core.models.events import AgentTaskResult
 from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
-from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
+from src.core.models.tg import BaseTaskNode, DependencyType, TaskGraph, TaskStatus
 from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import append_operation_log, mark_clean_shutdown, mark_unclean_shutdown, record_phase_checkpoint
 from src.core.runtime.report_generator import ReportFormat, ReportGenerator
@@ -105,13 +111,16 @@ class AppOrchestrator:
         self,
         settings: AppSettings | None = None,
         runtime_store: RuntimeStore | None = None,
+        graph_memory_store: GraphMemoryStore | None = None,
         pipeline: AgentPipeline | None = None,
         result_applier: PhaseTwoResultApplier | None = None,
+        graph_projector: AttackGraphProjector | None = None,
     ) -> None:
         self.settings = settings or AppSettings.from_env()
         self.runtime_store = runtime_store or self._build_runtime_store(self.settings)
+        self.graph_memory_store = graph_memory_store or GraphMemoryStore(self.settings.runtime_store_dir)
         self.pipeline = pipeline or self._build_default_pipeline(self.settings)
-        self.result_applier = result_applier or PhaseTwoResultApplier()
+        self.result_applier = result_applier or PhaseTwoResultApplier(attack_graph_projector=graph_projector)
 
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
         """Create a new operation with control-plane metadata attached."""
@@ -403,6 +412,7 @@ class AppOrchestrator:
 
         pipeline = self._require_pipeline()
         state = self.runtime_store.snapshot(operation_id)
+        kg, ag, task_graph, graph_runtime = self._load_graph_memory(operation_id)
         if self.settings.recovery_enabled and self._needs_recovery(state):
             # 中文注释：
             # 自动恢复统一走 store 层，确保 memory/file backend 都会同步刷新恢复快照。
@@ -410,6 +420,14 @@ class AppOrchestrator:
             resume_summary = dict(state.execution.metadata.get("recovery", {}))
             self._log_operation_event(state, event_type="operation_resumed", **resume_summary)
         cycle_index = self._next_cycle_index(state)
+        if task_graph.list_nodes():
+            state.execution.metadata["task_graph"] = task_graph.to_dict()
+        state.execution.metadata["graph_memory"] = self._graph_memory_metadata(
+            kg=kg,
+            ag=ag,
+            tg=task_graph,
+            loaded_runtime=graph_runtime is not None,
+        )
         state.operation_status = RuntimeStatus.RUNNING
         state.execution.status = RuntimeStatus.RUNNING
         mark_unclean_shutdown(state, cycle_index=cycle_index)
@@ -425,7 +443,14 @@ class AppOrchestrator:
             pipeline=pipeline,
             operation_id=operation_id,
             graph_refs=graph_refs,
-            planner_payload=planner_payload,
+            planner_payload=self._planner_payload_with_graph_memory(
+                planner_payload,
+                kg=kg,
+                ag=ag,
+                tg=task_graph,
+                runtime_state=state,
+                enable_graph_llm_planning=self.settings.enable_planner_llm_advisor,
+            ),
             context=context,
         )
         self._log_operation_event(
@@ -490,9 +515,16 @@ class AppOrchestrator:
                 task_result,
                 state,
                 kg_ref=self._kg_ref(graph_refs),
+                kg_store=kg,
+                attack_graph=ag,
+                task_graph=task_graph,
                 goal_context=self._mapping((feedback_payload or {}).get("goal_context")),
                 policy_context=self._mapping((feedback_payload or {}).get("policy_context")),
             )
+            if applied.ag_graph is not None:
+                ag = AttackGraph.from_dict(applied.ag_graph)
+            if applied.tg_graph is not None:
+                task_graph = TaskGraph.from_dict(applied.tg_graph)
             apply_results.append(applied)
             recent_outcomes.append(self._recent_outcome_entry(task_result))
         self._checkpoint_phase(
@@ -503,6 +535,13 @@ class AppOrchestrator:
             selected_task_ids=selected_task_ids,
             applied_task_ids=applied_task_ids,
             runtime_event_count=sum(len(item.runtime_event_refs) for item in apply_results),
+        )
+        self._save_graph_memory(
+            operation_id=operation_id,
+            kg=kg,
+            ag=ag,
+            tg=task_graph,
+            runtime_state=state,
         )
 
         feedback = self._run_feedback_phase(
@@ -539,6 +578,12 @@ class AppOrchestrator:
             step_count=len(feedback.steps),
             success=feedback.success,
         )
+        state.execution.metadata["graph_memory"] = self._graph_memory_metadata(
+            kg=kg,
+            ag=ag,
+            tg=task_graph,
+            loaded_runtime=True,
+        )
 
         summary = self._persist_cycle_summary(
             state,
@@ -564,6 +609,14 @@ class AppOrchestrator:
             persist=False,
         )
         self.runtime_store.save_state(state)
+        self._save_graph_memory(
+            operation_id=operation_id,
+            kg=kg,
+            ag=ag,
+            tg=task_graph,
+            runtime_state=state,
+        )
+        self.graph_memory_store.save_snapshot(operation_id, cycle_index)
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
@@ -944,6 +997,89 @@ class AppOrchestrator:
             context=context,
         )
 
+    def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, TaskGraph, RuntimeState | None]:
+        """Load KG / AG / TG / Runtime snapshots for the current operation cycle."""
+
+        kg = self.graph_memory_store.load_kg(operation_id)
+        ag = self.graph_memory_store.load_ag(operation_id)
+        tg = self.graph_memory_store.load_tg(operation_id)
+        runtime = self.graph_memory_store.load_runtime(operation_id)
+        return kg, ag, tg, runtime
+
+    def _planner_payload_with_graph_memory(
+        self,
+        planner_payload: dict[str, Any],
+        *,
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        tg: TaskGraph,
+        runtime_state: RuntimeState,
+        enable_graph_llm_planning: bool = False,
+    ) -> dict[str, Any]:
+        """Attach persisted graph memory snapshots to planner input."""
+
+        policy_context = self._mapping(
+            planner_payload.get("policy_context")
+            or runtime_state.execution.metadata.get("runtime_policy")
+        )
+        planning_context = {
+            **self._mapping(planner_payload.get("planning_context")),
+        }
+        if enable_graph_llm_planning:
+            planning_context.setdefault("enable_graph_llm_planning", True)
+        graph_context = GraphContextBuilder().build(
+            knowledge_graph=kg,
+            attack_graph=ag,
+            task_graph=tg,
+            runtime_state=runtime_state,
+            policy_context=policy_context,
+        )
+        return {
+            **dict(planner_payload),
+            "kg_graph": kg.to_dict(),
+            "ag_graph": ag.to_dict(),
+            "tg_graph": tg.to_dict(),
+            "task_graph": tg.to_dict(),
+            "runtime_state": runtime_state.model_dump(mode="json"),
+            "policy_context": policy_context,
+            "planning_context": planning_context,
+            "graph_context": graph_context.model_dump(mode="json"),
+        }
+
+    def _save_graph_memory(
+        self,
+        *,
+        operation_id: str,
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        tg: TaskGraph,
+        runtime_state: RuntimeState,
+    ) -> None:
+        """Persist KG / AG / TG / Runtime graph memory snapshots."""
+
+        self.graph_memory_store.save_kg(operation_id, kg)
+        self.graph_memory_store.save_ag(operation_id, ag)
+        self.graph_memory_store.save_tg(operation_id, tg)
+        self.graph_memory_store.save_runtime(operation_id, runtime_state)
+
+    @staticmethod
+    def _graph_memory_metadata(
+        *,
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        tg: TaskGraph,
+        loaded_runtime: bool,
+    ) -> dict[str, Any]:
+        return {
+            "kg_version": kg.version,
+            "ag_version": ag.version,
+            "tg_version": tg.version,
+            "source_kg_version": ag.source_kg_version,
+            "source_ag_version": tg.source_ag_version,
+            "frontier_version": tg.frontier_version,
+            "loaded_runtime": loaded_runtime,
+        }
+
     def _run_execution_phase(
         self,
         *,
@@ -957,6 +1093,8 @@ class AppOrchestrator:
     ) -> PipelineCycleResult:
         """运行 scheduling + worker execution 阶段。"""
 
+        task_graph.refresh_blocked_states()
+        self._debug_print_draft_tasks(task_graph)
         payload = {
             **self._mapping(scheduler_payload),
             "tg_graph": task_graph.to_dict(),
@@ -1249,16 +1387,18 @@ class AppOrchestrator:
                 patch_payload["edges"].append(dict(patch["edge"]))
         if not patch_payload["nodes"] and not patch_payload["edges"]:
             return current
-        return TaskGraph.from_dict(patch_payload)
+        return merge_task_graphs(current, TaskGraph.from_dict(patch_payload))
 
     @staticmethod
     def _mark_applied_tasks(task_graph: TaskGraph, task_ids: list[str]) -> None:
         """把已经执行并完成 apply 的 task 标记为 succeeded，避免下一轮重复调度。"""
 
         for task_id in task_ids:
+            if task_id not in task_graph._nodes:
+                continue
             node = task_graph.get_node(task_id)
             if isinstance(node, BaseTaskNode):
-                node.status = TaskStatus.SUCCEEDED
+                task_graph.mark_task_status(task_id, TaskStatus.SUCCEEDED, reason=node.reason)
 
     def _selected_task_ids(self, execution: PipelineCycleResult) -> list[str]:
         for step in execution.steps:
@@ -1320,6 +1460,49 @@ class AppOrchestrator:
             "pending_event_count": len(state.pending_events),
             "replan_request_count": len(state.replan_requests),
         }
+
+    @staticmethod
+    def _debug_print_draft_tasks(task_graph: TaskGraph) -> None:
+        for node in task_graph.list_nodes(status=TaskStatus.DRAFT):
+            if isinstance(node, BaseTaskNode):
+                dependency_predecessors = task_graph.predecessors(node.id, DependencyType.DEPENDS_ON)
+                draft_blockers = []
+                unsatisfied_dependencies = [
+                    f"{pred.id}:{pred.status.value}"
+                    for pred in dependency_predecessors
+                    if pred.status != TaskStatus.SUCCEEDED
+                ]
+                if unsatisfied_dependencies:
+                    draft_blockers.append(
+                        "upstream dependencies not succeeded: "
+                        + ", ".join(unsatisfied_dependencies)
+                    )
+                if node.gate_ids:
+                    draft_blockers.append("gate_ids uncleared: " + ", ".join(sorted(node.gate_ids)))
+                if not draft_blockers:
+                    draft_blockers.append("draft after refresh_blocked_states without TG dependency blocker")
+                print(
+                    {
+                        "id": node.id,
+                        "type": node.task_type.value,
+                        "status": node.status.value,
+                        "reason": node.reason,
+                        "draft_blockers": draft_blockers,
+                        "preconditions": [ref.key() for ref in node.precondition_refs],
+                        "targets": [ref.key() for ref in node.target_refs],
+                        "source_action_id": node.source_action_id,
+                        "gate_ids": sorted(node.gate_ids),
+                        "resource_keys": sorted(node.resource_keys),
+                        "predecessors": [
+                            {
+                                "id": pred.id,
+                                "type": pred.task_type.value,
+                                "status": pred.status.value,
+                            }
+                            for pred in task_graph.predecessors(node.id)
+                        ],
+                    }
+                )
 
     @staticmethod
     def _kg_ref(graph_refs: list[AgentGraphRef]) -> AgentGraphRef | None:
@@ -1412,6 +1595,7 @@ class AppOrchestrator:
         return build_optional_agent_pipeline(
             options=AgentPipelineAssemblyOptions(
                 enable_packy_planner_advisor=settings.enable_planner_llm_advisor,
+                enable_graph_llm_planner_advisor=settings.enable_planner_llm_advisor,
                 enable_packy_critic_advisor=settings.enable_critic_llm_advisor,
                 enable_packy_supervisor_advisor=settings.enable_supervisor_llm_advisor,
             ),

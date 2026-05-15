@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -37,6 +38,8 @@ class PackyLLMConfig(BaseModel):
     def from_env(cls) -> "PackyLLMConfig":
         """Build config from project env vars first, then OpenAI-compatible fallbacks."""
 
+        if not os.getenv("AEGRA_LLM_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+            load_llm_env_file()
         api_key = os.getenv("AEGRA_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("missing AEGRA_LLM_API_KEY or OPENAI_API_KEY")
@@ -49,6 +52,32 @@ class PackyLLMConfig(BaseModel):
         timeout_value = os.getenv("AEGRA_LLM_TIMEOUT_SEC")
         timeout_sec = float(timeout_value) if timeout_value else 30.0
         return cls(api_key=api_key, base_url=base_url, model=model, timeout_sec=timeout_sec)
+
+
+def load_llm_env_file(path: str | Path = ".env") -> None:
+    """Load simple KEY=VALUE entries from a local .env file without overwriting env vars."""
+
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    entries: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            entries[key] = value
+
+    aegra_key_is_blank = "AEGRA_LLM_API_KEY" in entries and not entries["AEGRA_LLM_API_KEY"]
+    for key, value in entries.items():
+        if aegra_key_is_blank and key.startswith("AEGRA_LLM_"):
+            continue
+        if not value or key in os.environ:
+            continue
+        os.environ[key] = value
 
 
 class PackyLLMResponse(BaseModel):
@@ -273,6 +302,7 @@ __all__ = [
     "PackyLLMConfig",
     "PackyLLMError",
     "PackyLLMResponse",
+    "load_llm_env_file",
     "_extract_text_from_completion_payload",
     "_extract_text_from_sse_blob",
 ]

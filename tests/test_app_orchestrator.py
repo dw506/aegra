@@ -46,6 +46,12 @@ class FakePlannerAgent(BaseAgent):
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         self._calls += 1
+        graph_context = agent_input.raw_payload.get("graph_context")
+        if graph_context is not None:
+            assert graph_context["operation_id"] == agent_input.context.operation_id
+            assert "frontier_actions" in graph_context
+            assert "tasks_by_status" in graph_context
+            assert "policy" in graph_context
         if self._emit_once and self._calls > 1:
             return AgentOutput(logs=["planner emitted no more decisions"])
         candidate = TaskCandidate(
@@ -468,6 +474,15 @@ def test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback(
     assert state.execution.metadata["last_phase_checkpoint"]["phase"] == "cycle_completed"
     assert state.execution.metadata["recovery"]["last_phase"] == "cycle_completed"
     assert state.execution.metadata["recovery"]["last_phase_status"] == "completed"
+    graph_dir = tmp_path / "runtime-store" / "op-loop"
+    assert graph_dir.joinpath("kg.json").exists()
+    assert graph_dir.joinpath("ag.json").exists()
+    assert graph_dir.joinpath("tg.json").exists()
+    assert graph_dir.joinpath("runtime.json").exists()
+    assert graph_dir.joinpath("snapshots", "cycle-000001", "manifest.json").exists()
+    assert orchestrator.graph_memory_store.load_runtime("op-loop").operation_id == "op-loop"
+    assert orchestrator.graph_memory_store.load_tg("op-loop").list_nodes()
+    assert state.execution.metadata["graph_memory"]["loaded_runtime"] is True
 
 
 def test_orchestrator_run_until_quiescent_stops_when_no_more_tasks(tmp_path) -> None:

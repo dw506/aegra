@@ -22,6 +22,8 @@ from src.core.models.ag import (
     StateNode,
     StateNodeType,
 )
+from src.core.graph.kg_store import KnowledgeGraph
+from src.core.models.kg import Evidence, Finding, Observation
 from src.core.models.runtime import RuntimeState, TaskRuntimeStatus
 from src.core.models.tg import BaseTaskNode, TaskGraph
 
@@ -201,6 +203,7 @@ class GraphContextBuilder:
     def build(
         self,
         *,
+        knowledge_graph: KnowledgeGraph | None = None,
         attack_graph: AttackGraph | None = None,
         runtime_state: RuntimeState | None = None,
         task_graph: TaskGraph | None = None,
@@ -220,6 +223,7 @@ class GraphContextBuilder:
         actions = self._build_frontier_actions(attack_graph)
         tasks = self._build_tasks(runtime_state=runtime_state, task_graph=task_graph)
         evidence_items = self._build_evidence(
+            knowledge_graph=knowledge_graph,
             runtime_state=runtime_state,
             findings=findings or [],
             evidence=evidence or [],
@@ -229,7 +233,11 @@ class GraphContextBuilder:
 
         context = GraphContext(
             operation_id=runtime_state.operation_id if runtime_state is not None else None,
-            graph_versions=self._graph_versions(attack_graph=attack_graph, task_graph=task_graph),
+            graph_versions=self._graph_versions(
+                knowledge_graph=knowledge_graph,
+                attack_graph=attack_graph,
+                task_graph=task_graph,
+            ),
             goals=goals,
             known_services=services,
             frontier_actions=actions,
@@ -407,11 +415,13 @@ class GraphContextBuilder:
     def _build_evidence(
         self,
         *,
+        knowledge_graph: KnowledgeGraph | None,
         runtime_state: RuntimeState | None,
         findings: list[dict[str, Any]],
         evidence: list[dict[str, Any]],
     ) -> list[GraphContextEvidence]:
         items: list[GraphContextEvidence] = []
+        items.extend(self._kg_evidence(knowledge_graph))
         if runtime_state is not None:
             for event in runtime_state.pending_events[-self.config.max_evidence_items :]:
                 if event.summary:
@@ -440,6 +450,34 @@ class GraphContextBuilder:
         items.extend(self._external_evidence(findings, source="finding"))
         items.extend(self._external_evidence(evidence, source="evidence"))
         return items[: self.config.max_evidence_items]
+
+    def _kg_evidence(self, graph: KnowledgeGraph | None) -> list[GraphContextEvidence]:
+        if graph is None:
+            return []
+        result: list[GraphContextEvidence] = []
+        for node in graph.list_nodes():
+            if not isinstance(node, (Evidence, Finding, Observation)):
+                continue
+            summary = getattr(node, "summary", None) or node.label
+            source: Literal["finding", "evidence"] = "finding" if isinstance(node, Finding) else "evidence"
+            result.append(
+                GraphContextEvidence(
+                    ref=GraphContextRef(graph="kg", ref_id=node.id, ref_type=node.type.value, label=node.label),
+                    source=source,
+                    summary=self._truncate(summary, self.config.max_evidence_chars) or node.label,
+                    payload_ref=getattr(node, "content_ref", None),
+                    created_at=node.last_seen,
+                    metadata=self._sanitize_mapping(
+                        {
+                            "status": node.status.value,
+                            "confidence": node.confidence,
+                            "source_task_id": node.source_task_id,
+                            **dict(node.properties),
+                        }
+                    ),
+                )
+            )
+        return sorted(result, key=lambda item: item.created_at or datetime.min, reverse=True)
 
     def _external_evidence(
         self,
@@ -530,10 +568,14 @@ class GraphContextBuilder:
     def _graph_versions(
         self,
         *,
+        knowledge_graph: KnowledgeGraph | None,
         attack_graph: AttackGraph | None,
         task_graph: TaskGraph | None,
     ) -> dict[str, Any]:
         versions: dict[str, Any] = {}
+        if knowledge_graph is not None:
+            versions["kg_version"] = knowledge_graph.version
+            versions["kg_last_patch_batch_id"] = knowledge_graph.last_patch_batch_id
         if attack_graph is not None:
             versions["ag_version"] = attack_graph.version
             versions["source_kg_version"] = attack_graph.source_kg_version

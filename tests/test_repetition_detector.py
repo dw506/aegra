@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
+from src.core.agents.scheduler_agent import SchedulerAgent
 from src.core.agents.planner import PlannerAgent
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.tg_builder import TaskCandidate
 from src.core.models.ag import GraphRef as AGGraphRef
 from src.core.models.kg import Goal, Host, Service, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
-from src.core.models.tg import TaskType
+from src.core.models.runtime import OperationRuntime, RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerRuntime, WorkerStatus
+from src.core.models.tg import TaskGraph, TaskStatus, TaskType
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.runtime.repetition_detector import RepetitionAction, RepetitionDetector
 
@@ -72,15 +74,15 @@ def test_repetition_detector_rejects_repeated_failed_task() -> None:
     assert decision.reason == "exact repeat of failed or blocked task"
 
 
-def test_repetition_detector_warns_for_repeated_completed_task() -> None:
+def test_repetition_detector_skips_repeated_completed_task() -> None:
     detector = RepetitionDetector()
     detector.record_task(_task(80), task_id="task-complete", status="succeeded")
 
     decision = detector.decide(_task(80))
 
-    assert decision.action == RepetitionAction.WARN
-    assert decision.allow is True
-    assert decision.warn is True
+    assert decision.action == RepetitionAction.SKIP
+    assert decision.allow is False
+    assert decision.skip is True
     assert decision.matched_task_ids == ["task-complete"]
 
 
@@ -123,7 +125,7 @@ def test_planner_repetition_history_rejects_failed_candidate() -> None:
     assert any("repetition detector rejected" in log for log in result.output.logs)
 
 
-def test_planner_repetition_history_downranks_completed_candidate() -> None:
+def test_planner_repetition_history_skips_completed_candidate() -> None:
     first = PlannerAgent().run(_planner_input())
     candidate = first.output.decisions[0]["payload"]["planning_candidate"]
     task = candidate["task_candidates"][0]
@@ -135,6 +137,75 @@ def test_planner_repetition_history_downranks_completed_candidate() -> None:
         decision["payload"]["planning_candidate"]
         for decision in result.output.decisions
         if decision["payload"]["planning_candidate"]["task_candidates"][0]["source_action_id"] == task["source_action_id"]
-    ][0]
-    assert repeated["score"] == round(candidate["score"] - 0.2, 6)
-    assert repeated["metadata"]["repetition_decisions"][0]["action"] == "warn"
+    ]
+    assert repeated == []
+    assert any("repetition detector skipped satisfied" in log for log in result.output.logs)
+
+
+def test_scheduler_repetition_detector_rejects_repeat_failed_task_before_assignment() -> None:
+    task = TaskBuilderAgentShim.create_task(_task(80))
+    task.status = TaskStatus.READY
+    graph = TaskGraph()
+    graph.add_node(task)
+    state = RuntimeState(operation_id="op-scheduler-repetition", execution=OperationRuntime(operation_id="op-scheduler-repetition"))
+    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    state.register_task(
+        TaskRuntime(
+            task_id=task.id,
+            tg_node_id=task.id,
+            status=TaskRuntimeStatus.FAILED,
+        )
+    )
+
+    result = SchedulerAgent().run(
+        AgentInput(
+            graph_refs=[GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
+            context=AgentContext(operation_id="op-scheduler-repetition"),
+            raw_payload={"tg_graph": graph.to_dict(), "runtime_state": state.model_dump(mode="json")},
+        )
+    )
+
+    assert result.success is True
+    assert not any(decision["accepted"] for decision in result.output.decisions)
+    assert result.output.decisions[0]["action"] == "reject"
+    assert any("repetition detector rejected 1 task" in log for log in result.output.logs)
+
+
+def test_scheduler_repetition_detector_skips_repeat_succeeded_task_before_assignment() -> None:
+    task = TaskBuilderAgentShim.create_task(_task(80))
+    task.status = TaskStatus.READY
+    graph = TaskGraph()
+    graph.add_node(task)
+    state = RuntimeState(operation_id="op-scheduler-repetition", execution=OperationRuntime(operation_id="op-scheduler-repetition"))
+    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    state.register_task(
+        TaskRuntime(
+            task_id=task.id,
+            tg_node_id=task.id,
+            status=TaskRuntimeStatus.SUCCEEDED,
+        )
+    )
+
+    result = SchedulerAgent().run(
+        AgentInput(
+            graph_refs=[GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
+            context=AgentContext(operation_id="op-scheduler-repetition"),
+            raw_payload={"tg_graph": graph.to_dict(), "runtime_state": state.model_dump(mode="json")},
+        )
+    )
+
+    assert result.success is True
+    assert not any(decision["accepted"] for decision in result.output.decisions)
+    assert result.output.decisions[0]["action"] == "skip"
+    assert any("repetition detector skipped 1 satisfied task" in log for log in result.output.logs)
+    patches = [delta["patch"] for delta in result.output.state_deltas]
+    assert any(patch.get("status") == TaskStatus.SKIPPED.value for patch in patches)
+    assert any(patch.get("status") == TaskRuntimeStatus.SKIPPED.value for patch in patches)
+
+
+class TaskBuilderAgentShim:
+    @staticmethod
+    def create_task(candidate: TaskCandidate):
+        from src.core.graph.tg_builder import TaskGraphBuilder
+
+        return TaskGraphBuilder().create_task_node(candidate)

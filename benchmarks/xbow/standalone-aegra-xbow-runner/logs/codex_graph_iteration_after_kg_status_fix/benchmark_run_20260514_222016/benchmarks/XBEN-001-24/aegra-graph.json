@@ -1,0 +1,61 @@
+{
+  "edges": [
+    {
+      "source": "evidence-c802a39eeacb41c59e4f93d6b333ea4f",
+      "target": "tg-task::0daab394786f6701",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-7197956692384fc4809d00b3e3defa64",
+      "target": "tg-task::0daab394786f6701",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-5f532a85e1c44c008c31322bd70e74b7",
+      "target": "tg-task::0daab394786f6701",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-8a6a72575cd34c6197f8a570e653f34b",
+      "target": "tg-task::0daab394786f6701",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-afdcbf1960734a08a143d465e1c7a034",
+      "target": "tg-task::0daab394786f6701",
+      "type": "DERIVED_FROM"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "evidence-c802a39eeacb41c59e4f93d6b333ea4f",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "tg-task::0daab394786f6701",
+      "label": "tg-task::0daab394786f6701",
+      "type": "Task"
+    },
+    {
+      "id": "evidence-7197956692384fc4809d00b3e3defa64",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-5f532a85e1c44c008c31322bd70e74b7",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-8a6a72575cd34c6197f8a570e653f34b",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-afdcbf1960734a08a143d465e1c7a034",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    }
+  ]
+}

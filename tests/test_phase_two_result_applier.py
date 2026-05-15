@@ -11,6 +11,8 @@ from src.core.agents.agent_protocol import (
     GraphScope,
 )
 from src.core.models.ag import GraphRef
+from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.events import (
     AgentResultStatus,
     AgentRole,
@@ -30,6 +32,8 @@ from src.core.models.events import (
     RuntimeControlRequest,
     RuntimeControlType,
 )
+from src.core.models.kg import Goal, Host, TargetsEdge
+from src.core.models.kg_enums import EntityStatus
 from src.core.models.runtime import (
     CredentialKind,
     CredentialRuntime,
@@ -48,7 +52,7 @@ from src.core.models.runtime import (
     WorkerStatus,
     utc_now,
 )
-from src.core.models.tg import TaskNode, TaskType
+from src.core.models.tg import BaseTaskEdge, DependencyType, TaskGraph, TaskNode, TaskStatus, TaskType
 from src.core.runtime.result_applier import PhaseTwoResultApplier
 from src.core.workers.access_worker import AccessWorker
 from src.core.workers.goal_worker import GoalWorker
@@ -71,6 +75,89 @@ def build_task(task_type: TaskType) -> TaskNode:
         target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1")],
         resource_keys={"host:host-1"},
     )
+
+
+def test_result_applier_syncs_successful_runtime_task_to_task_graph() -> None:
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    task_graph = TaskGraph()
+    task_graph.add_node(
+        TaskNode(
+            id="task-1",
+            label="Service validation",
+            task_type=TaskType.SERVICE_VALIDATION,
+            target_refs=[GraphRef(graph="kg", ref_id="svc-1", ref_type="Service", label="svc-1")],
+        )
+    )
+    task_graph.add_node(
+        TaskNode(
+            id="task-2",
+            label="Identity context confirmation",
+            task_type=TaskType.IDENTITY_CONTEXT_CONFIRMATION,
+            target_refs=[GraphRef(graph="kg", ref_id="identity-1", ref_type="Identity", label="identity-1")],
+        )
+    )
+    task_graph.add_edge(
+        BaseTaskEdge(
+            id="edge-1",
+            dependency_type=DependencyType.DEPENDS_ON,
+            source="task-1",
+            target="task-2",
+            label="depends_on",
+        )
+    )
+    task_graph.refresh_blocked_states()
+    assert task_graph.get_node("task-2").status == TaskStatus.DRAFT
+
+    applied = applier.apply(
+        AgentTaskResult(
+            request_id="request-1",
+            agent_role=AgentRole.RECON_WORKER,
+            operation_id="op-1",
+            task_id="task-1",
+            tg_node_id="task-1",
+            status=AgentResultStatus.SUCCEEDED,
+            summary="service validation completed",
+        ),
+        state,
+        task_graph=task_graph,
+    )
+
+    assert state.execution.tasks["task-1"].status == TaskRuntimeStatus.SUCCEEDED
+    assert task_graph.get_node("task-1").status == TaskStatus.SUCCEEDED
+    assert task_graph.get_node("task-2").status == TaskStatus.READY
+    assert applied.tg_graph is not None
+
+
+def build_kg_for_projection() -> KnowledgeGraph:
+    kg = KnowledgeGraph()
+    kg.add_node(
+        Host(
+            id="host-1",
+            label="host-1",
+            status=EntityStatus.VALIDATED,
+            confidence=0.95,
+        )
+    )
+    kg.add_node(
+        Goal(
+            id="goal-1",
+            label="Validate host context",
+            category="context",
+            status=EntityStatus.OBSERVED,
+            confidence=0.9,
+        )
+    )
+    kg.add_edge(
+        TargetsEdge(
+            id="targets::goal-1::host-1",
+            label="targets",
+            source="goal-1",
+            target="host-1",
+            confidence=1.0,
+        )
+    )
+    return kg
 
 
 def test_result_applier_routes_runtime_kg_and_projection_effects() -> None:
@@ -200,6 +287,62 @@ def test_result_applier_routes_runtime_kg_and_projection_effects() -> None:
     assert any(entry["event_type"] == "tool_invocation" for entry in state.execution.metadata["audit_log"])
     assert any(entry["event_type"] == "fact_write" for entry in state.execution.metadata["audit_log"])
     assert any(entry["event_type"] == "evidence_chain" for entry in state.execution.metadata["audit_log"])
+
+
+def test_result_applier_applies_kg_then_reprojects_ag_and_regenerates_tg_candidates() -> None:
+    kg = build_kg_for_projection()
+    ag = AttackGraphProjector().project(kg, goal_context={"goal_ids": ["goal-1"]})
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    result = AgentTaskResult(
+        request_id="request-kg-ag-tg",
+        agent_role=AgentRole.RECON_WORKER,
+        operation_id="op-1",
+        task_id="task-1",
+        tg_node_id="task-1",
+        status=AgentResultStatus.SUCCEEDED,
+        summary="service discovered",
+        fact_write_requests=[
+            FactWriteRequest(
+                kind=FactWriteKind.ENTITY_UPSERT,
+                source_task_id="task-1",
+                subject_ref=GraphRef(graph="kg", ref_id="host-1:22/tcp", ref_type="Service", label="ssh"),
+                attributes={"host_id": "host-1", "port": 22, "protocol": "tcp"},
+                confidence=0.92,
+                summary="SSH service discovered",
+            ),
+            FactWriteRequest(
+                kind=FactWriteKind.RELATION_UPSERT,
+                source_task_id="task-1",
+                subject_ref=GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1"),
+                relation_type="HOSTS",
+                object_ref=GraphRef(graph="kg", ref_id="host-1:22/tcp", ref_type="Service", label="ssh"),
+                attributes={"port": 22, "protocol": "tcp"},
+                confidence=0.92,
+                summary="host exposes ssh",
+            ),
+        ],
+    )
+
+    applied = applier.apply(
+        result,
+        state,
+        kg_ref=ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
+        kg_store=kg,
+        attack_graph=ag,
+        goal_context={"goal_ids": ["goal-1"]},
+    )
+
+    assert applied.kg_apply_result is not None
+    assert applied.kg_apply_result["kg_version"] == kg.version
+    assert kg.get_node("host-1:22/tcp").label == "SSH service discovered"
+    assert kg.get_edge("hosts::host-1::host-1:22/tcp").type.value == "HOSTS"
+    assert applied.ag_graph is not None
+    assert applied.tg_graph is not None
+    assert applied.tg_task_candidates
+    task_graph = applied.tg_graph
+    assert any(node["kind"] == "task" for node in task_graph["nodes"])
+    assert any(isinstance(node, dict) for node in task_graph["nodes"])
 
 
 def test_result_applier_converts_relation_fact_write_into_kg_relation_delta() -> None:

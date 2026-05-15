@@ -429,6 +429,7 @@ class AttackGraphTaskBuilder:
         mapping = {
             ActionNodeType.ENUMERATE_HOST: TaskType.ASSET_CONFIRMATION,
             ActionNodeType.VALIDATE_SERVICE: TaskType.SERVICE_VALIDATION,
+            ActionNodeType.ENUMERATE_WEB_SURFACE: TaskType.WEB_ENUMERATION,
             ActionNodeType.VALIDATE_REACHABILITY: TaskType.REACHABILITY_VALIDATION,
             ActionNodeType.ESTABLISH_PIVOT_ROUTE: TaskType.REACHABILITY_VALIDATION,
             ActionNodeType.ESTABLISH_MANAGED_SESSION: TaskType.IDENTITY_CONTEXT_CONFIRMATION,

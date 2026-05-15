@@ -209,6 +209,7 @@ class NmapAdapter(ProbeAdapter):
         report = self._report_re.search(stdout)
         if report:
             host_label = report.group("label").strip()
+        canonical_host_id = str(metadata.get("canonical_host_id") or metadata.get("host_id") or host_label)
         reachable = "Host is up" in stdout or "open" in stdout
         services: list[dict[str, Any]] = []
         relations: list[dict[str, Any]] = []
@@ -218,11 +219,12 @@ class NmapAdapter(ProbeAdapter):
             protocol = "tcp" if f"{port}/tcp" in match.group(0) else "udp"
             service_name = match.group("service")
             banner = (match.group("banner") or "").strip() or None
-            service_id = f"{host_label}:{port}/{protocol}"
+            service_id = str(metadata.get("canonical_service_id") or metadata.get("service_id") or f"{canonical_host_id}:{port}/{protocol}")
             service = {
                 "id": service_id,
                 "type": "Service",
-                "host_id": host_label,
+                "host_id": canonical_host_id,
+                "observed_host": host_label,
                 "port": port,
                 "protocol": protocol,
                 "service_name": service_name,
@@ -234,12 +236,12 @@ class NmapAdapter(ProbeAdapter):
             relations.append(
                 {
                     "type": "HOSTS",
-                    "source": host_label,
+                    "source": canonical_host_id,
                     "target": service_id,
                     "attributes": {"port": port, "protocol": protocol, "state": state},
                 }
             )
-        hosts = [{"host_id": host_label, "status": "up" if reachable else "unknown"}]
+        hosts = [{"host_id": canonical_host_id, "observed_host": host_label, "status": "up" if reachable else "unknown"}]
         primary_service = services[0] if services else {}
         payload = {
             "summary": (
@@ -252,7 +254,7 @@ class NmapAdapter(ProbeAdapter):
             "success": execution_result.success and (reachable or bool(services)),
             "partial_success": (not execution_result.success) and bool(services),
             "failure_reason": (None if execution_result.success else execution_result.stderr.strip() or execution_result.error_message),
-            "entities": [{"id": host_label, "type": "Host", "status": hosts[0]["status"]}, *services],
+            "entities": [{"id": canonical_host_id, "type": "Host", "observed_host": host_label, "status": hosts[0]["status"]}, *services],
             "relations": relations,
             "evidence": {
                 "adapter": self.adapter_name,
@@ -326,15 +328,17 @@ class MasscanAdapter(ProbeAdapter):
         stdout = execution_result.stdout.strip()
         services: list[dict[str, Any]] = []
         relations: list[dict[str, Any]] = []
-        host_id = target_hint
+        host_id = str(metadata.get("canonical_host_id") or metadata.get("host_id") or target_hint)
+        observed_host = target_hint
         for match in self._open_re.finditer(stdout):
             port = int(match.group("port"))
-            host_id = match.group("host")
-            service_id = f"{host_id}:{port}/tcp"
+            observed_host = match.group("host")
+            service_id = str(metadata.get("canonical_service_id") or metadata.get("service_id") or f"{host_id}:{port}/tcp")
             service = {
                 "id": service_id,
                 "type": "Service",
                 "host_id": host_id,
+                "observed_host": observed_host,
                 "port": port,
                 "protocol": "tcp",
                 "service_name": metadata.get("service_name"),
@@ -352,13 +356,13 @@ class MasscanAdapter(ProbeAdapter):
                 }
             )
         payload = {
-            "summary": f"masscan completed for {host_id}",
+            "summary": f"masscan completed for {observed_host}",
             "confidence": float(metadata.get("confidence", 0.78 if services else 0.5)),
             "reachable": bool(services),
             "success": execution_result.success and bool(services),
             "partial_success": (not execution_result.success) and bool(services),
             "failure_reason": (None if execution_result.success else execution_result.stderr.strip() or execution_result.error_message),
-            "entities": [{"id": host_id, "type": "Host", "status": "up" if services else "unknown"}, *services],
+            "entities": [{"id": host_id, "type": "Host", "observed_host": observed_host, "status": "up" if services else "unknown"}, *services],
             "relations": relations,
             "evidence": {
                 "adapter": self.adapter_name,
@@ -370,7 +374,7 @@ class MasscanAdapter(ProbeAdapter):
                 "reachable": bool(services),
                 "discovered_open_ports": [service["port"] for service in services],
             },
-            "hosts": [{"host_id": host_id, "status": "up" if services else "unknown"}],
+            "hosts": [{"host_id": host_id, "observed_host": observed_host, "status": "up" if services else "unknown"}],
             "service": services[0] if services else {},
         }
         return _normalize_payload(

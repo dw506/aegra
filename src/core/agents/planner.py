@@ -7,12 +7,14 @@ write KG, does not dispatch tools, and does not mutate TG directly.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.graph_context import GraphContext, GraphContextBuilder
-from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvice
+from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvice, GraphLLMPlannerAdvisor, GraphLLMPlannerAdvisorConfig
+from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, load_llm_env_file
 from src.core.agents.agent_models import DecisionRecord, new_record_id
 from src.core.agents.agent_protocol import (
     AgentInput,
@@ -61,7 +63,6 @@ class PlanningContext(BaseModel):
     recent_signals: list[dict[str, Any]] = Field(default_factory=list)
     repetition_history: list[dict[str, Any]] = Field(default_factory=list)
     repetition_similarity_threshold: float = Field(default=0.95, ge=0.0, le=1.0)
-    repetition_warn_penalty: float = Field(default=0.2, ge=0.0, le=1.0)
 
 
 class PlanningCandidate(BaseModel):
@@ -164,11 +165,13 @@ class PlannerAgent(BaseAgent):
         scorer: HeuristicScorer | None = None,
         llm_advisor: PlannerLLMAdvisor | None = None,
         graph_llm_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
+        enable_graph_llm_by_default: bool = False,
     ) -> None:
         self._scorer = scorer or HeuristicScorer()
         self._planner = planner or AttackGraphPlanner(scorer=self._scorer)
         self._llm_advisor = llm_advisor
         self._graph_llm_advisor = graph_llm_advisor
+        self._enable_graph_llm_by_default = enable_graph_llm_by_default
         self._llm_decision_validator = LLMDecisionValidator()
         super().__init__(
             name=name,
@@ -179,6 +182,32 @@ class PlannerAgent(BaseAgent):
                 allow_state_write=False,
                 allow_event_emit=True,
             ),
+        )
+
+    @classmethod
+    def from_env_file(
+        cls,
+        path: str | Path = ".env",
+        *,
+        name: str = "planner_agent",
+        model: str = "gpt-5.2",
+    ) -> "PlannerAgent":
+        """Create a PlannerAgent that asks an LLM to choose the next graph task.
+
+        The agent remains read-only: the LLM returns validated task proposals
+        and ranking hints only; it cannot execute commands or mutate KG/AG/TG/Runtime.
+        """
+
+        load_llm_env_file(path)
+        client_config = PackyLLMConfig.from_env()
+        graph_llm_advisor = GraphLLMPlannerAdvisor(
+            client=PackyLLMClient(client_config),
+            config=GraphLLMPlannerAdvisorConfig(model=model),
+        )
+        return cls(
+            name=name,
+            graph_llm_advisor=graph_llm_advisor,
+            enable_graph_llm_by_default=True,
         )
 
     def validate_input(self, agent_input: AgentInput) -> None:
@@ -197,6 +226,7 @@ class PlannerAgent(BaseAgent):
         graph = self._resolve_attack_graph(agent_input)
         planning_context = self._resolve_planning_context(agent_input)
         goal_refs = self._resolve_goal_refs(agent_input)
+        graph_context = self._resolve_graph_context(agent_input)
 
         decisions: list[dict[str, Any]] = []
         logs: list[str] = [
@@ -210,6 +240,7 @@ class PlannerAgent(BaseAgent):
             candidate_paths = self._graph_llm_candidate_paths(
                 goal_ref=goal_ref,
                 graph=graph,
+                graph_context=graph_context,
                 planning_context=planning_context,
                 logs=logs,
             )
@@ -580,7 +611,7 @@ class PlannerAgent(BaseAgent):
         )
         accepted: list[PlanningCandidate] = []
         rejected_count = 0
-        warned_count = 0
+        skipped_count = 0
         for candidate in candidates:
             task_decisions = [detector.decide(task) for task in candidate.task_candidates]
             reject_decisions = [decision for decision in task_decisions if decision.action == RepetitionAction.REJECT]
@@ -596,28 +627,20 @@ class PlannerAgent(BaseAgent):
                 )
                 continue
 
-            warn_decisions = [decision for decision in task_decisions if decision.action == RepetitionAction.WARN]
-            if warn_decisions:
-                warned_count += 1
-                metadata = dict(candidate.metadata)
-                metadata["repetition_decisions"] = [
-                    decision.model_dump(mode="json") for decision in warn_decisions
-                ]
-                accepted.append(
-                    candidate.model_copy(
-                        update={
-                            "score": round(candidate.score - planning_context.repetition_warn_penalty, 6),
-                            "rationale": f"{candidate.rationale}; repetition detector warning applied",
-                            "metadata": metadata,
-                        }
-                    )
+            skip_decisions = [decision for decision in task_decisions if decision.action == RepetitionAction.SKIP]
+            if skip_decisions:
+                skipped_count += 1
+                logs.append(
+                    "repetition detector skipped satisfied "
+                    f"candidate={candidate.candidate_id} matches={self._matched_task_ids(skip_decisions)}"
                 )
                 continue
+
             accepted.append(candidate)
 
         logs.append(
             f"repetition detector reviewed {len(candidates)} candidate(s): "
-            f"rejected={rejected_count} warned={warned_count}"
+            f"rejected={rejected_count} skipped={skipped_count}"
         )
         return accepted
 
@@ -626,6 +649,7 @@ class PlannerAgent(BaseAgent):
         *,
         goal_ref: GraphRef,
         graph: AttackGraph,
+        graph_context: GraphContext | None,
         planning_context: PlanningContext,
         logs: list[str],
     ) -> list[PlanningCandidate]:
@@ -635,13 +659,13 @@ class PlannerAgent(BaseAgent):
             logs.append("graph llm planning enabled but no advisor configured; using heuristic fallback")
             return []
 
-        graph_context = GraphContextBuilder().build(
+        resolved_graph_context = graph_context or GraphContextBuilder().build(
             attack_graph=graph,
             policy_context=planning_context.policy_context,
         )
         graph_goal_refs = [self._to_ag_ref(goal_ref)]
         advice = self._graph_llm_advisor.advise(
-            graph_context=graph_context,
+            graph_context=resolved_graph_context,
             goal_refs=graph_goal_refs,
             policy_context=planning_context.policy_context,
             recent_signals=planning_context.recent_signals,
@@ -652,7 +676,7 @@ class PlannerAgent(BaseAgent):
         candidates = self._planning_candidates_from_graph_llm(
             advice=advice,
             goal_ref=goal_ref,
-            graph_context=graph_context,
+            graph_context=resolved_graph_context,
         )
         if not candidates:
             logs.append("graph llm planner returned no task proposals; using heuristic fallback")
@@ -823,7 +847,19 @@ class PlannerAgent(BaseAgent):
             "recent_signals": self._coerce_list_of_mappings(agent_input.raw_payload.get("recent_signals")),
             **self._coerce_mapping(agent_input.raw_payload.get("planning_context")),
         }
+        if self._enable_graph_llm_by_default and self._graph_llm_advisor is not None:
+            payload.setdefault("enable_graph_llm_planning", True)
         return PlanningContext.model_validate(payload)
+
+    def _resolve_graph_context(self, agent_input: AgentInput) -> GraphContext | None:
+        """Resolve a prebuilt graph context from the planning payload."""
+
+        raw_context = agent_input.raw_payload.get("graph_context")
+        if isinstance(raw_context, GraphContext):
+            return raw_context
+        if isinstance(raw_context, dict):
+            return GraphContext.model_validate(raw_context)
+        return None
 
     def _resolve_goal_refs(self, agent_input: AgentInput) -> list[GraphRef]:
         """Resolve AG/KG goal refs from the invocation."""

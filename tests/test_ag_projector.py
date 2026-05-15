@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.ag import ActionNodeType, ConstraintNodeType, GoalNode, StateNodeType
+from src.core.models.ag import ActionNodeType, ActivationStatus, ConstraintNodeType, GoalNode, StateNodeType, TruthStatus
 from src.core.models.kg import (
     AuthenticatesAsEdge,
     CanReachEdge,
     Credential,
     DataAsset,
+    Evidence,
     Goal,
     Host,
     HostsEdge,
@@ -108,6 +109,46 @@ def test_action_binding_is_deduplicated() -> None:
     assert ag.find_actions(ActionNodeType.ESTABLISH_PIVOT_ROUTE)
     assert ag.find_actions(ActionNodeType.REUSE_CREDENTIAL_ON_HOST)
     assert ag.find_actions(ActionNodeType.EXPLOIT_LATERAL_SERVICE)
+
+
+def test_service_with_direct_evidence_ids_projects_confirmed_active_state() -> None:
+    kg = KnowledgeGraph()
+    evidence_ids = [f"evidence-{index}" for index in range(5)]
+    kg.add_node(Host(id="kg-host::a76ee01f7c67a6db", label="target", status=EntityStatus.VALIDATED, confidence=0.9))
+    kg.add_node(
+        Service(
+            id="kg-host::a76ee01f7c67a6db:40961/tcp",
+            label="40961/tcp",
+            status=EntityStatus.OBSERVED,
+            confidence=0.62,
+            port=40961,
+            protocol="tcp",
+            evidence_ids=evidence_ids,
+        )
+    )
+    for evidence_id in evidence_ids:
+        kg.add_node(Evidence(id=evidence_id, label=evidence_id, confidence=0.8))
+    kg.add_edge(
+        HostsEdge(
+            id="hosts::kg-host::a76ee01f7c67a6db::40961",
+            label="hosts",
+            source="kg-host::a76ee01f7c67a6db",
+            target="kg-host::a76ee01f7c67a6db:40961/tcp",
+            confidence=0.9,
+        )
+    )
+
+    ag = AttackGraphProjector().project(kg)
+
+    service_known = ag.find_states(StateNodeType.SERVICE_KNOWN)[0]
+    service_confirmed = ag.find_states(StateNodeType.SERVICE_CONFIRMED)[0]
+    validate_service = ag.find_actions(ActionNodeType.VALIDATE_SERVICE)[0]
+
+    assert service_known.truth_status == TruthStatus.ACTIVE
+    assert service_known.properties["evidence_count"] == 5
+    assert service_confirmed.truth_status == TruthStatus.ACTIVE
+    assert service_confirmed.properties["evidence_count"] == 5
+    assert validate_service.activation_status == ActivationStatus.ACTIVATABLE
 
 
 def test_policy_constraints_block_matching_actions() -> None:

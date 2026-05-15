@@ -24,7 +24,7 @@ class RepetitionAction(str, Enum):
     """Planner-facing action returned by the detector."""
 
     ALLOW = "allow"
-    WARN = "warn"
+    SKIP = "skip"
     REJECT = "reject"
 
 
@@ -41,11 +41,11 @@ class RepetitionDecision(BaseModel):
 
     @property
     def allow(self) -> bool:
-        return self.action != RepetitionAction.REJECT
+        return self.action == RepetitionAction.ALLOW
 
     @property
-    def warn(self) -> bool:
-        return self.action == RepetitionAction.WARN
+    def skip(self) -> bool:
+        return self.action == RepetitionAction.SKIP
 
     @property
     def reject(self) -> bool:
@@ -151,8 +151,8 @@ class RepetitionDetector:
         success_exact = [record for record in exact_matches if record.is_success_like]
         if success_exact:
             return RepetitionDecision(
-                action=RepetitionAction.WARN,
-                reason="exact repeat of completed task",
+                action=RepetitionAction.SKIP,
+                reason="exact repeat of succeeded task; evidence goal already satisfied",
                 matched_task_ids=[record.task_id for record in success_exact],
                 signature_hash=signature.hash,
                 similarity=1.0,
@@ -224,7 +224,7 @@ class RepetitionDetector:
 def repetition_summary(events: Sequence[dict[str, Any]]) -> dict[str, int]:
     """Count repetition detector decisions in audit-like event payloads."""
 
-    counts = {"allow": 0, "warn": 0, "reject": 0}
+    counts = {"allow": 0, "warn": 0, "skip": 0, "reject": 0}
     for event in events:
         decision = _find_repetition_action(event)
         if decision in counts:

@@ -23,6 +23,7 @@ class TaskType(str, Enum):
 
     ASSET_CONFIRMATION = "ASSET_CONFIRMATION"
     SERVICE_VALIDATION = "SERVICE_VALIDATION"
+    WEB_ENUMERATION = "WEB_ENUMERATION"
     VULNERABILITY_VALIDATION = "VULNERABILITY_VALIDATION"
     REACHABILITY_VALIDATION = "REACHABILITY_VALIDATION"
     IDENTITY_CONTEXT_CONFIRMATION = "IDENTITY_CONTEXT_CONFIRMATION"
@@ -140,6 +141,7 @@ class BaseTaskNode(BaseModel):
     gate_ids: set[str] = Field(default_factory=set)
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     attempts: int = Field(default=0, ge=0)
+    last_outcome_ref: str | None = None
     reason: str | None = None
     tags: set[str] = Field(default_factory=set)
     created_at: datetime = Field(default_factory=utc_now)

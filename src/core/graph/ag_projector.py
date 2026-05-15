@@ -25,8 +25,9 @@ from src.core.models.ag import (
     TruthStatus,
     stable_node_id,
 )
-from src.core.models.kg import BaseEdge, BaseNode, Credential, DataAsset, Goal, Host, Identity, PrivilegeState, Service, Session
+from src.core.models.kg import BaseEdge, BaseNode, Credential, DataAsset, Evidence, Goal, Host, Identity, PrivilegeState, Service, Session
 from src.core.models.kg_enums import EdgeType, EntityStatus, NodeType
+from src.core.models.kg_exceptions import EntityNotFoundError
 
 
 class AttackGraphProjector:
@@ -217,31 +218,72 @@ class AttackGraphProjector:
             service_ref = self._kg_node_ref(service)
             host_ref = self._kg_node_ref(host)
             edge_ref = self._kg_edge_ref(service_edge)
+            service_evidence_refs = self._supporting_evidence_refs(kg, service)
+            edge_evidence_refs = self._supporting_evidence_refs(kg, service_edge)
+            support_refs = [*service_evidence_refs, *edge_evidence_refs]
+            has_service_support = bool(support_refs)
+            service_truth = self._truth_from_status(service.status, service.confidence)
+            if has_service_support and service_truth == TruthStatus.CANDIDATE:
+                service_truth = TruthStatus.ACTIVE
             self._ensure_state(
                 ag,
                 state_type=StateNodeType.SERVICE_KNOWN,
                 label=f"Service known: {service.label} on {host.label}",
                 subject_refs=[host_ref, service_ref],
-                created_from=[host_ref, service_ref, edge_ref],
-                confidence=min(host.confidence, service.confidence, service_edge.confidence),
-                truth_status=self._truth_from_status(service.status, service.confidence),
+                created_from=[host_ref, service_ref, edge_ref, *support_refs],
+                confidence=max(min(host.confidence, service.confidence, service_edge.confidence), 0.7 if has_service_support else 0.0),
+                truth_status=service_truth,
                 goal_relevance=max(
                     self._goal_relevance(host.id, goal_related_entities),
                     self._goal_relevance(service.id, goal_related_entities),
                 ),
-                properties={"host_id": host.id, "service_id": service.id, "port": service.port},
+                properties={
+                    "host_id": host.id,
+                    "service_id": service.id,
+                    "port": service.port,
+                    "evidence_count": len({ref.ref_id for ref in support_refs}),
+                },
             )
-            if service.status == EntityStatus.VALIDATED or kg.get_supporting_evidence(service.id):
+            if self._service_is_confirmed(service, service_edge, has_service_support):
                 self._ensure_state(
                     ag,
                     state_type=StateNodeType.SERVICE_CONFIRMED,
                     label=f"Service confirmed: {service.label} on {host.label}",
                     subject_refs=[host_ref, service_ref],
-                    created_from=[host_ref, service_ref, edge_ref],
-                    confidence=max(service.confidence, 0.85),
+                    created_from=[host_ref, service_ref, edge_ref, *support_refs],
+                    confidence=max(service.confidence, service_edge.confidence, 0.85 if has_service_support else 0.0),
                     truth_status=TruthStatus.VALIDATED if service.status == EntityStatus.VALIDATED else TruthStatus.ACTIVE,
                     goal_relevance=self._goal_relevance(service.id, goal_related_entities),
-                    properties={"host_id": host.id, "service_id": service.id},
+                    properties={
+                        "host_id": host.id,
+                        "service_id": service.id,
+                        "evidence_count": len({ref.ref_id for ref in support_refs}),
+                    },
+                )
+            if self._is_http_service(service) and (
+                service.status == EntityStatus.VALIDATED
+                or service.properties.get("http_status") is not None
+                or has_service_support
+            ):
+                self._ensure_state(
+                    ag,
+                    state_type=StateNodeType.WEB_ATTACK_SURFACE,
+                    label=f"Web attack surface: {service.label} on {host.label}",
+                    subject_refs=[host_ref, service_ref],
+                    created_from=[host_ref, service_ref, edge_ref],
+                    confidence=max(service.confidence, 0.8),
+                    truth_status=TruthStatus.VALIDATED if service.status == EntityStatus.VALIDATED else TruthStatus.ACTIVE,
+                    goal_relevance=max(
+                        self._goal_relevance(host.id, goal_related_entities),
+                        self._goal_relevance(service.id, goal_related_entities),
+                    ),
+                    properties={
+                        "host_id": host.id,
+                        "service_id": service.id,
+                        "port": service.port,
+                        "http_status": service.properties.get("http_status"),
+                        "title": service.properties.get("title"),
+                    },
                 )
 
         for reach_edge in kg.list_edges(type=EdgeType.CAN_REACH):
@@ -550,7 +592,11 @@ class AttackGraphProjector:
                 confidence=state.confidence,
                 truth_status=TruthStatus.CANDIDATE,
                 goal_relevance=state.goal_relevance,
-                properties={"host_id": host_id, "service_id": service_id},
+                properties={
+                    "host_id": host_id,
+                    "service_id": service_id,
+                    "evidence_count": int(state.properties.get("evidence_count") or 0),
+                },
             )
             self._bind_action(
                 ag,
@@ -565,6 +611,31 @@ class AttackGraphProjector:
                 noise=0.2,
                 expected_value=0.7,
                 success_probability_prior=0.8,
+                parallelizable=True,
+                resource_keys={f"service:{service_id}", f"host:{host_id}"},
+                source_refs=list(state.subject_refs),
+            )
+
+        for state in ag.find_states(StateNodeType.WEB_ATTACK_SURFACE):
+            host_id = str(state.properties["host_id"])
+            service_id = str(state.properties["service_id"])
+            self._bind_action(
+                ag,
+                action_type=ActionNodeType.ENUMERATE_WEB_SURFACE,
+                label=f"Enumerate web surface: {service_id}",
+                bound_args={
+                    "host_id": host_id,
+                    "service_id": service_id,
+                    "port": state.properties.get("port"),
+                },
+                required_states=[state],
+                produced_states=[],
+                goal_relevance=state.goal_relevance,
+                cost=0.18,
+                risk=0.06,
+                noise=0.18,
+                expected_value=0.68,
+                success_probability_prior=0.78,
                 parallelizable=True,
                 resource_keys={f"service:{service_id}", f"host:{host_id}"},
                 source_refs=list(state.subject_refs),
@@ -870,6 +941,8 @@ class AttackGraphProjector:
                 if state.node_type == StateNodeType.GOAL_RELEVANT_DATA_LOCATED
                 and any(ref.ref_id == goal_ref.ref_id for ref in state.subject_refs)
             ]
+            if not prerequisite_states:
+                continue
             target_state = self._ensure_state(
                 ag,
                 state_type=StateNodeType.GOAL_STATE_SATISFIED,
@@ -886,7 +959,7 @@ class AttackGraphProjector:
                 action_type=ActionNodeType.VALIDATE_GOAL_CONDITION,
                 label=f"Validate goal condition: {goal_node.label}",
                 bound_args={"goal_id": goal_ref.ref_id},
-                required_states=prerequisite_states or [target_state],
+                required_states=prerequisite_states,
                 produced_states=[target_state],
                 goal_relevance=1.0,
                 cost=0.1,
@@ -987,11 +1060,7 @@ class AttackGraphProjector:
                 and ag.get_node(state_id).truth_status in {TruthStatus.ACTIVE, TruthStatus.VALIDATED}
                 for state_id in required_state_ids
             )
-            all_outputs_ready = produced_state_ids and all(
-                isinstance(ag.get_node(state_id), StateNode)
-                and ag.get_node(state_id).truth_status in {TruthStatus.ACTIVE, TruthStatus.VALIDATED}
-                for state_id in produced_state_ids
-            )
+            all_outputs_ready = produced_state_ids and self._action_outputs_satisfied(ag, action, produced_state_ids)
             if blocked:
                 action.activation_status = ActivationStatus.BLOCKED
             elif all_outputs_ready:
@@ -1186,6 +1255,46 @@ class AttackGraphProjector:
         if confidence >= 0.7:
             return TruthStatus.ACTIVE
         return TruthStatus.CANDIDATE
+
+    def _supporting_evidence_refs(self, kg: KnowledgeGraph, entity: BaseNode | BaseEdge) -> list[GraphRef]:
+        evidence: dict[str, Evidence] = {}
+        if isinstance(entity, BaseNode):
+            for item in kg.get_supporting_evidence(entity.id):
+                evidence[item.id] = item
+        for evidence_id in entity.evidence_ids:
+            try:
+                node = kg.get_node(evidence_id)
+            except EntityNotFoundError:
+                continue
+            if isinstance(node, Evidence):
+                evidence[node.id] = node
+        return [self._kg_node_ref(item) for item in sorted(evidence.values(), key=lambda node: node.id)]
+
+    @staticmethod
+    def _service_is_confirmed(service: Service, service_edge: BaseEdge, has_supporting_evidence: bool) -> bool:
+        if service.status in {EntityStatus.REVOKED, EntityStatus.STALE}:
+            return False
+        if service.status == EntityStatus.VALIDATED or has_supporting_evidence:
+            return True
+        return service.confidence >= 0.85 and service_edge.confidence >= 0.7
+
+    @staticmethod
+    def _action_outputs_satisfied(ag: AttackGraph, action: ActionNode, produced_state_ids: list[str]) -> bool:
+        output_states: list[StateNode] = []
+        for state_id in produced_state_ids:
+            state = ag.get_node(state_id)
+            if not isinstance(state, StateNode):
+                return False
+            output_states.append(state)
+        if action.action_type == ActionNodeType.VALIDATE_SERVICE:
+            return all(state.truth_status == TruthStatus.VALIDATED for state in output_states)
+        return all(state.truth_status in {TruthStatus.ACTIVE, TruthStatus.VALIDATED} for state in output_states)
+
+    @staticmethod
+    def _is_http_service(service: Service) -> bool:
+        service_name = str(service.service_name or service.properties.get("service_name") or "").lower()
+        banner = str(service.properties.get("banner") or "").lower()
+        return service_name in {"http", "https", "http-alt"} or "http" in banner
 
     @staticmethod
     def _truth_rank(status: TruthStatus) -> int:

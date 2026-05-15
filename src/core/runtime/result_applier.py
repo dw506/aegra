@@ -30,8 +30,14 @@ from src.core.agents.agent_protocol import (
 from src.core.agents.graph_projection import GraphProjectionAgent
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.state_writer import StateWriterAgent
+from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.kg_store import KnowledgeGraph
+from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskGenerationRequest, TaskGenerationResult
+from src.core.graph.tg_merge import merge_task_graphs
+from src.core.models.ag import ActionNode, AttackGraph
 from src.core.models.events import (
     AgentResultAdapter,
+    AgentResultStatus,
     AgentTaskResult,
     FactWriteKind,
     FactWriteRequest,
@@ -42,6 +48,7 @@ from src.core.models.events import (
 from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
+from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -72,6 +79,11 @@ class PhaseTwoApplyResult(BaseModel):
     runtime_event_refs: list[RuntimeEventRef] = Field(default_factory=list)
     kg_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
     ag_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
+    kg_apply_result: dict[str, Any] | None = None
+    ag_graph: dict[str, Any] | None = None
+    tg_graph: dict[str, Any] | None = None
+    tg_task_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    tg_created_task_ids: list[str] = Field(default_factory=list)
     kg_event_batch: KGEventBatch | None = None
     state_writer_result: AgentExecutionResult | None = None
     graph_projection_result: AgentExecutionResult | None = None
@@ -93,9 +105,13 @@ class PhaseTwoResultApplier:
         budget_manager: RuntimeBudgetManager | None = None,
         checkpoint_manager: RuntimeCheckpointManager | None = None,
         lock_manager: RuntimeLockManager | None = None,
+        attack_graph_projector: AttackGraphProjector | None = None,
+        task_graph_builder: AttackGraphTaskBuilder | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
         self._graph_projection = graph_projection or GraphProjectionAgent()
+        self._attack_graph_projector = attack_graph_projector or AttackGraphProjector()
+        self._task_graph_builder = task_graph_builder or AttackGraphTaskBuilder()
         self._session_manager = session_manager or RuntimeSessionManager()
         self._credential_manager = credential_manager or RuntimeCredentialManager()
         self._lease_manager = lease_manager or RuntimeLeaseManager()
@@ -113,6 +129,9 @@ class PhaseTwoResultApplier:
         agent_name: str | None = None,
         agent_kind: AgentKind | None = None,
         kg_ref: GraphRef | None = None,
+        kg_store: KnowledgeGraph | None = None,
+        attack_graph: AttackGraph | None = None,
+        task_graph: TaskGraph | None = None,
         goal_context: dict[str, Any] | None = None,
         policy_context: dict[str, Any] | None = None,
     ) -> PhaseTwoApplyResult:
@@ -141,11 +160,15 @@ class PhaseTwoResultApplier:
         apply_result.runtime_event_refs.extend(runtime_event_refs)
         self._sync_runtime_views_from_result(state=state, result=canonical_result)
         self._apply_task_lifecycle(state=state, result=canonical_result)
+        if task_graph is not None and self._sync_task_graph_lifecycle(task_graph=task_graph, result=canonical_result):
+            apply_result.tg_graph = task_graph.to_dict()
+            apply_result.logs.append(f"synced TG task {canonical_result.tg_node_id} lifecycle from runtime result")
         self._record_recent_outcome(state=state, result=canonical_result)
         self._audit_tool_invocations(state=state, result=canonical_result)
         self._record_evidence_and_findings(state=state, result=canonical_result)
 
-        state_writer_result = self._run_state_writer(result=canonical_result, state=state, kg_ref=resolved_kg_ref)
+        state_writer_input: AgentInput | None = None
+        state_writer_result, state_writer_input = self._run_state_writer(result=canonical_result, state=state, kg_ref=resolved_kg_ref)
         if state_writer_result is not None:
             apply_result.state_writer_result = state_writer_result
             apply_result.kg_state_deltas.extend(state_writer_result.output.state_deltas)
@@ -158,6 +181,18 @@ class PhaseTwoResultApplier:
             apply_result.logs.append(f"converted {len(fact_deltas)} fact write request(s) into KG state delta(s)")
 
         if apply_result.kg_state_deltas:
+            if kg_store is not None:
+                apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
+                    kg_store=kg_store,
+                    kg_ref=resolved_kg_ref,
+                    state=state,
+                    state_deltas=apply_result.kg_state_deltas,
+                    state_writer_input=state_writer_input,
+                )
+                apply_result.logs.append(
+                    f"applied {len(apply_result.kg_state_deltas)} KG state delta(s) to KG version "
+                    f"{apply_result.kg_apply_result['kg_version']}"
+                )
             batch = self._kg_batch(state_deltas=apply_result.kg_state_deltas)
             apply_result.kg_event_batch = batch
             apply_result.logs.append(f"built KG event batch with {len(batch.events)} event(s)")
@@ -175,6 +210,37 @@ class PhaseTwoResultApplier:
                 apply_result.ag_state_deltas.extend(projection_result.output.state_deltas)
                 apply_result.logs.extend(projection_result.output.logs)
 
+            if kg_store is not None:
+                projected_ag = self._project_attack_graph(
+                    kg_store=kg_store,
+                    existing_graph=attack_graph,
+                    state_deltas=apply_result.kg_state_deltas,
+                    goal_context=goal_context,
+                    policy_context=policy_context,
+                )
+                apply_result.ag_graph = projected_ag.to_dict()
+                apply_result.logs.append(
+                    f"re-projected AG from KG version {kg_store.version} into AG version {projected_ag.version}"
+                )
+                generated_tg = self._generate_candidate_task_graph(projected_ag)
+                apply_result.tg_task_candidates = [
+                    candidate.model_dump(mode="json") for candidate in generated_tg.candidates
+                ]
+                apply_result.tg_created_task_ids = list(generated_tg.created_task_ids)
+                if generated_tg.task_graph is not None and generated_tg.candidates:
+                    generated_task_graph = TaskGraph.from_dict(generated_tg.task_graph)
+                    merged_task_graph = merge_task_graphs(task_graph, generated_task_graph)
+                    self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
+                    apply_result.tg_graph = merged_task_graph.to_dict()
+                    apply_result.logs.append(
+                        f"generated {len(apply_result.tg_task_candidates)} TG candidate task(s) from updated AG"
+                    )
+                elif task_graph is not None:
+                    apply_result.tg_graph = task_graph.to_dict()
+                    apply_result.logs.append("updated AG produced no activatable TG candidates; kept existing TG snapshot")
+                else:
+                    apply_result.logs.append("updated AG produced no activatable TG candidates")
+
         return apply_result
 
     def _run_state_writer(
@@ -183,7 +249,7 @@ class PhaseTwoResultApplier:
         result: AgentTaskResult,
         state: RuntimeState,
         kg_ref: GraphRef,
-    ) -> AgentExecutionResult | None:
+    ) -> tuple[AgentExecutionResult | None, AgentInput | None]:
         observations = [
             ObservationRecord(
                 id=record.observation_id,
@@ -208,7 +274,7 @@ class PhaseTwoResultApplier:
             for record in result.evidence
         ]
         if not observations and not evidence:
-            return None
+            return None, None
         agent_input = AgentInput(
             graph_refs=[kg_ref],
             task_ref=result.task_id,
@@ -221,7 +287,71 @@ class PhaseTwoResultApplier:
                 "evidences": [item.model_dump(mode="json") for item in evidence],
             },
         )
-        return self._state_writer.run(agent_input)
+        return self._state_writer.run(agent_input), agent_input
+
+    def _apply_kg_deltas_to_store(
+        self,
+        *,
+        kg_store: KnowledgeGraph,
+        kg_ref: GraphRef,
+        state: RuntimeState,
+        state_deltas: list[dict[str, Any]],
+        state_writer_input: AgentInput | None,
+    ) -> dict[str, Any]:
+        agent_input = state_writer_input or AgentInput(
+            graph_refs=[kg_ref],
+            context=AgentContext(
+                operation_id=state.operation_id,
+                runtime_state_ref=state.operation_id,
+            ),
+            raw_payload={"kg_version": kg_store.version},
+        )
+        apply_request = self._state_writer.build_store_apply_request(
+            kg_ref=kg_ref,
+            state_deltas=state_deltas,
+            agent_input=agent_input,
+            base_kg_version=kg_store.version,
+        )
+        return self._state_writer.apply_to_store(store=kg_store, apply_request=apply_request)
+
+    def _project_attack_graph(
+        self,
+        *,
+        kg_store: KnowledgeGraph,
+        existing_graph: AttackGraph | None,
+        state_deltas: list[dict[str, Any]],
+        goal_context: dict[str, Any] | None,
+        policy_context: dict[str, Any] | None,
+    ) -> AttackGraph:
+        changed_refs = [
+            GraphRef.model_validate(delta["target_ref"]).ref_id
+            for delta in state_deltas
+            if isinstance(delta, dict) and isinstance(delta.get("target_ref"), dict)
+        ]
+        return self._attack_graph_projector.project_incremental(
+            kg_store,
+            existing_graph=existing_graph,
+            changed_refs=changed_refs,
+            goal_context=goal_context,
+            policy_context=policy_context,
+        )
+
+    def _generate_candidate_task_graph(self, attack_graph: AttackGraph) -> TaskGenerationResult:
+        action_ids = [
+            action.id
+            for action in attack_graph.find_actions(activatable_only=True)
+            if isinstance(action, ActionNode)
+        ]
+        if not action_ids:
+            action_ids = [action.id for action in attack_graph.find_actions() if isinstance(action, ActionNode)]
+        return self._task_graph_builder.build_candidates(
+            attack_graph,
+            TaskGenerationRequest(
+                action_ids=sorted(action_ids),
+                include_evidence_tasks=False,
+                group_label="Updated Candidate Tasks",
+            ),
+        )
 
     def _run_graph_projection(
         self,
@@ -618,6 +748,22 @@ class PhaseTwoResultApplier:
                     reason=result.error_message or result.summary or f"task_{task.status.value}",
                     close_routes=False,
                 )
+
+    def _sync_task_graph_lifecycle(self, *, task_graph: TaskGraph, result: AgentTaskResult) -> bool:
+        """Mirror successful Runtime task completion into the Task Graph."""
+
+        if result.status != AgentResultStatus.SUCCEEDED:
+            return False
+        for task_id in (result.tg_node_id, result.task_id):
+            if task_id not in task_graph._nodes:
+                continue
+            node = task_graph.get_node(task_id)
+            if not isinstance(node, BaseTaskNode):
+                continue
+            updated = task_graph.mark_task_status(task_id, TaskStatus.SUCCEEDED, reason=result.summary)
+            updated.last_outcome_ref = f"runtime://results/{result.result_id}"
+            return True
+        return False
 
     def _sync_runtime_views_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         self._sync_credential_view(state=state, result=result)

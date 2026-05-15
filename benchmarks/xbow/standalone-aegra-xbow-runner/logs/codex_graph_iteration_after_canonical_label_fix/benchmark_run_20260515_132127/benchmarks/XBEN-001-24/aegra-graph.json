@@ -1,0 +1,61 @@
+{
+  "edges": [
+    {
+      "source": "evidence-2b774adf09bc46ca95672f3cb14c246d",
+      "target": "tg-task::971af76c830946bf",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-7e1d5dfac1594fdcb5d368d5f638e7b4",
+      "target": "tg-task::971af76c830946bf",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-af881e52e63d48258fbec85d9afdb7dd",
+      "target": "tg-task::971af76c830946bf",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-4f97681319c14623a039ed1b2f725022",
+      "target": "tg-task::971af76c830946bf",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-d786d1d60f7e4cad94c4cf1fb7f6b7e8",
+      "target": "tg-task::971af76c830946bf",
+      "type": "DERIVED_FROM"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "evidence-2b774adf09bc46ca95672f3cb14c246d",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "tg-task::971af76c830946bf",
+      "label": "tg-task::971af76c830946bf",
+      "type": "Task"
+    },
+    {
+      "id": "evidence-7e1d5dfac1594fdcb5d368d5f638e7b4",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-af881e52e63d48258fbec85d9afdb7dd",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-4f97681319c14623a039ed1b2f725022",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "evidence-d786d1d60f7e4cad94c4cf1fb7f6b7e8",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    }
+  ]
+}

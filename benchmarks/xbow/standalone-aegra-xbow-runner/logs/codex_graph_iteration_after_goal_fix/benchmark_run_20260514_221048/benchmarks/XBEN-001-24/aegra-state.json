@@ -1,0 +1,784 @@
+{
+  "budgets": {
+    "approval_cache": {},
+    "noise_budget_max": null,
+    "noise_budget_used": 0.0,
+    "operation_budget_max": null,
+    "operation_budget_used": 0,
+    "policy_flags": {},
+    "risk_budget_max": null,
+    "risk_budget_used": 0.0,
+    "time_budget_max_sec": null,
+    "time_budget_used_sec": 0.0,
+    "token_budget_max": null,
+    "token_budget_used": 0
+  },
+  "checkpoints": {},
+  "credentials": {},
+  "event_cursor": 0,
+  "execution": {
+    "active_goal_id": null,
+    "active_phase": null,
+    "created_at": "2026-05-14T14:11:36.048218Z",
+    "finished_at": null,
+    "metadata": {
+      "_operation_log_seq": 14,
+      "benchmark": {
+        "benchmark_id": "XBEN-001-24",
+        "suite": "xbow-validation-benchmarks",
+        "target_url": "http://127.0.0.1:4854"
+      },
+      "control_cycle_history": [
+        {
+          "applied_results": [],
+          "cycle_index": 1,
+          "execution_success": true,
+          "feedback_success": true,
+          "llm_advisors": {
+            "base_url": null,
+            "configured": false,
+            "critic_enabled": false,
+            "model": null,
+            "planner_enabled": false,
+            "supervisor_enabled": false
+          },
+          "llm_decision_history_count": 0,
+          "planning_success": true,
+          "replan_request_count": 0,
+          "selected_task_ids": [],
+          "started_at": "2026-05-14T14:11:36.371227+00:00",
+          "stop_reason": "no schedulable work and no replan request",
+          "stopped": true
+        }
+      ],
+      "control_plane": {
+        "audit_enabled": true,
+        "audit_max_entries": 200,
+        "audit_persist_enabled": true,
+        "audit_redaction_enabled": true,
+        "default_operation_budget": 100,
+        "default_scan_timeout_sec": 900,
+        "llm_advisors": {
+          "base_url": null,
+          "configured": false,
+          "critic_enabled": false,
+          "model": null,
+          "planner_enabled": false,
+          "supervisor_enabled": false
+        },
+        "max_concurrent_workers": 1,
+        "operation_log_max_entries": 200,
+        "recovery_enabled": true
+      },
+      "graph_memory": {
+        "ag_version": 18,
+        "frontier_version": null,
+        "kg_version": 5,
+        "loaded_runtime": true,
+        "source_ag_version": null,
+        "source_kg_version": 5,
+        "tg_version": 4
+      },
+      "last_control_cycle": {
+        "applied_results": [],
+        "cycle_index": 1,
+        "execution_success": true,
+        "feedback_success": true,
+        "llm_advisors": {
+          "base_url": null,
+          "configured": false,
+          "critic_enabled": false,
+          "model": null,
+          "planner_enabled": false,
+          "supervisor_enabled": false
+        },
+        "llm_decision_history_count": 0,
+        "planning_success": true,
+        "replan_request_count": 0,
+        "selected_task_ids": [],
+        "started_at": "2026-05-14T14:11:36.371227+00:00",
+        "stop_reason": "no schedulable work and no replan request",
+        "stopped": true
+      },
+      "last_phase_checkpoint": {
+        "applied_task_ids": [],
+        "at": "2026-05-14T14:11:36.371227+00:00",
+        "cycle_index": 1,
+        "phase": "cycle_completed",
+        "runtime_event_count": 0,
+        "selected_task_ids": [],
+        "status": "completed",
+        "stop_reason": "no schedulable work and no replan request",
+        "stopped": true
+      },
+      "llm_decision_history": [],
+      "operation_log": [
+        {
+          "at": "2026-05-14T14:11:36.072728+00:00",
+          "event_type": "operation_created",
+          "operation_status": "created",
+          "runtime_policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_hosts": [
+              "127.0.0.1"
+            ],
+            "blocked_hosts": [],
+            "cidr_whitelist": [
+              "127.0.0.1/32"
+            ],
+            "command_allowlist": [
+              "nmap",
+              "httpx",
+              "whatweb",
+              "sslscan",
+              "nuclei"
+            ],
+            "default_task_timeout_sec": 900,
+            "deny_egress": false,
+            "disabled_tools": [
+              "masscan",
+              "sqlmap",
+              "metasploit",
+              "msfconsole",
+              "curl",
+              "wget",
+              "nc",
+              "netcat"
+            ],
+            "engagement": {
+              "assets": [
+                {
+                  "address": "127.0.0.1",
+                  "asset_id": "XBEN-001-24::url",
+                  "hostname": "127.0.0.1",
+                  "kind": "url",
+                  "metadata": {
+                    "benchmark_id": "XBEN-001-24",
+                    "source": "pentestgpt-runner"
+                  },
+                  "platform": null,
+                  "port": 4854,
+                  "protocol": "http",
+                  "tags": [
+                    "xbow",
+                    "benchmark",
+                    "authorized_target"
+                  ],
+                  "url": "http://127.0.0.1:4854",
+                  "value": "http://127.0.0.1:4854"
+                },
+                {
+                  "address": "127.0.0.1",
+                  "asset_id": "XBEN-001-24::service",
+                  "hostname": "127.0.0.1",
+                  "kind": "service",
+                  "metadata": {
+                    "benchmark_id": "XBEN-001-24",
+                    "source": "pentestgpt-runner"
+                  },
+                  "platform": null,
+                  "port": 4854,
+                  "protocol": "http",
+                  "tags": [
+                    "xbow",
+                    "benchmark",
+                    "authorized_target"
+                  ],
+                  "url": "http://127.0.0.1:4854",
+                  "value": "127.0.0.1:4854"
+                },
+                {
+                  "address": "127.0.0.1",
+                  "asset_id": "XBEN-001-24::host",
+                  "hostname": "127.0.0.1",
+                  "kind": "host",
+                  "metadata": {},
+                  "platform": null,
+                  "port": null,
+                  "protocol": null,
+                  "tags": [
+                    "xbow",
+                    "benchmark",
+                    "authorized_target"
+                  ],
+                  "url": null,
+                  "value": "127.0.0.1"
+                }
+              ],
+              "denylist": [],
+              "engagement_id": "xbow::XBEN-001-24",
+              "metadata": {
+                "resolved_addresses": [
+                  "127.0.0.1"
+                ],
+                "safety_profile": "xbow-single-target-low-risk",
+                "target_host": "127.0.0.1",
+                "target_port": 4854,
+                "target_url": "http://127.0.0.1:4854"
+              },
+              "name": "XBOW XBEN-001-24",
+              "rate_limit": {
+                "max_cidr_prefix_v4": 32,
+                "max_cidr_prefix_v6": 128,
+                "max_concurrent_per_host": 1,
+                "max_tasks_per_minute": 30
+              },
+              "risk_policy": {
+                "approval_required_tags": [
+                  "active_exploit"
+                ],
+                "block_active_exploit": true,
+                "block_command_execution": true,
+                "block_destructive": true,
+                "block_file_write": true,
+                "block_reverse_callback": true,
+                "max_risk_level": "low",
+                "require_approval_for_active_exploit": true
+              },
+              "scan_windows": [],
+              "scope_rules": [
+                {
+                  "action": "allow",
+                  "kind": "any",
+                  "reason": "XBOW benchmark runner supplied target",
+                  "rule_id": "allow::XBEN-001-24::1",
+                  "value": "http://127.0.0.1:4854"
+                },
+                {
+                  "action": "allow",
+                  "kind": "any",
+                  "reason": "XBOW benchmark runner supplied target",
+                  "rule_id": "allow::XBEN-001-24::2",
+                  "value": "127.0.0.1:4854"
+                },
+                {
+                  "action": "allow",
+                  "kind": "any",
+                  "reason": "XBOW benchmark runner supplied target",
+                  "rule_id": "allow::XBEN-001-24::3",
+                  "value": "127.0.0.1"
+                }
+              ]
+            },
+            "loaded_at": "2026-05-14T14:11:36.047601Z",
+            "loaded_from": "settings",
+            "max_concurrent_per_host": {},
+            "policy_version": "v1",
+            "rate_limit_per_subnet_per_min": {},
+            "retry_backoff_base_sec": 0,
+            "risk_policy": {
+              "approval_required_tags": [
+                "active_exploit"
+              ],
+              "block_active_exploit": true,
+              "block_command_execution": true,
+              "block_destructive": true,
+              "block_file_write": true,
+              "block_reverse_callback": true,
+              "max_risk_level": "low",
+              "require_approval_for_active_exploit": true
+            },
+            "safety_stop": false,
+            "sensitive_tags": [],
+            "sensitive_task_types": [],
+            "session_policies": {}
+          },
+          "seq": 1
+        },
+        {
+          "at": "2026-05-14T14:11:36.118574+00:00",
+          "event_type": "targets_imported",
+          "operation_status": "created",
+          "seq": 2,
+          "target_count": 1
+        },
+        {
+          "at": "2026-05-14T14:11:36.162680+00:00",
+          "event_type": "operation_started",
+          "operation_status": "ready",
+          "seq": 3,
+          "status": "ready"
+        },
+        {
+          "at": "2026-05-14T14:11:36.281852+00:00",
+          "cycle_index": 1,
+          "event_type": "cycle_started",
+          "operation_status": "running",
+          "seq": 4
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.281852+00:00",
+          "checkpoint_status": "running",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "cycle_started",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 5,
+          "status": "running"
+        },
+        {
+          "at": "2026-05-14T14:11:36.301157+00:00",
+          "cycle_index": 1,
+          "event_type": "planning_completed",
+          "operation_status": "running",
+          "seq": 6,
+          "step_count": 2,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.301157+00:00",
+          "checkpoint_status": "completed",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "planning_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 7,
+          "status": "completed",
+          "step_count": 2,
+          "success": true
+        },
+        {
+          "at": "2026-05-14T14:11:36.317170+00:00",
+          "cycle_index": 1,
+          "event_type": "execution_completed",
+          "operation_status": "running",
+          "selected_task_ids": [],
+          "seq": 8,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.317170+00:00",
+          "checkpoint_status": "completed",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "execution_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 9,
+          "status": "completed",
+          "step_count": 1,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.332290+00:00",
+          "checkpoint_status": "completed",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "apply_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 10,
+          "status": "completed"
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.359770+00:00",
+          "cycle_index": 1,
+          "event_type": "feedback_completed",
+          "operation_status": "running",
+          "seq": 11,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.359770+00:00",
+          "checkpoint_status": "completed",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "feedback_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 12,
+          "status": "completed",
+          "step_count": 1,
+          "success": true
+        },
+        {
+          "at": "2026-05-14T14:11:36.371227+00:00",
+          "cycle_index": 1,
+          "event_type": "cycle_completed",
+          "operation_status": "completed",
+          "seq": 13,
+          "stop_reason": "no schedulable work and no replan request",
+          "stopped": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.371227+00:00",
+          "checkpoint_status": "completed",
+          "cycle_index": 1,
+          "event_type": "phase_checkpoint",
+          "phase": "cycle_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "seq": 14,
+          "status": "completed",
+          "stop_reason": "no schedulable work and no replan request",
+          "stopped": true
+        }
+      ],
+      "phase_checkpoints": [
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.281852+00:00",
+          "cycle_index": 1,
+          "phase": "cycle_started",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "running"
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.301157+00:00",
+          "cycle_index": 1,
+          "phase": "planning_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed",
+          "step_count": 2,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.317170+00:00",
+          "cycle_index": 1,
+          "phase": "execution_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed",
+          "step_count": 1,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.332290+00:00",
+          "cycle_index": 1,
+          "phase": "apply_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed"
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.359770+00:00",
+          "cycle_index": 1,
+          "phase": "feedback_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed",
+          "step_count": 1,
+          "success": true
+        },
+        {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.371227+00:00",
+          "cycle_index": 1,
+          "phase": "cycle_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed",
+          "stop_reason": "no schedulable work and no replan request",
+          "stopped": true
+        }
+      ],
+      "recovery": {
+        "last_cycle_completed_at": "2026-05-14T14:11:36.371227+00:00",
+        "last_cycle_index": 1,
+        "last_cycle_started_at": "2026-05-14T14:11:36.281852+00:00",
+        "last_phase": "cycle_completed",
+        "last_phase_at": "2026-05-14T14:11:36.371227+00:00",
+        "last_phase_checkpoint": {
+          "applied_task_ids": [],
+          "at": "2026-05-14T14:11:36.371227+00:00",
+          "cycle_index": 1,
+          "phase": "cycle_completed",
+          "runtime_event_count": 0,
+          "selected_task_ids": [],
+          "status": "completed",
+          "stop_reason": "no schedulable work and no replan request",
+          "stopped": true
+        },
+        "last_phase_status": "completed",
+        "phase_checkpoint_count": 6,
+        "unclean_shutdown": false
+      },
+      "runtime_policy": {
+        "allow_fingerprint": true,
+        "allow_safe_probe": true,
+        "authorized_hosts": [
+          "127.0.0.1"
+        ],
+        "blocked_hosts": [],
+        "cidr_whitelist": [
+          "127.0.0.1/32"
+        ],
+        "command_allowlist": [
+          "nmap",
+          "httpx",
+          "whatweb",
+          "sslscan",
+          "nuclei"
+        ],
+        "default_task_timeout_sec": 900,
+        "deny_egress": false,
+        "disabled_tools": [
+          "masscan",
+          "sqlmap",
+          "metasploit",
+          "msfconsole",
+          "curl",
+          "wget",
+          "nc",
+          "netcat"
+        ],
+        "engagement": {
+          "assets": [
+            {
+              "address": "127.0.0.1",
+              "asset_id": null,
+              "hostname": "127.0.0.1",
+              "kind": "url",
+              "metadata": {
+                "source": "pentestgpt-runner"
+              },
+              "platform": null,
+              "port": 4854,
+              "protocol": "http",
+              "tags": [
+                "xbow",
+                "authorized_target"
+              ],
+              "url": "http://127.0.0.1:4854",
+              "value": "http://127.0.0.1:4854"
+            }
+          ],
+          "denylist": [],
+          "engagement_id": "engagement::xbow-XBEN-001-24-20260514141136",
+          "metadata": {},
+          "name": null,
+          "rate_limit": {
+            "max_cidr_prefix_v4": 24,
+            "max_cidr_prefix_v6": 64,
+            "max_concurrent_per_host": 1,
+            "max_tasks_per_minute": null
+          },
+          "risk_policy": {
+            "approval_required_tags": [
+              "active_exploit"
+            ],
+            "block_active_exploit": true,
+            "block_command_execution": true,
+            "block_destructive": true,
+            "block_file_write": true,
+            "block_reverse_callback": true,
+            "max_risk_level": "low",
+            "require_approval_for_active_exploit": true
+          },
+          "scan_windows": [],
+          "scope_rules": [
+            {
+              "action": "allow",
+              "kind": "url",
+              "reason": "imported target",
+              "rule_id": "allow::0",
+              "value": "http://127.0.0.1:4854"
+            }
+          ]
+        },
+        "loaded_at": "2026-05-14T14:11:36.047601Z",
+        "loaded_from": "settings",
+        "max_concurrent_per_host": {},
+        "policy_version": "v1",
+        "rate_limit_per_subnet_per_min": {},
+        "retry_backoff_base_sec": 0,
+        "risk_policy": {
+          "approval_required_tags": [
+            "active_exploit"
+          ],
+          "block_active_exploit": true,
+          "block_command_execution": true,
+          "block_destructive": true,
+          "block_file_write": true,
+          "block_reverse_callback": true,
+          "max_risk_level": "low",
+          "require_approval_for_active_exploit": true
+        },
+        "safety_stop": false,
+        "sensitive_tags": [],
+        "sensitive_task_types": [],
+        "session_policies": {}
+      },
+      "target_count": 1,
+      "target_inventory": [
+        {
+          "address": "127.0.0.1",
+          "asset_id": null,
+          "hostname": "127.0.0.1",
+          "kind": "url",
+          "metadata": {
+            "source": "pentestgpt-runner"
+          },
+          "platform": null,
+          "port": 4854,
+          "protocol": "http",
+          "tags": [
+            "xbow",
+            "authorized_target"
+          ],
+          "url": "http://127.0.0.1:4854",
+          "value": "http://127.0.0.1:4854"
+        }
+      ],
+      "task_graph": {
+        "edges": [],
+        "metadata": {
+          "frontier_version": null,
+          "source_ag_version": null,
+          "version": 4
+        },
+        "nodes": [
+          {
+            "anchor_refs": [
+              {
+                "graph": "tg",
+                "label": null,
+                "ref_id": "tg-task::39eb8f781a1ae597",
+                "ref_type": "Task"
+              }
+            ],
+            "created_at": "2026-05-14T14:11:36.301157Z",
+            "id": "tg-checkpoint::2a386b86057330e6",
+            "kind": "checkpoint",
+            "label": "Checkpoint for tg-task::39eb8f781a1ae597",
+            "properties": {
+              "generated_by": "task_builder_agent"
+            },
+            "source_task_id": "tg-task::39eb8f781a1ae597"
+          },
+          {
+            "created_at": "2000-01-01T00:00:00Z",
+            "group_type": "STAGE",
+            "id": "tg-group::f20f518e17a9000b",
+            "kind": "group",
+            "label": "Planner Selected Tasks",
+            "tags": [
+              "stage"
+            ],
+            "task_ids": [
+              "tg-task::39eb8f781a1ae597"
+            ]
+          },
+          {
+            "approval_required": false,
+            "assigned_agent": null,
+            "attempt_count": 0,
+            "attempts": 0,
+            "created_at": "2000-01-01T00:00:00Z",
+            "deadline": null,
+            "estimated_cost": 0.35,
+            "estimated_noise": 0.15,
+            "estimated_risk": 0.05,
+            "evidence_output_refs": [],
+            "expected_output_refs": [
+              {
+                "graph": "query",
+                "label": "127.0.0.1",
+                "ref_id": "task-output::ag-action::f8337746eb3983c1::0::kg-host::48d04a88bcfbf815",
+                "ref_type": "TaskOutput"
+              }
+            ],
+            "gate_ids": [],
+            "goal_relevance": 1.0,
+            "id": "tg-task::39eb8f781a1ae597",
+            "input_bindings": {
+              "host_id": "kg-host::48d04a88bcfbf815"
+            },
+            "kind": "task",
+            "label": "ASSET_CONFIRMATION:ag-action::f8337746eb3983c1",
+            "max_attempts": 1,
+            "parallelizable": true,
+            "precondition_refs": [],
+            "priority": 100,
+            "reason": "derived from selected AG action candidate",
+            "resource_keys": [
+              "host:kg-host::48d04a88bcfbf815"
+            ],
+            "retry_policy": {
+              "backoff_seconds": 0,
+              "max_attempts": 1,
+              "retryable_statuses": [
+                "failed"
+              ]
+            },
+            "source_action_id": "ag-action::f8337746eb3983c1",
+            "source_refs": [
+              {
+                "graph": "kg",
+                "label": "127.0.0.1",
+                "ref_id": "kg-host::48d04a88bcfbf815",
+                "ref_type": "Host"
+              }
+            ],
+            "status": "ready",
+            "tags": [
+              "enumerate_host"
+            ],
+            "target_refs": [
+              {
+                "graph": "kg",
+                "label": "127.0.0.1",
+                "ref_id": "kg-host::48d04a88bcfbf815",
+                "ref_type": "Host"
+              }
+            ],
+            "task_type": "ASSET_CONFIRMATION",
+            "updated_at": "2026-05-14T14:11:36.301157Z"
+          }
+        ]
+      },
+      "xbow_adapter": {
+        "allowed_tools": [
+          "nmap",
+          "httpx",
+          "whatweb",
+          "sslscan",
+          "nuclei"
+        ],
+        "disabled_tools": [
+          "masscan",
+          "sqlmap",
+          "metasploit",
+          "msfconsole",
+          "curl",
+          "wget",
+          "nc",
+          "netcat"
+        ],
+        "safety_profile": "single-target-low-risk"
+      }
+    },
+    "operation_id": "xbow-XBEN-001-24-20260514141136",
+    "started_at": "2026-05-14T14:11:36.131555Z",
+    "status": "completed",
+    "summary": "control cycle 1 completed",
+    "tasks": {}
+  },
+  "last_updated": "2026-05-14T14:11:36.371227Z",
+  "locks": {},
+  "operation_id": "xbow-XBEN-001-24-20260514141136",
+  "operation_status": "completed",
+  "pending_events": [],
+  "pivot_routes": {},
+  "recent_outcomes": [],
+  "replan_requests": [],
+  "session_leases": {},
+  "sessions": {},
+  "workers": {}
+}

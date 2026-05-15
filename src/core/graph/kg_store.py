@@ -13,6 +13,7 @@ from src.core.models.kg import (
     GraphChange,
     GraphDelta,
     GraphEntityRef,
+    NODE_MODEL_BY_TYPE,
     Observation,
     parse_edge,
     parse_node,
@@ -553,17 +554,22 @@ class KnowledgeGraph:
 
         entity_id = str(patch["entity_id"])
         entity_type = NodeType(str(patch["entity_type"]))
+        node_cls = self._node_model(entity_type)
+        model_attrs, property_attrs = self._split_patch_attributes(
+            node_cls,
+            patch.get("attributes") or {},
+            reserved={"id", "type", "label", "source_refs", "properties"},
+        )
         payload = {
             "id": entity_id,
             "type": entity_type.value,
             "label": patch.get("label") or entity_id,
             "source_refs": self._normalize_source_refs(patch.get("source_refs") or []),
-            **{
-                key: value
-                for key, value in (patch.get("attributes") or {}).items()
-                if key not in {"properties"}
+            **model_attrs,
+            "properties": {
+                **dict((patch.get("attributes") or {}).get("properties") or {}),
+                **property_attrs,
             },
-            "properties": dict((patch.get("attributes") or {}).get("properties") or {}),
         }
         if entity_id in self._nodes:
             return self.update_node(entity_id, payload)
@@ -574,6 +580,12 @@ class KnowledgeGraph:
 
         relation_id = str(patch["relation_id"])
         relation_type = EdgeType(str(patch["relation_type"]))
+        edge_cls = EDGE_MODEL_BY_TYPE[relation_type]
+        model_attrs, property_attrs = self._split_patch_attributes(
+            edge_cls,
+            patch.get("attributes") or {},
+            reserved={"id", "type", "label", "source", "target", "source_refs", "properties"},
+        )
         payload = {
             "id": relation_id,
             "type": relation_type.value,
@@ -581,12 +593,11 @@ class KnowledgeGraph:
             "source": str(patch["source"]),
             "target": str(patch["target"]),
             "source_refs": self._normalize_source_refs(patch.get("source_refs") or []),
-            **{
-                key: value
-                for key, value in (patch.get("attributes") or {}).items()
-                if key not in {"properties"}
+            **model_attrs,
+            "properties": {
+                **dict((patch.get("attributes") or {}).get("properties") or {}),
+                **property_attrs,
             },
-            "properties": dict((patch.get("attributes") or {}).get("properties") or {}),
         }
         if relation_id in self._edges:
             current = self.get_edge(relation_id)
@@ -606,6 +617,32 @@ class KnowledgeGraph:
             self._record_change(ChangeOperation.UPDATE, updated.to_ref("edge"), current, updated)
             return updated
         return self.add_edge(parse_edge(payload))
+
+    @staticmethod
+    def _node_model(node_type: NodeType) -> type[BaseNode]:
+        return NODE_MODEL_BY_TYPE[node_type]
+
+    @staticmethod
+    def _split_patch_attributes(
+        model_cls: type[BaseNode] | type[BaseEdge],
+        attributes: dict[str, Any],
+        *,
+        reserved: set[str],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        model_attrs: dict[str, Any] = {}
+        property_attrs: dict[str, Any] = {}
+        allowed_fields = set(model_cls.model_fields)
+        for key, value in attributes.items():
+            if key == "properties" or key in reserved:
+                continue
+            if key in allowed_fields:
+                if key == "status" and not KnowledgeGraph._is_entity_status(value):
+                    property_attrs[key] = value
+                    continue
+                model_attrs[key] = value
+            else:
+                property_attrs[key] = value
+        return model_attrs, property_attrs
 
     def _index_source_refs(
         self,
@@ -681,3 +718,13 @@ class KnowledgeGraph:
     @staticmethod
     def _status_key(value: str | EntityStatus) -> str:
         return value.value if isinstance(value, EntityStatus) else value
+
+    @staticmethod
+    def _is_entity_status(value: Any) -> bool:
+        if isinstance(value, EntityStatus):
+            return True
+        try:
+            EntityStatus(str(value))
+        except ValueError:
+            return False
+        return True

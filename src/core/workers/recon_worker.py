@@ -310,15 +310,24 @@ class ReconWorker(BaseWorkerAgent):
     def _execute_host_discovery(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> dict[str, Any]:
         """Execute host discovery via ToolRunner and normalize the result."""
 
+        canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
         host_hint = (
             task_spec.input_bindings.get("host")
+            or task_spec.input_bindings.get("target_host")
+            or task_spec.input_bindings.get("address")
+            or task_spec.input_bindings.get("hostname")
+            or self._primary_ref_label(task_spec.target_refs, preferred_type="Host")
             or task_spec.input_bindings.get("host_id")
-            or self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
+            or canonical_host_id
             or "unknown-host"
         )
+        metadata = dict(agent_input.raw_payload)
+        if canonical_host_id:
+            metadata.setdefault("canonical_host_id", canonical_host_id)
+            metadata.setdefault("host_id", canonical_host_id)
         execution = self._run_probe(
             task_id=task_spec.task_id,
-            metadata=agent_input.raw_payload,
+            metadata=metadata,
             target_hint=host_hint,
             mode="host_discovery",
         )
@@ -327,7 +336,7 @@ class ReconWorker(BaseWorkerAgent):
             result_type="host_discovery_result",
             execution=execution,
             refs=task_spec.target_refs,
-            metadata=agent_input.raw_payload,
+            metadata=metadata,
             operation_id=agent_input.context.operation_id,
             target_hint=host_hint,
         )
@@ -335,16 +344,25 @@ class ReconWorker(BaseWorkerAgent):
     def _execute_service_validation(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> dict[str, Any]:
         """Execute service validation via ToolRunner and normalize the result."""
 
+        canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
+        canonical_service_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Service")
         service_hint = (
             task_spec.input_bindings.get("service")
             or task_spec.input_bindings.get("service_id")
-            or self._primary_ref_id(task_spec.target_refs, preferred_type="Service")
+            or canonical_service_id
             or "unknown-service"
         )
         port = task_spec.input_bindings.get("port") or task_spec.constraints.get("port")
+        metadata = dict(agent_input.raw_payload) | {"service_port": port}
+        if canonical_host_id:
+            metadata.setdefault("canonical_host_id", canonical_host_id)
+            metadata.setdefault("host_id", canonical_host_id)
+        if canonical_service_id:
+            metadata.setdefault("canonical_service_id", canonical_service_id)
+            metadata.setdefault("service_id", canonical_service_id)
         execution = self._run_probe(
             task_id=task_spec.task_id,
-            metadata=agent_input.raw_payload | {"service_port": port},
+            metadata=metadata,
             target_hint=service_hint,
             mode="service_validation",
         )
@@ -353,7 +371,7 @@ class ReconWorker(BaseWorkerAgent):
             result_type="service_validation_result",
             execution=execution,
             refs=task_spec.target_refs,
-            metadata=agent_input.raw_payload | {"service_port": port},
+            metadata=metadata,
             operation_id=agent_input.context.operation_id,
             target_hint=service_hint,
         )
@@ -715,6 +733,20 @@ class ReconWorker(BaseWorkerAgent):
             if (ref.ref_type or "").lower() == preferred_type.lower():
                 return ref.ref_id
         return refs[0].ref_id if refs else None
+
+    @staticmethod
+    def _primary_ref_label(refs: list[GraphRef], *, preferred_type: str) -> str | None:
+        """Return the label for the first ref matching the preferred ref type."""
+
+        for ref in refs:
+            label = getattr(ref, "label", None)
+            if (ref.ref_type or "").lower() == preferred_type.lower() and label:
+                return str(label)
+        for ref in refs:
+            label = getattr(ref, "label", None)
+            if label:
+                return str(label)
+        return None
 
 
 __all__ = ["ReconWorker"]

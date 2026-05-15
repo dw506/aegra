@@ -6832,3 +6832,725 @@ artifact 状态：
 - `error.json` 不存在。
 
 结论：截至本次记录，Aegra XBOW runner 的最小真实样本已经跑通完整闭环，但未解出 flag；失败类型应记为 `no flag`，不是 `timeout`、不是 `adapter error`、不是 `policy blocked`。
+
+### 15.3 GraphMemoryStore 文件版图记忆入口（2026-05-14）
+
+目标：
+
+- 新增统一管理 `KG / AG / TG / Runtime` 的本地文件入口。
+- 第一版不接 Neo4j，只使用 JSON 文件，便于调试和 artifact 检查。
+
+新增文件：
+
+- `src/core/graph/graph_memory_store.py`
+- `tests/test_graph_memory_store.py`
+
+存储布局：
+
+```text
+runtime-store/
+└── <operation_id>/
+    ├── kg.json
+    ├── ag.json
+    ├── tg.json
+    ├── runtime.json
+    └── snapshots/
+        └── cycle-000003/
+            ├── kg.json
+            └── manifest.json
+```
+
+核心接口：
+
+- `GraphMemoryStore.load_kg(operation_id) -> KnowledgeGraph`
+- `GraphMemoryStore.save_kg(operation_id, kg)`
+- `GraphMemoryStore.load_ag(operation_id) -> AttackGraph`
+- `GraphMemoryStore.save_ag(operation_id, ag)`
+- `GraphMemoryStore.load_tg(operation_id) -> TaskGraph`
+- `GraphMemoryStore.save_tg(operation_id, tg)`
+- `GraphMemoryStore.load_runtime(operation_id) -> RuntimeState | None`
+- `GraphMemoryStore.save_runtime(operation_id, runtime)`
+- `GraphMemoryStore.save_snapshot(operation_id, cycle_index) -> Path`
+
+实现约定：
+
+- KG / AG / TG 复用现有 `to_dict()` / `from_dict()`，不新增第二套 schema。
+- Runtime 复用 `RuntimeState.model_dump(mode="json")` 与 `RuntimeState.model_validate(...)`。
+- 缺失的 `kg.json` / `ag.json` / `tg.json` 会返回空图；缺失的 `runtime.json` 返回 `None`。
+- `operation_id` 只允许单一路径段，拒绝 `../`、`..\` 等路径穿越。
+- JSON 写入使用临时文件 + replace，避免半写入文件。
+- `save_snapshot(...)` 会把当前存在的 `kg.json / ag.json / tg.json / runtime.json` 复制到 `snapshots/cycle-XXXXXX/`，并写入 `manifest.json`。
+
+验证结果：
+
+- `python -m py_compile src\core\graph\graph_memory_store.py` 通过。
+- `python -m pytest tests\test_graph_memory_store.py tests\test_kg_graph.py tests\test_ag_models.py tests\test_tg_models.py` 通过，合计 16 个测试。
+
+### 15.4 Graph 初始化流程（2026-05-14）
+
+目标：
+
+- 新增从用户目标 `IP / URL / hostname / cidr` 创建初始 `KG / AG / TG` 的入口。
+- 初始化后直接写入 `GraphMemoryStore`，形成 `kg.json / ag.json / tg.json`。
+
+新增文件：
+
+- `src/core/graph/graph_initializer.py`
+- `tests/test_graph_initializer.py`
+
+核心接口：
+
+- `normalize_initial_target(target: str) -> InitialTarget`
+- `GraphInitializer.initialize(...) -> GraphInitializationResult`
+- `initialize_graph_memory(...) -> GraphInitializationResult`
+
+初始化流程：
+
+```text
+用户输入目标 IP / URL / hostname / cidr
+    ↓
+normalize_initial_target(...)
+    ↓
+KG 创建 Host / Goal / NetworkZone(scope)
+    ↓
+KG 创建 Host -BELONGS_TO_ZONE-> Scope
+KG 创建 Goal -TARGETS-> Host
+    ↓
+AttackGraphProjector.project(kg, goal_context={goal_ids: [...]})
+    ↓
+AG 自动生成 HOST_KNOWN / ENUMERATE_HOST
+    ↓
+AttackGraphTaskBuilder 选择 ENUMERATE_HOST action
+    ↓
+TG 创建初始 ASSET_CONFIRMATION 探测任务
+    ↓
+GraphMemoryStore 保存 KG / AG / TG
+```
+
+实现约定：
+
+- URL 输入会解析并保留：
+  - `host_value`
+  - `hostname` 或 `address`
+  - `url`
+  - `scheme`
+  - `port`
+- IP 输入会写入 `Host.address`。
+- hostname 输入会写入 `Host.hostname`。
+- cidr 输入第一版以 scope target 形态保存，后续可扩展为多个 Host seed。
+- 初始 scope 使用 KG 的 `NetworkZone` 表示，`zone_kind="operation_scope"`。
+- 初始目标使用 KG 的 `Host` 表示，并写入 `properties.target_kind / target / operation_id`。
+- 初始 goal 使用 KG 的 `Goal` 表示，默认 `category="context"`。
+- ID 使用现有 `stable_node_id(...)` 生成，保证同一 operation / target 下稳定。
+- 初始 TG 只选择 `ENUMERATE_HOST`，并关闭 evidence task 自动附加，保持“初始探测任务”最小化。
+
+验证结果：
+
+- `python -m py_compile src\core\graph\graph_initializer.py src\core\graph\graph_memory_store.py` 通过。
+- `python -m pytest tests\test_graph_initializer.py tests\test_graph_memory_store.py tests\test_ag_projector.py tests\test_tg_builder.py` 通过，合计 19 个测试。
+
+### 15.5 Orchestrator 接入 GraphMemoryStore 图闭环（2026-05-14）
+
+目标：
+
+- 修改 `AppOrchestrator.run_operation_cycle()`，让每轮 control cycle 真正读写图记忆。
+- 保持现有 `RuntimeStore` 的控制面兼容，同时新增 `GraphMemoryStore` 图快照闭环。
+
+修改文件：
+
+- `src/app/orchestrator.py`
+- `tests/test_app_orchestrator.py`
+
+构造器新增依赖：
+
+- `graph_memory_store: GraphMemoryStore | None`
+- `graph_projector: AttackGraphProjector | None`
+
+默认行为：
+
+- `GraphMemoryStore` 默认使用 `settings.runtime_store_dir`。
+- 因此 file runtime store 目录现在会同时包含：
+
+```text
+<runtime_store_dir>/
+└── <operation_id>/
+    ├── state.json
+    ├── events.json
+    ├── audit.json
+    ├── recovery.json
+    ├── operation-log.jsonl
+    ├── kg.json
+    ├── ag.json
+    ├── tg.json
+    ├── runtime.json
+    └── snapshots/
+        └── cycle-000001/
+            ├── kg.json
+            ├── ag.json
+            ├── tg.json
+            ├── runtime.json
+            └── manifest.json
+```
+
+每轮开始：
+
+```text
+RuntimeStore.snapshot(operation_id) 作为控制面权威 RuntimeState
+GraphMemoryStore.load_kg(operation_id)
+GraphMemoryStore.load_ag(operation_id)
+GraphMemoryStore.load_tg(operation_id)
+GraphMemoryStore.load_runtime(operation_id)
+```
+
+说明：
+
+- `runtime.json` 会被读取并记录 `loaded_runtime`，但不覆盖 `RuntimeStore.snapshot(...)`。
+- 原因：`stop / recover / resume / API metadata update` 等非 cycle 路径仍只更新 `RuntimeStore`，如果让旧 `runtime.json` 覆盖 state，会破坏控制面状态。
+- 因此当前权责边界为：
+  - `RuntimeStore`：控制面权威状态。
+  - `GraphMemoryStore.runtime.json`：图闭环同步快照。
+
+Planner 输入增强：
+
+- `planner_payload` 会自动附加：
+  - `kg_graph`
+  - `ag_graph`
+  - `tg_graph`
+  - `task_graph`
+  - `runtime_state`
+
+每轮 apply 后：
+
+- 收集所有 `PhaseTwoApplyResult.kg_state_deltas`。
+- 使用现有 `KnowledgeGraph.apply_patch_batch(...)` 应用到当前 KG。
+- `patch_batch_id` 形如：
+
+```text
+<operation_id>:cycle-<cycle_index>:apply-<apply_index>
+```
+
+AG 更新：
+
+- KG deltas 应用后调用：
+
+```python
+AttackGraphProjector.project(kg, goal_context=..., policy_context=...)
+```
+
+- 当前仍是从 KG 重投影 AG，不消费 applier 的 `ag_state_deltas` 作为权威写入。
+- 这保持了现有 owner 关系：KG 是事实层，AG 是 projection。
+
+TG 更新：
+
+- planning 阶段产出的 `TaskGraph` 继续作为 TG。
+- apply 完成后，已应用 task 会通过现有 `_mark_applied_tasks(...)` 标记为 `SUCCEEDED`。
+- 最终 TG 写入 `GraphMemoryStore.save_tg(...)` 和 `state.execution.metadata["task_graph"]`。
+
+每轮结束：
+
+- 保存：
+  - `kg.json`
+  - `ag.json`
+  - `tg.json`
+  - `runtime.json`
+- 调用：
+
+```python
+GraphMemoryStore.save_snapshot(operation_id, cycle_index)
+```
+
+测试补充：
+
+- `test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback` 增加断言：
+  - `kg.json / ag.json / tg.json / runtime.json` 存在。
+  - `snapshots/cycle-000001/manifest.json` 存在。
+  - `GraphMemoryStore.load_runtime(...)` 可读。
+  - `GraphMemoryStore.load_tg(...)` 可读且包含 task。
+  - `state.execution.metadata["graph_memory"]["loaded_runtime"] is True`。
+
+验证结果：
+
+- `python -m py_compile src\app\orchestrator.py src\core\graph\graph_memory_store.py src\core\graph\graph_initializer.py` 通过。
+- `python -m pytest tests\test_app_orchestrator.py::test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback tests\test_app_orchestrator.py::test_orchestrator_persists_phase_checkpoints_to_file_store tests\test_app_orchestrator.py::test_orchestrator_persists_apply_checkpoint_before_feedback_crash tests\test_graph_memory_store.py` 通过，合计 7 个测试。
+- `python -m pytest tests\test_app_orchestrator.py::test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback tests\test_api_operation_cycle.py::test_api_operation_cycle_runs_and_exposes_summary_and_audit tests\test_graph_initializer.py tests\test_graph_memory_store.py` 通过，合计 9 个测试。
+- `python -m pytest tests\test_app_orchestrator.py::test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback tests\test_app_orchestrator.py::test_orchestrator_run_until_quiescent_stops_when_no_more_tasks tests\test_api_operation_cycle.py::test_api_operation_stop_marks_operation_cancelled` 通过，合计 3 个测试。
+- `python -m pytest tests\test_app_orchestrator.py` 当前为 21 passed / 1 failed；唯一失败是既有无关断言 `test_settings_from_env` 未包含 `RuntimePolicy` 当前已有的 `disabled_tools` 与 `command_allowlist` 字段，不是本次图闭环改动引入。
+
+### 13.20 ResultApplier 打通 KG -> AG -> TG 自动更新
+
+截至 2026-05-14，`PhaseTwoResultApplier` 已从“只生产 KG/AG delta”推进为可选 store-backed 图闭环入口。
+
+新的链路：
+
+```text
+Worker result
+-> PhaseTwoResultApplier
+-> StateWriterAgent / fact_write_requests 生成 kg_state_deltas
+-> StateWriterAgent.apply_to_store(...) 应用到 KnowledgeGraph
+-> AttackGraphProjector.project_incremental(...) 从更新后的 KG 重投影 AG
+-> AttackGraphTaskBuilder.build_candidates(...) 从更新后的 AG 重新生成 TG candidate graph
+```
+
+关键实现：
+
+- `PhaseTwoResultApplier.apply(...)` 新增可选输入：`kg_store / attack_graph / task_graph`。
+- 未传 `kg_store` 时保持旧兼容行为：只返回 `kg_state_deltas / ag_state_deltas`。
+- 传入 `kg_store` 后：
+  - 使用 `StateWriterAgent.build_store_apply_request(...)` 和 `StateWriterAgent.apply_to_store(...)` 落 KG。
+  - 返回 `kg_apply_result`，包含实际 KG version 与 applied ids。
+  - 使用 KG store 的真实快照投影 `ag_graph`。
+  - 从更新后的 AG action frontier 生成 `tg_graph / tg_task_candidates`。
+  - 如果 AG 暂无可生成的候选任务，则保留传入的既有 TG snapshot，避免把运行中 TG 清空。
+
+Orchestrator 更新：
+
+- `AppOrchestrator.run_operation_cycle(...)` 不再在 apply 循环之后另走一套 `_apply_kg_deltas_to_graph_memory(...)` 与 `_update_attack_graph_from_kg(...)`。
+- 每个 worker result apply 时直接传入当前 `kg / ag / task_graph`。
+- apply 返回 `ag_graph / tg_graph` 后立刻刷新本轮内存中的 AG/TG。
+- 删除了 orchestrator 中重复的 KG delta 应用与 AG 重投影辅助方法，图闭环职责收敛到 ResultApplier。
+
+KG store 修正：
+
+- `KnowledgeGraph.apply_patch_batch(...)` 现在真正承接 StateWriter/ResultApplier 的 patch。
+- `_apply_entity_patch(...)` 和 `_apply_relation_patch(...)` 会按目标 Pydantic node/edge 模型拆分 attributes：
+  - 模型已知字段写入实体字段。
+  - 其他扩展字段写入 `properties`。
+- 这修复了实际落 KG 时 `host_id / port / protocol` 等 patch attributes 触发 `extra_forbidden` 的问题。
+
+测试补充：
+
+- `test_result_applier_applies_kg_then_reprojects_ag_and_regenerates_tg_candidates`
+  - 覆盖 `kg_state_deltas` 真正应用到 `KnowledgeGraph`。
+  - 验证 KG 新增 Service 与 HOSTS relation。
+  - 验证同次 apply 返回更新后的 AG snapshot。
+  - 验证同次 apply 生成 TG task candidates / candidate TG graph。
+
+验证结果：
+
+- `pytest tests/test_phase_two_result_applier.py -q` 通过，8 passed。
+- `pytest tests/test_app_orchestrator.py::test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback -q` 通过。
+- `pytest tests/test_kg_graph.py tests/test_ag_projector.py tests/test_tg_builder.py tests/test_phase_two_result_applier.py tests/test_app_orchestrator.py::test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback -q` 通过，27 passed。
+- `pytest tests/test_app_orchestrator.py -q` 仍有 1 个无关既有失败：`test_settings_from_env` 的期望值未包含当前 `RuntimePolicy` 的 `command_allowlist` 与 `disabled_tools` 字段。
+
+### 13.21 PlannerAgent `.env` 配置与 Graph LLM Agent 化
+
+截至 2026-05-14，本轮把 PlannerAgent 进一步收敛为可通过本地 `.env` 配置直接调用 LLM 的 agent，同时保持默认构造不强制联网。
+
+新增 / 修改文件：
+
+- `.env`
+- `src/core/agents/packy_llm.py`
+- `src/app/settings.py`
+- `src/core/agents/planner.py`
+- `tests/test_planner.py`
+
+`.env` 配置：
+
+```env
+AEGRA_LLM_API_KEY=
+AEGRA_LLM_BASE_URL=https://www.packyapi.com/v1
+AEGRA_LLM_MODEL=gpt-5.2
+AEGRA_LLM_TIMEOUT_SEC=60
+
+# Enable this when using AppOrchestrator's default pipeline.
+# AEGRA_ENABLE_PLANNER_LLM_ADVISOR=true
+```
+
+说明：
+
+- `.env` 在 `.gitignore` 中已被忽略，API key 不应写入记忆文档或提交历史。
+- `AEGRA_LLM_API_KEY` 由使用者本地填写。
+- 默认模型为 `gpt-5.2`。
+- `.env` loader 不覆盖已有环境变量。
+- 如果 `.env` 中 `AEGRA_LLM_API_KEY` 为空，则跳过整组 `AEGRA_LLM_*` 自动注入，避免破坏 `OPENAI_API_KEY / OPENAI_BASE_URL` fallback。
+
+LLM 配置读取：
+
+- `PackyLLMConfig.from_env()` 现在会在当前进程没有 `AEGRA_LLM_API_KEY` 且没有 `OPENAI_API_KEY` 时尝试读取 `.env`。
+- `AppSettings.from_env()` 同样支持从 `.env` 读取 LLM 配置。
+- 显式环境变量优先级高于 `.env`。
+
+PlannerAgent 新入口：
+
+```python
+from src.core.agents.planner import PlannerAgent
+
+planner = PlannerAgent.from_env_file(".env")
+```
+
+该入口会：
+
+1. 读取 `.env`。
+2. 构造 `PackyLLMConfig`。
+3. 构造 `PackyLLMClient`。
+4. 构造 `GraphLLMPlannerAdvisor(model="gpt-5.2")`。
+5. 返回 `PlannerAgent(graph_llm_advisor=..., enable_graph_llm_by_default=True)`。
+
+PlannerAgent 当前运行流程：
+
+```text
+AgentInput
+-> validate_input: 需要 AG ref、AttackGraph、goal_refs
+-> resolve AttackGraph
+-> resolve PlanningContext
+-> resolve goal_refs
+-> resolve graph_context（若 orchestrator 已在规划前构建）
+-> 每个 goal 调用 Graph LLM Planner（启用且已配置时）
+-> LLM 基于 GraphContext 输出下一步 task proposal / rank hints
+-> proposal 经过 validator 校验
+-> 转成 PlanningCandidate / TaskCandidate
+-> heuristic score / budget penalty / policy penalty / repetition detector
+-> top_k Selection
+-> 输出 DecisionRecord(decision_type="plan_selection")
+-> TaskBuilderAgent 消费 decision 生成 TG task
+```
+
+安全与 owner 边界：
+
+- Graph LLM Planner 只输出结构化 `GraphLLMPlanProposal`。
+- 不允许输出 shell command、payload、reverse shell、raw output 或 graph mutation。
+- proposal 必须引用 visible refs。
+- LLM 不直接写 KG / AG / TG / Runtime。
+- LLM 不 dispatch worker。
+- LLM 输出失败、JSON 无效、引用越界、策略风险过高或 validator 拒绝时，PlannerAgent 回退到现有 heuristic `AttackGraphPlanner`。
+
+与 orchestrator 的关系：
+
+- 若使用 `AppOrchestrator` 默认 pipeline，可在 `.env` 中启用：
+
+```env
+AEGRA_ENABLE_PLANNER_LLM_ADVISOR=true
+```
+
+- 当该开关开启且 LLM key 可用时，默认 pipeline 同时装配：
+  - Packy planner ranking advisor
+  - Graph LLM planner advisor
+- `AppOrchestrator.run_operation_cycle(...)` 已在 planning 前构建 `graph_context`，并随 planner payload 传入 `PlannerAgent`。
+- PlannerAgent 优先消费预构建 `graph_context`；缺失时只做 AG-only 兜底构建。
+
+测试补充：
+
+- `test_planner_uses_prebuilt_graph_context_for_graph_llm`
+  - 验证 PlannerAgent 优先使用 orchestrator / caller 传入的预构建 `GraphContext`。
+- `test_planner_agent_from_env_file_configures_graph_llm`
+  - 验证 `PlannerAgent.from_env_file(...)` 会从 `.env` 配置 Graph LLM advisor，并默认启用 graph LLM planning。
+
+验证结果：
+
+- `python -m py_compile src\core\agents\packy_llm.py src\app\settings.py src\core\agents\planner.py` 通过。
+- `python -m pytest tests\test_packy_llm.py tests\test_planner.py tests\test_pipeline_builders.py -q` 通过，21 passed。
+- `python -m pytest tests\test_packy_llm.py tests\test_planner.py tests\test_pipeline_builders.py tests\test_app_orchestrator.py -q -k "not test_settings_from_env"` 通过，42 passed / 1 deselected。
+- `test_settings_from_env` 仍是既有无关失败：断言未包含当前 `RuntimePolicy` 的 `disabled_tools` 与 `command_allowlist` 字段。
+
+### 13.27 Scheduler 前置 RepetitionDetector 与 PolicyGate（2026-05-14）
+
+本轮完成“修改顺序 9 / 10”的第一版接入：把重复任务检测和轻量策略门都放在 `SchedulerAgent` 分配 worker 之前。
+
+当前调度前链路：
+
+```text
+TaskBuilderAgent 生成 TG task
+-> SchedulerAgent 读取 READY task
+-> RepetitionDetector
+-> PolicyGate
+-> 原 SchedulerAgent runtime blockers / worker assignment
+```
+
+#### 13.27.1 RepetitionDetector 接入位置
+
+文件：
+
+- `src/core/agents/scheduler_agent.py`
+- `src/core/runtime/repetition_detector.py`
+
+`PlannerAgent` 里已有候选级 repetition filtering，本轮没有移除；新增的是 Scheduler 前的兜底检查，避免已进入 TG 的重复失败任务继续被调度。
+
+`SchedulerAgent._resolve_repetition_detector(...)` 当前会合并两类历史：
+
+1. `raw_payload["repetition_history"]` 或 `raw_payload["scheduling_context"]["repetition_history"]`
+2. `RuntimeState.execution.tasks` 中已终止的任务：
+   - `succeeded`
+   - `failed`
+   - `blocked`
+   - `timed_out`
+
+当 runtime terminal task 能在当前 `TaskGraph` 找到对应 TG node 时，调度器用 TG node 生成 signature record。若 `RepetitionDetector.decide(task)` 返回 `REJECT`，`SchedulerAgent` 会输出：
+
+- `SchedulingDecisionRecord.action = "reject"`
+- `accepted = False`
+- 不进入 worker selection
+- 日志包含本轮 repetition reject 计数
+
+#### 13.27.2 PolicyGate 新增
+
+新增文件：
+
+- `src/core/runtime/policy_gate.py`
+
+第一版 `PolicyGate` 输出三态：
+
+- `PolicyGateAction.ALLOW`
+- `PolicyGateAction.DENY`
+- `PolicyGateAction.NEED_APPROVAL`
+
+核心模型：
+
+- `PolicyGateDecision`
+- `PolicyGate`
+
+第一版只做 5 个检查：
+
+1. target 是否在 scope 中
+2. task risk 是否超过阈值
+3. tool 是否在 allowlist
+4. 是否需要 approval
+5. budget 是否足够
+
+实现说明：
+
+- scope / risk 复用既有 `RuntimePolicy` 和 `PolicyEngine` 的判定语义。
+- tool allowlist 使用 `RuntimePolicy.command_allowlist`，从 `task.input_bindings` 的 `tool_hint/tool/tool_name/recipe_id/command_name` 解析工具名。
+- approval 使用 `task.approval_required` / `task.gate_ids`，并读取 `RuntimeState.budgets.approval_cache["task:{task_id}:approved"]`。
+- budget 使用 `RuntimeBudgetManager.would_exceed_budget(...)`；无 concrete runtime state 时可使用 `budget_summary`。
+- 额外支持 runtime metadata 中的轻量数值阈值：
+  - `execution.metadata["policy_gate"]["max_task_risk"]`
+  - `risk_threshold`
+  - `max_risk`
+
+#### 13.27.3 SchedulerAgent 消费 PolicyGate
+
+文件：
+
+- `src/core/agents/scheduler_agent.py`
+
+`SchedulerAgent.execute(...)` 当前顺序：
+
+1. 找出 `schedulable_tasks`
+2. 构造 `RepetitionDetector`
+3. 构造 `PolicyGate`
+4. 对每个 task：
+   - repetition `REJECT` -> `action="reject"`，跳过
+   - policy `DENY` -> `action="deny"`，输出 TG blocked delta + Runtime blocked delta
+   - policy `NEED_APPROVAL` -> `action="need_approval"`，输出 Runtime waiting_approval delta
+   - policy `ALLOW` -> 继续原 `_check_runtime_blockers(...)` / worker assignment
+
+`PolicyGate.audit(...)` 会向 runtime audit log 写入：
+
+```text
+event_type = "policy_gate_decision"
+```
+
+#### 13.27.4 测试覆盖
+
+新增：
+
+- `tests/test_policy_gate.py`
+  - scope 外 target -> `DENY`
+  - tool 不在 allowlist -> `DENY`
+  - approval required -> `NEED_APPROVAL`
+  - budget 不足 -> `DENY`
+  - `SchedulerAgent` 在 worker assignment 前应用 PolicyGate
+
+扩展：
+
+- `tests/test_repetition_detector.py`
+  - `SchedulerAgent` 根据 runtime terminal failed task 在调度前 reject 重复 TG task
+
+验证结果：
+
+- `python -m py_compile src\core\runtime\policy_gate.py src\core\agents\scheduler_agent.py` 通过。
+- `python -m pytest tests\test_policy_gate.py tests\test_repetition_detector.py tests\test_policy_scheduler_gate.py tests\test_agents.py::test_scheduler_emits_assignment_for_ready_task` 通过，15 passed。
+
+### 13.28 ToolRecipeAdapter / Feedback / Graph Iteration Smoke
+
+本轮按修改顺序 11-14 补齐第一版受控工具配方、反馈验证层、证据抽取层和图迭代 smoke。
+
+#### 13.28.1 ToolRecipeAdapter
+
+新增：
+
+- `src/core/tools/recipe.py`
+- `src/core/tools/registry.py`
+- `src/core/tools/runner.py`
+
+第一版只支持两个工具模板：
+
+- `http_probe`
+- `nmap_service_scan`
+
+设计约束：
+
+- LLM 只产出小任务对象，例如：
+
+```json
+{
+  "task_type": "SERVICE_VALIDATION",
+  "tool_hint": "http_probe",
+  "target": "http://127.0.0.1:8080"
+}
+```
+
+- `ToolRecipeAdapter` 负责把任务转为安全 recipe。
+- `http_probe` 转为内部 Python 函数调用，使用 `urllib` 和禁用代理的 opener。
+- `nmap_service_scan` 转为固定参数命令：`nmap -n -Pn -sV -p <port> <host>`。
+- 目标 host/port 经过解析和字符校验，拒绝 shell metacharacter 风险；不接收 LLM 直接输出命令。
+- `ToolRecipeRunner` 只运行 recipe，不接受自由命令字符串。
+
+#### 13.28.2 ResultVerifier
+
+新增：
+
+- `src/core/feedback/result_verifier.py`
+
+第一版判断：
+
+- 工具是否成功运行
+- 目标是否匹配
+- 是否有新信息
+- 是否需要重试
+
+输出保持结构：
+
+```json
+{
+  "valid": true,
+  "task_status": "succeeded",
+  "new_information_found": true
+}
+```
+
+实际返回还包含 `target_matched`、`retry_needed`、`reason`，用于后续调度和 critic 消费。
+
+#### 13.28.3 EvidenceExtractor
+
+新增：
+
+- `src/core/feedback/evidence_extractor.py`
+
+第一版抽取：
+
+- Host reachable
+- Service detected
+- HTTP status
+- Banner / title
+- Open port
+
+标准 evidence 示例：
+
+```json
+{
+  "type": "service_detected",
+  "host": "127.0.0.1",
+  "port": 8080,
+  "service_name": "http",
+  "confidence": 0.9
+}
+```
+
+这些 evidence 可以放入 `EvidenceRecord.payload`，继续交给 `StateWriterAgent` 生成 KG patch 并写回 KG。
+
+#### 13.28.4 Web Surface 图迭代扩展
+
+扩展：
+
+- `src/core/models/ag.py`
+  - `StateNodeType.WEB_ATTACK_SURFACE`
+  - `ActionNodeType.ENUMERATE_WEB_SURFACE`
+- `src/core/models/tg.py`
+  - `TaskType.WEB_ENUMERATION`
+- `src/core/graph/ag_projector.py`
+  - HTTP/HTTPS 服务被验证、带 `http_status`，或有 supporting evidence 时投影 `WEB_ATTACK_SURFACE`
+  - 从 `WEB_ATTACK_SURFACE` 生成 `ENUMERATE_WEB_SURFACE`
+- `src/core/graph/tg_builder.py`
+  - `ENUMERATE_WEB_SURFACE -> WEB_ENUMERATION`
+
+#### 13.28.5 测试覆盖
+
+新增：
+
+- `tests/test_tool_recipe_feedback.py`
+  - `http_probe` 生成 Python 函数 recipe，不生成 shell command
+  - `nmap_service_scan` 生成固定安全命令
+  - unsafe target 被拒绝
+  - `ResultVerifier` + `EvidenceExtractor` 输出预期结构
+- `tests/test_graph_iteration_vuln_env_smoke.py`
+  - 使用本地临时 HTTP server，不依赖真实外部 Vulhub 容器
+  - Cycle 0：KG 只有 Host，AG 有 `HOST_KNOWN`
+  - Cycle 1：HTTP probe 发现 Service/Evidence，KG 增加 Service/Evidence，AG 增加 `SERVICE_KNOWN` / `VALIDATE_SERVICE`，TG 增加 `SERVICE_VALIDATION`
+  - Cycle 2：HTTP 验证写入 status/title，AG 增加 `WEB_ATTACK_SURFACE` / `ENUMERATE_WEB_SURFACE`，TG 增加 `WEB_ENUMERATION`
+
+验证结果：
+
+- `python -m py_compile src\core\tools\recipe.py src\core\tools\registry.py src\core\tools\runner.py src\core\feedback\result_verifier.py src\core\feedback\evidence_extractor.py src\core\graph\ag_projector.py src\core\graph\tg_builder.py src\core\models\ag.py src\core\models\tg.py` 通过。
+- `python -m pytest tests\test_tool_recipe_feedback.py tests\test_graph_iteration_vuln_env_smoke.py tests\test_ag_projector.py tests\test_tg_builder.py -q` 通过，17 passed。
+- `python -m pytest tests\test_kg_graph.py tests\test_graph_initializer.py tests\test_graph_memory_store.py tests\test_graph_context.py tests\test_tool_recipe_feedback.py tests\test_graph_iteration_vuln_env_smoke.py -q` 通过，20 passed。
+
+### 13.29 XBOW Benchmark Adapter 图迭代验证
+
+针对 `GreyDGL/PentestGPT/benchmark` 的本地 XBOW runner 做了单例验证：
+
+- Aegra adapter dry-run 能通过。
+- PentestGPT standalone runner dry-run 能发现 104 个 XBOW benchmarks。
+- Docker 环境可用：`docker` 与 `docker compose` 均可执行。
+
+修复和删减：
+
+- `benchmarks/xbow/run_aegra_xbow.py`
+  - 删除 adapter 内手写 `build_attack_graph_payload` 冗余逻辑。
+  - 改为通过 `initialize_graph_memory(...)` 初始化 KG/AG/TG。
+  - 注册 `worker-1` runtime worker slot，避免 scheduler 因没有 idle worker 直接停机。
+  - `ScopedReconWorker` 兼容图原生任务类型 `ASSET_CONFIRMATION` / `SERVICE_VALIDATION`，再映射到现有安全 recon handler。
+- `src/core/graph/ag_projector.py`
+  - 避免在没有 `GOAL_RELEVANT_DATA_LOCATED` 前置状态时生成自依赖的 `VALIDATE_GOAL_CONDITION`。
+- `src/core/graph/kg_store.py`
+  - KG patch 写入时只把合法 `EntityStatus` 写入模型状态。
+  - 工具语义状态如 `up/open` 保留在 `properties.status`，避免 StateWriter 写回中断。
+
+验证命令：
+
+- `python -m pytest tests\test_ag_projector.py tests\test_tg_builder.py tests\test_graph_initializer.py tests\test_graph_iteration_vuln_env_smoke.py tests\test_tool_recipe_feedback.py -q`：20 passed。
+- `python -m pytest tests\test_graph_memory_store.py tests\test_graph_initializer.py tests\test_graph_iteration_vuln_env_smoke.py tests\test_tool_recipe_feedback.py tests\test_vulhub_orchestrator_smoke.py -q`：12 passed, 3 skipped。
+- `python run_benchmarks.py --range 1-1 --pattern-flag --timeout 180 --output-dir logs\codex_graph_iteration_after_kg_status_fix`：runner 完成，未 timeout，未 error。
+
+当前结论：
+
+- 图循环已经能在 XBOW runner 下启动、调度 TG、执行安全 nmap probe、写回 KG，并重投影 AG/TG。
+- 单例 `XBEN-001-24` 未成功解题：expected flag 为 `flag{85c0d827-5e28-4577-be2b-319bdcbf872d}`，当前仅提取到若干 32 位十六进制候选，不是正确 flag。
+- 循环仍有缺口：最终多轮重复执行同一个 `ASSET_CONFIRMATION` task；KG 中存在 `kg-host::...` 与 `127.0.0.1` 两套 host/service 引用，导致后续服务任务未稳定推进到 web 枚举/漏洞验证。
+
+### 13.30 KG Host / Service Canonical ID 修复
+
+问题：
+
+- 图初始化使用 `kg-host::...` 作为 Host ID。
+- nmap/masscan probe parser 使用观测地址 `127.0.0.1` 作为 Host ID。
+- 同一资产被写成两套 KG 节点后，AG/TG 会把它们当成不同资产，导致服务归属、任务依赖和重复检测失效。
+
+修复：
+
+- `src/core/workers/recon_worker.py`
+  - 从 KG target refs 提取 `canonical_host_id` / `canonical_service_id` 并传给 probe adapter。
+  - 命令目标优先使用显式 `target_host/address/hostname` 或 ref label；KG ID 只用于写回，不直接当网络地址。
+  - `_primary_ref_label` 使用 `getattr`，兼容 agent protocol 的无 label `GraphRef`。
+- `src/core/workers/probe_adapters.py`
+  - `NmapAdapter` / `MasscanAdapter` 优先使用 canonical Host/Service ID 生成 `entities` 和 `HOSTS` relation。
+  - 保留真实观测地址到 `observed_host`，用于审计和展示。
+- `benchmarks/xbow/run_aegra_xbow.py`
+  - scheduler payload 显式指定 `worker_agent="xbow_scoped_recon_worker"`，确保 benchmark 路径下命令目标始终由 scoped worker 控制。
+- `tests/test_phase_two_workers.py`
+  - 新增 nmap canonical KG ID 回归测试。
+
+验证：
+
+- `python -m pytest tests\test_phase_two_workers.py tests\test_graph_iteration_vuln_env_smoke.py tests\test_tool_recipe_feedback.py tests\test_graph_initializer.py -q`：27 passed。
+- `python run_benchmarks.py --range 1-1 --pattern-flag --timeout 180 --output-dir logs\codex_graph_iteration_after_canonical_label_fix`：
+  - XBOW runner 完成，无 timeout/error。
+  - 最终 KG：1 Host、1 Service、1 HOSTS edge、5 Evidence。
+  - Host ID：`kg-host::a76ee01f7c67a6db`
+  - Service ID：`kg-host::a76ee01f7c67a6db:40961/tcp`
+  - HOSTS edge：`kg-host::a76ee01f7c67a6db -> kg-host::a76ee01f7c67a6db:40961/tcp`
+
+当前剩余问题：
+
+- `XBEN-001-24` 仍未解题，expected flag 未找到。
+- 但失败点已从“KG 资产 ID 分裂”推进到“后续 `SERVICE_VALIDATION` / `IDENTITY_CONTEXT_CONFIRMATION` 仍处于 draft，调度/任务完成策略需要继续处理”。

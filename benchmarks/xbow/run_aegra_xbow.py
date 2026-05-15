@@ -23,24 +23,14 @@ if str(REPO_ROOT) not in sys.path:
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
-from src.core.agents.agent_protocol import GraphRef, GraphScope
-from src.core.models.ag import (
-    AGEdgeType,
-    ActionNode,
-    ActionNodeType,
-    ActivationStatus,
-    AttackGraph,
-    BaseAGEdge,
-    GoalNode,
-    GoalNodeType,
-    GraphRef as AGGraphRef,
-    StateNode,
-    StateNodeType,
-    TruthStatus,
-)
+from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
+from src.core.graph.graph_initializer import GraphInitializationResult, initialize_graph_memory
+from src.core.models.runtime import WorkerRuntime, WorkerStatus
 from src.core.models.scope import Asset, Engagement, RateLimitPolicy, RiskPolicy, ScopeRule
+from src.core.models.tg import TaskType
 from src.core.runtime.policy import RuntimePolicy
 from src.core.runtime.policy_engine import PolicyEngine
+from src.core.workers.base import WorkerTaskSpec
 from src.core.workers.fingerprint_worker import FingerprintWorker
 from src.core.workers.probe_adapters import NmapAdapter
 from src.core.workers.recon_worker import ReconWorker
@@ -73,6 +63,29 @@ class ScopedReconWorker(ReconWorker):
         )
         self._target_host = target_host
         self._target_port = target_port
+
+    def supports_task(self, task_spec: WorkerTaskSpec) -> bool:
+        """Accept graph-native task types used by the benchmark TG."""
+
+        return task_spec.task_type in {
+            "host_discovery",
+            "service_validation",
+            TaskType.ASSET_CONFIRMATION.value,
+            TaskType.SERVICE_VALIDATION.value,
+        }
+
+    def execute_task(
+        self,
+        task_spec: WorkerTaskSpec,
+        agent_input: AgentInput | None = None,
+    ) -> AgentOutput:
+        """Map graph-native task types onto the existing safe recon handlers."""
+
+        if task_spec.task_type == TaskType.ASSET_CONFIRMATION.value:
+            task_spec = task_spec.model_copy(update={"task_type": "host_discovery"})
+        elif task_spec.task_type == TaskType.SERVICE_VALIDATION.value:
+            task_spec = task_spec.model_copy(update={"task_type": "service_validation"})
+        return super().execute_task(task_spec, agent_input)
 
     def _run_probe(
         self,
@@ -285,106 +298,22 @@ def default_graph_refs() -> list[GraphRef]:
     ]
 
 
-def build_attack_graph_payload(scope: dict[str, Any], benchmark_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    graph = AttackGraph()
-    target_ref = AGGraphRef(
-        graph="kg",
-        ref_id=f"{benchmark_id}::service",
-        ref_type="Service",
-        label=str(scope["target_url"]),
-    )
-    known_state = StateNode(
-        id=f"state::{benchmark_id}::target-known",
-        label="XBOW target service known",
-        node_type=StateNodeType.SERVICE_KNOWN,
-        subject_refs=[target_ref],
-        truth_status=TruthStatus.ACTIVE,
-        confidence=1.0,
-        goal_relevance=0.8,
-    )
-    validate_action = ActionNode(
-        id=f"action::{benchmark_id}::validate-service",
-        label="Validate scoped XBOW HTTP service",
-        action_type=ActionNodeType.VALIDATE_SERVICE,
-        bound_args={
-            "target_url": scope["target_url"],
-            "target_host": scope["target_host"],
-            "target_port": scope["target_port"],
-            "mode": "safe_probe",
-        },
-        source_refs=[target_ref],
-        required_capabilities={"safe_probe", "fingerprint"},
-        cost=0.1,
-        risk=0.05,
-        noise=0.05,
-        expected_value=0.7,
-        success_probability_prior=0.8,
-        goal_relevance=0.9,
-        parallelizable=False,
-        resource_keys={f"host:{scope['target_host']}:{scope['target_port']}"},
-        activation_status=ActivationStatus.ACTIVATABLE,
-        tags={"xbow", "safe_probe"},
-    )
-    confirmed_state = StateNode(
-        id=f"state::{benchmark_id}::service-confirmed",
-        label="XBOW service confirmed",
-        node_type=StateNodeType.SERVICE_CONFIRMED,
-        subject_refs=[target_ref],
-        truth_status=TruthStatus.CANDIDATE,
-        confidence=0.5,
-        goal_relevance=1.0,
-    )
-    goal = GoalNode(
-        id=f"goal::{benchmark_id}::objective",
-        label="Find XBOW benchmark flag",
-        goal_type=GoalNodeType.OBJECTIVE_SATISFIED,
-        success_criteria={"flag_pattern": "FLAG{...}", "target_url": scope["target_url"]},
-        priority=100,
-        business_value=1.0,
-        scope_refs=[target_ref],
-    )
-    for node in (known_state, validate_action, confirmed_state, goal):
-        graph.add_node(node)
-    graph.add_edge(
-        BaseAGEdge(
-            id=f"edge::{benchmark_id}::known-requires-validate",
-            edge_type=AGEdgeType.REQUIRES,
-            source=known_state.id,
-            target=validate_action.id,
-            label="known target enables service validation",
-        )
-    )
-    graph.add_edge(
-        BaseAGEdge(
-            id=f"edge::{benchmark_id}::validate-produces-confirmed",
-            edge_type=AGEdgeType.PRODUCES,
-            source=validate_action.id,
-            target=confirmed_state.id,
-            label="service validation can confirm target",
-        )
-    )
-    graph.add_edge(
-        BaseAGEdge(
-            id=f"edge::{benchmark_id}::confirmed-enables-goal",
-            edge_type=AGEdgeType.ENABLES,
-            source=confirmed_state.id,
-            target=goal.id,
-            label="confirmed target enables objective validation",
-        )
-    )
-    goal_refs = [GraphRef(graph=GraphScope.AG, ref_id=goal.id, ref_type="GoalNode").model_dump(mode="json")]
-    return graph.to_dict(), goal_refs
-
-
-def build_planner_payload(target: dict[str, Any], scope: dict[str, Any], benchmark_id: str) -> dict[str, Any]:
-    ag_graph, goal_refs = build_attack_graph_payload(scope, benchmark_id)
+def build_planner_payload(
+    target: dict[str, Any],
+    scope: dict[str, Any],
+    benchmark_id: str,
+    graph_init: GraphInitializationResult,
+) -> dict[str, Any]:
+    goal_refs = [
+        GraphRef(graph=GraphScope.AG, ref_id=goal.id, ref_type="GoalNode").model_dump(mode="json")
+        for goal in graph_init.ag.get_goal_nodes()
+    ]
     return {
         "goal": "Solve the authorized XBOW validation benchmark using only safe, scoped validation steps.",
         "benchmark_id": benchmark_id,
         "target_url": scope["target_url"],
         "target_host": scope["target_host"],
         "target_port": scope["target_port"],
-        "ag_graph": ag_graph,
         "goal_refs": goal_refs,
         "planning_context": {"top_k": 1, "max_depth": 2},
         "constraints": {
@@ -416,6 +345,7 @@ def build_planner_payload(target: dict[str, Any], scope: dict[str, Any], benchma
 
 def build_scheduler_payload(timeout: int) -> dict[str, Any]:
     return {
+        "worker_agent": "xbow_scoped_recon_worker",
         "worker_overrides": {},
         "tool_timeout_sec": max(1, min(timeout, 300)),
         "command_allowlist": DEFAULT_SAFE_COMMANDS,
@@ -498,6 +428,35 @@ def import_single_target(orchestrator: AppOrchestrator, operation_id: str, targe
             )
         ],
     )
+
+
+def initialize_benchmark_graph_memory(
+    orchestrator: AppOrchestrator,
+    *,
+    operation_id: str,
+    target_url: str,
+    benchmark_id: str,
+) -> GraphInitializationResult:
+    return initialize_graph_memory(
+        operation_id=operation_id,
+        target=target_url,
+        store=orchestrator.graph_memory_store,
+        goal_label=f"Solve XBOW benchmark {benchmark_id}",
+        goal_description="Build scoped graph context and pursue only authorized benchmark evidence.",
+        goal_category="context",
+    )
+
+
+def register_benchmark_worker(orchestrator: AppOrchestrator, operation_id: str) -> None:
+    """Register a runtime worker slot for the embedded benchmark pipeline."""
+
+    state = orchestrator.get_operation_state(operation_id)
+    state.workers["worker-1"] = WorkerRuntime(
+        worker_id="worker-1",
+        status=WorkerStatus.IDLE,
+        metadata={"source": "xbow_adapter", "agent_name": "xbow_scoped_recon_worker"},
+    )
+    orchestrator.runtime_store.save_state(state)
 
 
 def export_artifacts(orchestrator: AppOrchestrator, operation_id: str, output_dir: Path) -> dict[str, Any]:
@@ -667,10 +626,17 @@ def run(args: argparse.Namespace) -> int:
         )
         import_single_target(orchestrator, operation_id, target)
         orchestrator.start_operation(operation_id)
+        register_benchmark_worker(orchestrator, operation_id)
+        graph_init = initialize_benchmark_graph_memory(
+            orchestrator,
+            operation_id=operation_id,
+            target_url=scope["target_url"],
+            benchmark_id=args.benchmark_id,
+        )
         orchestrator.run_until_quiescent(
             operation_id,
             graph_refs=default_graph_refs(),
-            planner_payload=build_planner_payload(target, scope, args.benchmark_id),
+            planner_payload=build_planner_payload(target, scope, args.benchmark_id, graph_init),
             scheduler_payload=build_scheduler_payload(args.timeout),
             feedback_payload=build_feedback_payload(scope),
             context={

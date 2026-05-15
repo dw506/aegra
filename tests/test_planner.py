@@ -86,6 +86,7 @@ class StaticGraphLLMAdvisor:
 
     def advise(self, *, graph_context, goal_refs, policy_context=None, recent_signals=None):  # noqa: ANN001
         self.calls += 1
+        self.last_operation_id = graph_context.operation_id
         assert graph_context.frontier_actions
         assert goal_refs
         assert isinstance(policy_context, dict)
@@ -173,6 +174,42 @@ def test_planner_uses_accepted_graph_llm_proposal_as_task_candidate() -> None:
     assert task_candidate["target_refs"][0]["ref_id"] == "host-1"
 
 
+def test_planner_uses_prebuilt_graph_context_for_graph_llm() -> None:
+    advisor = StaticGraphLLMAdvisor(_accepted_graph_llm_advice())
+    planner = PlannerAgent(graph_llm_advisor=advisor)
+    planner_input = _planner_input(enable_graph_llm=True)
+    graph_context = planner_input.raw_payload["graph_context"] = {
+        **planner_input.raw_payload.get("graph_context", {}),
+        "operation_id": "op-prebuilt-context",
+        "goals": [],
+        "known_services": [],
+        "frontier_actions": [
+            {
+                "ref": {"graph": "ag", "ref_id": "action-prebuilt", "ref_type": "ActionNode"},
+                "action_type": "VALIDATE_SERVICE",
+                "activation_status": "activatable",
+                "cost": 0.1,
+                "risk": 0.1,
+                "noise": 0.1,
+                "expected_value": 0.8,
+                "success_probability_prior": 0.7,
+                "goal_relevance": 0.9,
+                "approval_required": False,
+                "target_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
+            }
+        ],
+        "tasks_by_status": {},
+        "evidence": [],
+        "policy": {"authorized_hosts": ["host-1"]},
+        "context_stats": {"frontier_action_count": 1},
+    }
+
+    result = planner.run(planner_input)
+
+    assert result.success is True
+    assert advisor.last_operation_id == graph_context["operation_id"]
+
+
 def test_planner_falls_back_when_graph_llm_proposal_rejected() -> None:
     rejected_advice = GraphLLMPlannerAdvice.empty(reason="graph plan task proposal references unknown ref")
     advisor = StaticGraphLLMAdvisor(rejected_advice)
@@ -185,3 +222,27 @@ def test_planner_falls_back_when_graph_llm_proposal_rejected() -> None:
     candidate = result.output.decisions[0]["payload"]["planning_candidate"]
     assert candidate["metadata"]["source"] != "graph_llm_plan_proposal"
     assert any("graph llm planner proposal rejected" in log for log in result.output.logs)
+
+
+def test_planner_agent_from_env_file_configures_graph_llm(monkeypatch, tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "AEGRA_LLM_API_KEY=test-key",
+                "AEGRA_LLM_BASE_URL=https://planner.example/v1",
+                "AEGRA_LLM_MODEL=gpt-5.2",
+                "AEGRA_LLM_TIMEOUT_SEC=45",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    for key in ("AEGRA_LLM_API_KEY", "AEGRA_LLM_BASE_URL", "AEGRA_LLM_MODEL", "AEGRA_LLM_TIMEOUT_SEC"):
+        monkeypatch.delenv(key, raising=False)
+
+    planner = PlannerAgent.from_env_file(env_path)
+
+    assert planner._graph_llm_advisor is not None  # noqa: SLF001
+    assert planner._enable_graph_llm_by_default is True  # noqa: SLF001
+    assert planner._graph_llm_advisor._client.config.api_key == "test-key"  # noqa: SLF001
+    assert planner._graph_llm_advisor._client.config.model == "gpt-5.2"  # noqa: SLF001
