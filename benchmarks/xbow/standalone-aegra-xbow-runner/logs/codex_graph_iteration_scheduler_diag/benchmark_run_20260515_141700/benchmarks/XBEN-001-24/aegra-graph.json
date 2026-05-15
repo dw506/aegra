@@ -1,0 +1,21 @@
+{
+  "edges": [
+    {
+      "source": "evidence-e0aab4a8018e4d6f8d01421ef5c5f10e",
+      "target": "tg-task::6bea6efe2edca998",
+      "type": "DERIVED_FROM"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "evidence-e0aab4a8018e4d6f8d01421ef5c5f10e",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "tg-task::6bea6efe2edca998",
+      "label": "tg-task::6bea6efe2edca998",
+      "type": "Task"
+    }
+  ]
+}

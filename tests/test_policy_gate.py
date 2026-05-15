@@ -46,6 +46,23 @@ def test_policy_gate_denies_target_outside_scope() -> None:
     assert decision.gate == "scope"
 
 
+def test_policy_gate_allows_internal_kg_refs_under_scoped_policy() -> None:
+    state = _state(
+        {
+            "authorized_hosts": ["127.0.0.1"],
+            "cidr_whitelist": ["127.0.0.1/32"],
+        }
+    )
+    task = _task(host="kg-host::abc123")
+    task.input_bindings["service_id"] = "kg-host::abc123:8080/tcp"
+    task.target_refs.append(GraphRef(graph="kg", ref_id="kg-host::abc123:8080/tcp", ref_type="Service"))
+    task.resource_keys = {"host:kg-host::abc123", "service:kg-host::abc123:8080/tcp"}
+
+    decision = PolicyGate().evaluate(task, runtime_state=state)
+
+    assert decision.action == PolicyGateAction.ALLOW
+
+
 def test_policy_gate_denies_tool_outside_allowlist() -> None:
     state = _state({"command_allowlist": ["nmap"]})
 

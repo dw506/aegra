@@ -331,7 +331,7 @@ class PolicyEngine:
     @staticmethod
     def _is_opaque_runtime_id(value: str) -> bool:
         lowered = value.lower()
-        if lowered.startswith(("host-", "svc-", "service-", "asset-")):
+        if lowered.startswith(("host-", "svc-", "service-", "asset-", "kg-host::", "kg-service::")):
             return True
         try:
             ip_address(value)

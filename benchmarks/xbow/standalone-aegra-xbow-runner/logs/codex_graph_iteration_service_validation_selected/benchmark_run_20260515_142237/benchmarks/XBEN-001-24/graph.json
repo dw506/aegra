@@ -1,0 +1,36 @@
+{
+  "edges": [
+    {
+      "source": "evidence-617737eb6a6a40a59381719020debbbe",
+      "target": "tg-task::04684b5b40afab86",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-2f6337abe84b4d9dbdad778282f5702b",
+      "target": "tg-task::d475d221f6138110",
+      "type": "DERIVED_FROM"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "evidence-617737eb6a6a40a59381719020debbbe",
+      "label": "nmap host discovery completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "tg-task::04684b5b40afab86",
+      "label": "tg-task::04684b5b40afab86",
+      "type": "Task"
+    },
+    {
+      "id": "evidence-2f6337abe84b4d9dbdad778282f5702b",
+      "label": "nmap service validation completed for 127.0.0.1",
+      "type": "Evidence"
+    },
+    {
+      "id": "tg-task::d475d221f6138110",
+      "label": "tg-task::d475d221f6138110",
+      "type": "Task"
+    }
+  ]
+}

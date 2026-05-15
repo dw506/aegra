@@ -359,8 +359,9 @@ class SchedulerAgent(BaseAgent):
         if runtime_state is None:
             return ready_tasks
 
+        runtime_probe = runtime_state.model_copy(deep=True)
         compatible_ids = set(
-            self._runtime_scheduler.select_schedulable_tasks(task_graph=task_graph, runtime_state=runtime_state)
+            self._runtime_scheduler.select_schedulable_tasks(task_graph=task_graph, runtime_state=runtime_probe)
         )
         selected = [task for task in ready_tasks if task.id in compatible_ids]
 

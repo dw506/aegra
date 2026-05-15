@@ -1094,7 +1094,39 @@ class AppOrchestrator:
         """运行 scheduling + worker execution 阶段。"""
 
         task_graph.refresh_blocked_states()
+        ready_tasks = task_graph.find_schedulable_tasks()
+        print(
+            "[TG_READY_TASKS_BEFORE_SCHEDULER]",
+            [
+                {
+                    "id": task.id,
+                    "type": task.task_type.value,
+                    "status": task.status.value,
+                    "source_action_id": task.source_action_id,
+                    "target_refs": [ref.key() for ref in task.target_refs],
+                    "resource_keys": sorted(task.resource_keys),
+                    "assigned_agent": task.assigned_agent,
+                }
+                for task in ready_tasks
+            ],
+            flush=True,
+        )
         self._debug_print_draft_tasks(task_graph)
+        print(
+            "[SCHEDULER_INPUT_TASK_GRAPH]",
+            {
+                "nodes": [
+                    {
+                        "id": node.id,
+                        "kind": getattr(node, "kind", None),
+                        "type": getattr(getattr(node, "task_type", None), "value", None),
+                        "status": getattr(getattr(node, "status", None), "value", None),
+                    }
+                    for node in task_graph.list_nodes()
+                ]
+            },
+            flush=True,
+        )
         payload = {
             **self._mapping(scheduler_payload),
             "tg_graph": task_graph.to_dict(),
@@ -1103,13 +1135,24 @@ class AppOrchestrator:
         # 中文注释：
         # 调度器里的 worker_id 更接近 runtime worker 槽位，不一定等于 agent registry 名称。
         # 当仓库里只注册了一个 worker agent 时，这里显式指定它，避免 execution 阶段因为名称不一致而中断。
-        return pipeline.run_execution_cycle(
+        execution = pipeline.run_execution_cycle(
             operation_id=operation_id,
             graph_refs=graph_refs,
             scheduler_payload=payload,
             worker_agent=self._default_worker_agent_name(pipeline, scheduler_payload),
             context=context,
         )
+        print(
+            "[SCHEDULER_OUTPUT]",
+            {
+                "success": execution.success,
+                "decisions": execution.final_output.decisions,
+                "logs": execution.final_output.logs,
+                "errors": execution.final_output.errors,
+            },
+            flush=True,
+        )
+        return execution
 
     def _run_feedback_phase(
         self,

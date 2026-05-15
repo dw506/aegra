@@ -171,6 +171,41 @@ def test_scheduler_repetition_detector_rejects_repeat_failed_task_before_assignm
     assert any("repetition detector rejected 1 task" in log for log in result.output.logs)
 
 
+def test_scheduler_runtime_probe_does_not_create_repetition_history() -> None:
+    task = TaskBuilderAgentShim.create_task(_task(80))
+    task.status = TaskStatus.READY
+    graph = TaskGraph()
+    graph.add_node(task)
+    state = RuntimeState(operation_id="op-scheduler-runtime-probe", execution=OperationRuntime(operation_id="op-scheduler-runtime-probe"))
+    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    scheduler = SchedulerAgent()
+
+    def mutating_probe(*, task_graph: TaskGraph, runtime_state: RuntimeState) -> list[str]:
+        runtime_state.register_task(
+            TaskRuntime(
+                task_id=task.id,
+                tg_node_id=task.id,
+                status=TaskRuntimeStatus.BLOCKED,
+            )
+        )
+        return []
+
+    scheduler._runtime_scheduler.select_schedulable_tasks = mutating_probe  # noqa: SLF001
+
+    result = scheduler.run(
+        AgentInput(
+            graph_refs=[GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
+            context=AgentContext(operation_id="op-scheduler-runtime-probe"),
+            raw_payload={"tg_graph": graph.to_dict(), "runtime_state": state.model_dump(mode="json")},
+        )
+    )
+
+    assert result.success is True
+    assert result.output.decisions[0]["action"] == "assign"
+    assert result.output.decisions[0]["accepted"] is True
+    assert not any("repetition detector rejected 1 task" in log for log in result.output.logs)
+
+
 def test_scheduler_repetition_detector_skips_repeat_succeeded_task_before_assignment() -> None:
     task = TaskBuilderAgentShim.create_task(_task(80))
     task.status = TaskStatus.READY

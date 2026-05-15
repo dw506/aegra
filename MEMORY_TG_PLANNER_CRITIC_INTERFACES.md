@@ -7554,3 +7554,84 @@ event_type = "policy_gate_decision"
 
 - `XBEN-001-24` 仍未解题，expected flag 未找到。
 - 但失败点已从“KG 资产 ID 分裂”推进到“后续 `SERVICE_VALIDATION` / `IDENTITY_CONTEXT_CONFIRMATION` 仍处于 draft，调度/任务完成策略需要继续处理”。
+
+### 13.31 XBOW Scheduler 诊断与 SERVICE_VALIDATION 推进修复
+
+目标：
+
+- 不先追 flag。
+- 最小成功标准改为让 XBOW 单例任务序列从重复 `ASSET_CONFIRMATION` 推进到：
+  - Cycle 1：`ASSET_CONFIRMATION`
+  - Cycle 2：`SERVICE_VALIDATION`
+- `SERVICE_VALIDATION` 必须被 scheduler selected、被 worker 执行，并最终进入 `succeeded` 或 `failed`。
+
+新增诊断日志：
+
+- `src/app/orchestrator.py`
+  - `_run_execution_phase()` 中，在 `task_graph.refresh_blocked_states()` 后打印 `[TG_READY_TASKS_BEFORE_SCHEDULER]`。
+  - 调用 `SchedulerAgent` 前打印 `[SCHEDULER_INPUT_TASK_GRAPH]`，确认 scheduler 收到的 TG snapshot。
+  - `SchedulerAgent` 返回后打印 `[SCHEDULER_OUTPUT]`，包含 decisions/logs/errors。
+
+诊断结论：
+
+- `SERVICE_VALIDATION` 在 cycle 2 已经出现在 `task_graph.find_schedulable_tasks()` 结果中。
+- `SchedulerAgent` 收到的 `task_graph` 也包含 `SERVICE_VALIDATION ready`。
+- 第一层失败不是 TG 保存/加载问题，而是 scheduler 内部拒绝：
+  - `repetition detector rejected task before scheduling: exact repeat of failed or blocked task`
+- 修复后暴露第二层失败：
+  - `policy gate DENY: target outside allowlist`
+  - 原因是 `SERVICE_VALIDATION` 的 `target_refs` / `input_bindings` 使用 `kg-host::...`、`kg-host::...:port/tcp` 内部 KG ID，policy engine 只按真实 host/url/cidr 匹配 scope，未把这类 KG ref 视作 opaque runtime id。
+
+修复：
+
+- `src/core/agents/scheduler_agent.py`
+  - `_find_schedulable_tasks()` 调用 `RuntimeScheduler.select_schedulable_tasks()` 前先 `runtime_state.model_copy(deep=True)`。
+  - 兼容性探测在 runtime copy 上执行，避免底层 runtime scheduler 的 policy/block 审计写入污染当前 scheduler 的 repetition detector 历史。
+- `src/core/runtime/policy_engine.py`
+  - `_is_opaque_runtime_id()` 增加 `kg-host::` / `kg-service::` 前缀。
+  - 让内部 KG Host/Service ref 在已有严格 scope 下通过 scope gate；真实网络目标仍由 scoped worker 和 runtime policy 控制。
+- `tests/test_repetition_detector.py`
+  - 新增 `test_scheduler_runtime_probe_does_not_create_repetition_history`，覆盖 runtime probe 副作用不能导致本轮 repetition reject。
+- `tests/test_policy_gate.py`
+  - 新增 `test_policy_gate_allows_internal_kg_refs_under_scoped_policy`，覆盖 scoped policy 下 KG internal refs 不被误判为 target outside allowlist。
+
+验证：
+
+- `python -m pytest tests\test_repetition_detector.py -q`：9 passed。
+- `python -m pytest tests\test_runtime_scheduler.py tests\test_agents.py::test_agent_pipeline_runs_minimal_single_round_cycle -q`：16 passed。
+- `python -m pytest tests\test_policy_gate.py tests\test_policy_scheduler_gate.py tests\test_repetition_detector.py -q`：17 passed。
+- `python -m pytest tests\test_runtime_scheduler.py -q`：15 passed。
+- `python run_benchmarks.py --range 1-1 --timeout 180 --output-dir logs\codex_graph_iteration_service_validation_selected`：
+  - XBOW runner 完成，无 timeout/error。
+  - `XBEN-001-24` 仍为 `Incorrect flag`，但最小图推进目标已达成。
+
+最新 XBOW 单例结果：
+
+```text
+cycle 1: ASSET_CONFIRMATION
+cycle 2: SERVICE_VALIDATION
+cycle 3: <empty>
+```
+
+最终 TG：
+
+```text
+ASSET_CONFIRMATION succeeded
+SERVICE_VALIDATION succeeded
+IDENTITY_CONTEXT_CONFIRMATION ready
+```
+
+关键日志：
+
+```text
+[TG_READY_TASKS_BEFORE_SCHEDULER] SERVICE_VALIDATION ready
+[SCHEDULER_OUTPUT] action=assign accepted=True task_type=SERVICE_VALIDATION worker_id=worker-1
+task_type=service_validation
+raw_result_ref=runtime://worker-results/service_validation_result/...
+nmap service validation completed for 127.0.0.1
+```
+
+当前结论：
+
+- XBOW 图循环已从 `Host -> Service` 推进到 `Service -> Identity/Web/Vulnerability` 的入口。
+- 当前剩余问题不再是 `SERVICE_VALIDATION` 未调度，而是后续 `IDENTITY_CONTEXT_CONFIRMATION` 因风险策略进入 approval 路径，以及 benchmark flag 仍未命中。

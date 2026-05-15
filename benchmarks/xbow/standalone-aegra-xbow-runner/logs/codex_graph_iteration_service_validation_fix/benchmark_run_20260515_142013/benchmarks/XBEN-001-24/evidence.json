@@ -1,0 +1,206 @@
+[
+  {
+    "created_at": "2026-05-15T06:21:03.082329Z",
+    "evidence_id": "evidence-6cce13391ff2409a95d1c4dd1c65cc5e",
+    "kind": "host_discovery_result",
+    "metadata": {
+      "ag_refs": [
+        {
+          "graph": "ag",
+          "metadata": {},
+          "ref_id": "ag-root",
+          "ref_type": "graph"
+        },
+        {
+          "graph": "ag",
+          "metadata": {},
+          "ref_id": "task-output::ag-action::11f7395aee280637::0::kg-host::594868556371dccf",
+          "ref_type": "TaskOutput"
+        }
+      ],
+      "confidence": 0.85,
+      "entities": [
+        {
+          "id": "kg-host::594868556371dccf",
+          "observed_host": "127.0.0.1",
+          "status": "up",
+          "type": "Host"
+        },
+        {
+          "banner": "Nmap done: 1 IP address (1 host up) scanned in 0.93 seconds",
+          "host_id": "kg-host::594868556371dccf",
+          "id": "kg-host::594868556371dccf:63564/tcp",
+          "observed_host": "127.0.0.1",
+          "port": 63564,
+          "protocol": "tcp",
+          "service_name": "unknown",
+          "state": "open",
+          "type": "Service",
+          "validated": true
+        }
+      ],
+      "executor": "tool_runner",
+      "kg_refs": [
+        {
+          "graph": "kg",
+          "metadata": {},
+          "ref_id": "kg-root",
+          "ref_type": "graph"
+        },
+        {
+          "graph": "kg",
+          "metadata": {},
+          "ref_id": "kg-host::594868556371dccf",
+          "ref_type": "Host"
+        }
+      ],
+      "operation_id": "xbow-XBEN-001-24-20260515062101",
+      "parsed": {
+        "blocked": false,
+        "blocked_reason": null,
+        "confidence": 0.85,
+        "entities": [
+          {
+            "id": "kg-host::594868556371dccf",
+            "observed_host": "127.0.0.1",
+            "status": "up",
+            "type": "Host"
+          },
+          {
+            "banner": "Nmap done: 1 IP address (1 host up) scanned in 0.93 seconds",
+            "host_id": "kg-host::594868556371dccf",
+            "id": "kg-host::594868556371dccf:63564/tcp",
+            "observed_host": "127.0.0.1",
+            "port": 63564,
+            "protocol": "tcp",
+            "service_name": "unknown",
+            "state": "open",
+            "type": "Service",
+            "validated": true
+          }
+        ],
+        "evidence": {
+          "adapter": "nmap",
+          "command_category": "success",
+          "stderr": "",
+          "stdout_excerpt": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-05-15 14:21 +0800\nNmap scan report for 127.0.0.1\nHost is up (0.0010s latency).\n\nPORT      STATE SERVICE\n63564/tcp open  unknown\n\nNmap done: 1 IP address (1 host up) scanned in 0.93 seconds",
+          "tool": {
+            "attempts": 1,
+            "category": "success",
+            "command": [
+              "nmap",
+              "-n",
+              "-Pn",
+              "-p",
+              "63564",
+              "127.0.0.1"
+            ],
+            "duration_sec": 0.9666444000031333,
+            "error_message": null,
+            "exit_code": 0,
+            "stderr": "",
+            "stderr_truncated": false,
+            "stdout": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-05-15 14:21 +0800\nNmap scan report for 127.0.0.1\nHost is up (0.0010s latency).\n\nPORT      STATE SERVICE\n63564/tcp open  unknown\n\nNmap done: 1 IP address (1 host up) scanned in 0.93 seconds\n",
+            "stdout_truncated": false,
+            "success": true,
+            "timed_out": false
+          }
+        },
+        "failure_reason": null,
+        "hosts": [
+          {
+            "host_id": "kg-host::594868556371dccf",
+            "observed_host": "127.0.0.1",
+            "status": "up"
+          }
+        ],
+        "identity_context": {},
+        "partial_success": false,
+        "raw_output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-05-15 14:21 +0800\nNmap scan report for 127.0.0.1\nHost is up (0.0010s latency).\n\nPORT      STATE SERVICE\n63564/tcp open  unknown\n\nNmap done: 1 IP address (1 host up) scanned in 0.93 seconds",
+        "reachable": true,
+        "relations": [
+          {
+            "attributes": {
+              "port": 63564,
+              "protocol": "tcp",
+              "state": "open"
+            },
+            "source": "kg-host::594868556371dccf",
+            "target": "kg-host::594868556371dccf:63564/tcp",
+            "type": "HOSTS"
+          }
+        ],
+        "runtime_hints": {
+          "discovered_open_ports": [
+            63564
+          ],
+          "reachable": true
+        },
+        "service": {
+          "banner": "Nmap done: 1 IP address (1 host up) scanned in 0.93 seconds",
+          "host_id": "kg-host::594868556371dccf",
+          "id": "kg-host::594868556371dccf:63564/tcp",
+          "observed_host": "127.0.0.1",
+          "port": 63564,
+          "protocol": "tcp",
+          "service_name": "unknown",
+          "state": "open",
+          "type": "Service",
+          "validated": true
+        },
+        "success": true,
+        "summary": "nmap host discovery completed for 127.0.0.1"
+      },
+      "relations": [
+        {
+          "attributes": {
+            "port": 63564,
+            "protocol": "tcp",
+            "state": "open"
+          },
+          "source": "kg-host::594868556371dccf",
+          "target": "kg-host::594868556371dccf:63564/tcp",
+          "type": "HOSTS"
+        }
+      ],
+      "runtime_hints": {
+        "discovered_open_ports": [
+          63564
+        ],
+        "reachable": true
+      },
+      "source_agent": "recon_worker",
+      "success": true,
+      "tg_node_id": "tg-task::e7c8c7fe5662f221",
+      "timestamp": "2026-05-15T06:21:03.082329+00:00",
+      "tool": {
+        "adapter": "nmap",
+        "attempts": 1,
+        "category": "success",
+        "command": [
+          "nmap",
+          "-n",
+          "-Pn",
+          "-p",
+          "63564",
+          "127.0.0.1"
+        ],
+        "duration_sec": 0.9666444000031333,
+        "error_message": null,
+        "exit_code": 0,
+        "stderr": "",
+        "stderr_truncated": false,
+        "stdout": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-05-15 14:21 +0800\nNmap scan report for 127.0.0.1\nHost is up (0.0010s latency).\n\nPORT      STATE SERVICE\n63564/tcp open  unknown\n\nNmap done: 1 IP address (1 host up) scanned in 0.93 seconds\n",
+        "stdout_truncated": false,
+        "success": true,
+        "timed_out": false
+      },
+      "worker_result_id": "result-d8e2d413b953401ebdf9821667acf82e"
+    },
+    "payload_ref": "runtime://worker-results/host_discovery_result/kg-host::594868556371dccf",
+    "refs": [],
+    "summary": "nmap host discovery completed for 127.0.0.1",
+    "task_ref": "tg-task::e7c8c7fe5662f221",
+    "tool_output_ref": "runtime://worker-results/host_discovery_result/kg-host::594868556371dccf"
+  }
+]
