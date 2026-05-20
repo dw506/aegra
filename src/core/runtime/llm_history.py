@@ -26,6 +26,8 @@ class LLMDecisionHistoryRecord(BaseModel):
     accepted: bool
     rejected_reason: str | None = None
     model: str | None = None
+    usage: dict[str, int] | None = None
+    cost_usd: float | None = None
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
 

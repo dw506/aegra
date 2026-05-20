@@ -226,8 +226,9 @@ class NmapAdapter(ProbeAdapter):
                 "host_id": canonical_host_id,
                 "observed_host": host_label,
                 "port": port,
-                "protocol": protocol,
-                "service_name": service_name,
+                "protocol": self._service_protocol(service_name=service_name, port=port, protocol=protocol, metadata=metadata),
+                "service_name": self._service_name(service_name=service_name, port=port, metadata=metadata),
+                "target_url": metadata.get("target_url"),
                 "banner": banner,
                 "state": state,
                 "validated": state == "open",
@@ -277,6 +278,22 @@ class NmapAdapter(ProbeAdapter):
             execution_result=execution_result,
             default_confidence=float(metadata.get("confidence", 0.8)),
         )
+
+    @staticmethod
+    def _service_name(*, service_name: str, port: int, metadata: dict[str, Any]) -> str:
+        scheme = str(metadata.get("scheme") or metadata.get("protocol") or "").lower()
+        target_port = metadata.get("target_port") or metadata.get("port") or metadata.get("service_port")
+        if service_name == "unknown" and scheme in {"http", "https"} and str(target_port or "") == str(port):
+            return scheme
+        return service_name
+
+    @staticmethod
+    def _service_protocol(*, service_name: str, port: int, protocol: str, metadata: dict[str, Any]) -> str:
+        scheme = str(metadata.get("scheme") or metadata.get("protocol") or "").lower()
+        target_port = metadata.get("target_port") or metadata.get("port") or metadata.get("service_port")
+        if service_name == "unknown" and scheme in {"http", "https"} and str(target_port or "") == str(port):
+            return scheme
+        return protocol
 
 
 class MasscanAdapter(ProbeAdapter):
@@ -489,7 +506,16 @@ class HttpxFingerprintAdapter(ProbeAdapter):
     adapter_name = "httpx"
 
     def can_handle(self, *, mode: str) -> bool:
-        return mode in {"service_validation", "service_validation_result", "fingerprint", "fingerprint_result"}
+        return mode in {
+            "service_validation",
+            "service_validation_result",
+            "fingerprint",
+            "fingerprint_result",
+            "web_enumeration",
+            "web_enumeration_result",
+            "web_fingerprint",
+            "web_fingerprint_result",
+        }
 
     def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
         command = [str(metadata.get("httpx_path", "httpx")), "-json", "-title", "-tech-detect", "-status-code"]
@@ -518,6 +544,7 @@ class HttpxFingerprintAdapter(ProbeAdapter):
             "port": metadata.get("port"),
             "protocol": "https" if str(url).startswith("https://") else "http",
             "service_name": "http",
+            "target_url": str(url),
             "banner": item.get("webserver"),
             "title": item.get("title"),
             "status_code": status_code,
@@ -533,7 +560,7 @@ class HttpxFingerprintAdapter(ProbeAdapter):
             "service": service if item else {},
             "entities": [service] if item else [],
             "evidence": {"adapter": self.adapter_name, "fingerprint": item, "tool": execution_result.to_payload()},
-            "runtime_hints": {"http_status": status_code, "technologies": technologies},
+            "runtime_hints": {"http_status": status_code, "technologies": technologies, "target_url": str(url)},
         }
         return _normalize_payload(
             payload=payload,
@@ -551,7 +578,16 @@ class WhatWebFingerprintAdapter(ProbeAdapter):
     adapter_name = "whatweb"
 
     def can_handle(self, *, mode: str) -> bool:
-        return mode in {"service_validation", "service_validation_result", "fingerprint", "fingerprint_result"}
+        return mode in {
+            "service_validation",
+            "service_validation_result",
+            "fingerprint",
+            "fingerprint_result",
+            "web_enumeration",
+            "web_enumeration_result",
+            "web_fingerprint",
+            "web_fingerprint_result",
+        }
 
     def build_command(self, *, target_hint: str, mode: str, metadata: dict[str, Any]) -> list[str]:
         return [str(metadata.get("whatweb_path", "whatweb")), "--log-json=-", str(metadata.get("target_url", target_hint))]
@@ -575,6 +611,7 @@ class WhatWebFingerprintAdapter(ProbeAdapter):
             "type": "Service",
             "host_id": metadata.get("host_id") or str(target),
             "service_name": "http",
+            "target_url": str(target),
             "plugins": plugin_names,
             "validated": bool(record),
         }
@@ -587,7 +624,7 @@ class WhatWebFingerprintAdapter(ProbeAdapter):
             "service": service if record else {},
             "entities": [service] if record else [],
             "evidence": {"adapter": self.adapter_name, "fingerprint": record, "tool": execution_result.to_payload()},
-            "runtime_hints": {"whatweb_plugins": plugin_names},
+            "runtime_hints": {"whatweb_plugins": plugin_names, "target_url": str(target)},
         }
         return _normalize_payload(
             payload=payload,

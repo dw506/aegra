@@ -1,0 +1,4 @@
+enabled: false
+c2_url: "http://127.0.0.1:8080"
+poll_interval_sec: 1.0
+command_timeout_sec: 60.0

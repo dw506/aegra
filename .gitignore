@@ -4,6 +4,12 @@ __pycache__/
 .venv/
 venv/
 var/
+benchmarks/**/logs/
+scratch_*.py
+tmp-*/
+tmp-report.*
+compare*
+*.tmp
 tmp-orchestrator-*/
 .env
 *.log

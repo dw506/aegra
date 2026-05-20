@@ -32,7 +32,7 @@ from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBat
 from src.core.agents.state_writer import StateWriterAgent
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskGenerationRequest, TaskGenerationResult
+from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskCandidate, TaskGenerationRequest, TaskGenerationResult, TaskGraphBuilder
 from src.core.graph.tg_merge import merge_task_graphs
 from src.core.models.ag import ActionNode, AttackGraph
 from src.core.models.events import (
@@ -181,6 +181,7 @@ class PhaseTwoResultApplier:
             apply_result.logs.append(f"converted {len(fact_deltas)} fact write request(s) into KG state delta(s)")
 
         if apply_result.kg_state_deltas:
+            apply_result.kg_state_deltas = self._order_kg_state_deltas(apply_result.kg_state_deltas)
             if kg_store is not None:
                 apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
                     kg_store=kg_store,
@@ -241,7 +242,37 @@ class PhaseTwoResultApplier:
                 else:
                     apply_result.logs.append("updated AG produced no activatable TG candidates")
 
+        worker_generated_tg = self._generate_worker_candidate_task_graph(canonical_result)
+        if worker_generated_tg.task_graph is not None and worker_generated_tg.candidates:
+            existing_task_graph = TaskGraph.from_dict(apply_result.tg_graph) if apply_result.tg_graph is not None else task_graph
+            generated_task_graph = TaskGraph.from_dict(worker_generated_tg.task_graph)
+            merged_task_graph = merge_task_graphs(existing_task_graph, generated_task_graph)
+            self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
+            apply_result.tg_graph = merged_task_graph.to_dict()
+            apply_result.tg_task_candidates.extend(
+                candidate.model_dump(mode="json") for candidate in worker_generated_tg.candidates
+            )
+            apply_result.tg_created_task_ids.extend(worker_generated_tg.created_task_ids)
+            apply_result.logs.append(
+                f"generated {len(worker_generated_tg.candidates)} TG candidate task(s) from worker result"
+            )
+
         return apply_result
+
+    @staticmethod
+    def _order_kg_state_deltas(state_deltas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Apply KG entity upserts before relations that may reference them."""
+
+        def rank(delta: dict[str, Any]) -> tuple[int, int]:
+            delta_type = str(delta.get("delta_type") or "")
+            patch_kind = str((delta.get("payload") or {}).get("patch_kind") or "")
+            if delta_type == "upsert_entity" or patch_kind == "entity":
+                return (0, 0)
+            if delta_type == "upsert_relation" or patch_kind == "relation":
+                return (2, 0)
+            return (1, 0)
+
+        return sorted(list(state_deltas), key=rank)
 
     def _run_state_writer(
         self,
@@ -351,6 +382,42 @@ class PhaseTwoResultApplier:
                 include_evidence_tasks=False,
                 group_label="Updated Candidate Tasks",
             ),
+        )
+
+    @staticmethod
+    def _generate_worker_candidate_task_graph(result: AgentTaskResult) -> TaskGenerationResult:
+        raw_candidates = []
+        payload_candidates = result.outcome_payload.get("task_candidates")
+        if isinstance(payload_candidates, list):
+            raw_candidates.extend(payload_candidates)
+        nested_payload = result.outcome_payload.get("payload")
+        if isinstance(nested_payload, dict) and isinstance(nested_payload.get("task_candidates"), list):
+            raw_candidates.extend(nested_payload["task_candidates"])
+        metadata_candidates = result.metadata.get("task_candidates")
+        if isinstance(metadata_candidates, list):
+            raw_candidates.extend(metadata_candidates)
+        candidates: list[TaskCandidate] = []
+        seen: set[str] = set()
+        for raw in raw_candidates:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                candidate = TaskCandidate.model_validate(raw)
+            except Exception:
+                continue
+            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+        if not candidates:
+            return TaskGenerationResult()
+        return TaskGraphBuilder().build_from_candidates(
+            TaskGenerationRequest(
+                candidates=candidates,
+                include_evidence_tasks=False,
+                group_label="Worker Proposed Tasks",
+            )
         )
 
     def _run_graph_projection(

@@ -1334,6 +1334,7 @@ class AppOrchestrator:
             or payload.get("decision_type")
             or self._default_llm_decision_type(agent_kind)
         )
+        decision_metadata = self._mapping(decision.get("metadata"))
         return LLMDecisionHistoryRecord(
             cycle_index=cycle_index,
             agent_kind=agent_kind.value,
@@ -1344,6 +1345,8 @@ class AppOrchestrator:
             accepted=accepted,
             rejected_reason=None if accepted else reason,
             model=self._llm_model(),
+            usage=self._mapping(decision_metadata.get("llm_usage")) or None,
+            cost_usd=self._coerce_optional_float(decision_metadata.get("llm_cost_usd")),
         )
 
     def _history_records_from_logs(
@@ -1417,6 +1420,13 @@ class AppOrchestrator:
     def _llm_model(self) -> str | None:
         config = self.settings.to_packy_llm_config()
         return config.model if config is not None else None
+
+    @staticmethod
+    def _coerce_optional_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _task_graph_from_planning(self, *, planning: PipelineCycleResult, state: RuntimeState) -> TaskGraph:
         payload = state.execution.metadata.get("task_graph")

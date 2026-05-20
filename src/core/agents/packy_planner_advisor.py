@@ -102,11 +102,39 @@ class PackyPlannerAdvisor:
             # advisor 失败时必须安全回退为空建议，不能把 planner 主流程打崩。
             return []
 
-        return self._parse_advice_text(
+        advice = self._parse_advice_text(
             response.text,
             allowed_candidate_ids=allowed_candidate_ids,
             goal_id=goal_ref.ref_id,
         )
+        return self._attach_response_metadata(advice, response=response)
+
+    @staticmethod
+    def _attach_response_metadata(advice: PlannerLLMDecision | list, *, response: Any) -> PlannerLLMDecision | list:
+        metadata = {
+            "llm_usage": response.usage,
+            "llm_cost_usd": response.cost_usd,
+            "llm_finish_reason": response.finish_reason,
+            "llm_model": response.model,
+        }
+        metadata = {key: value for key, value in metadata.items() if value is not None}
+        if isinstance(advice, PlannerLLMDecision):
+            updated_metadata = {**dict(advice.metadata), **metadata}
+            updated_decision = advice.decision
+            if updated_decision is not None:
+                updated_decision = updated_decision.model_copy(
+                    update={"metadata": {**dict(updated_decision.metadata), **metadata}}
+                )
+            return advice.model_copy(update={"metadata": updated_metadata, "decision": updated_decision})
+        if isinstance(advice, list):
+            updated = []
+            for item in advice:
+                if isinstance(item, PlannerLLMAdvice):
+                    updated.append(item.model_copy(update={"metadata": {**dict(item.metadata), **metadata}}))
+                else:
+                    updated.append(item)
+            return updated
+        return advice
 
     def _limit_candidates(self, candidates: Sequence[PlanningCandidate]) -> list[PlanningCandidate]:
         return sorted(candidates, key=lambda item: item.score, reverse=True)[: self._config.max_candidates]

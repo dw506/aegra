@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
@@ -26,6 +27,7 @@ from src.core.models.events import (
 )
 from src.core.models.runtime import TaskRuntime
 from src.core.models.tg import BaseTaskNode, TaskType
+from src.core.graph.tg_builder import TaskCandidate
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 from src.core.workers.probe_adapters import (
     CustomProbeAdapter,
@@ -51,11 +53,14 @@ class ReconWorker(BaseWorkerAgent):
         {
             TaskType.ASSET_CONFIRMATION,
             TaskType.SERVICE_VALIDATION,
+            TaskType.WEB_ENUMERATION,
             TaskType.REACHABILITY_VALIDATION,
             TaskType.IDENTITY_CONTEXT_CONFIRMATION,
         }
     )
-    supported_task_types = frozenset({"host_discovery", "service_validation", "identity_context_discovery"})
+    supported_task_types = frozenset(
+        {"host_discovery", "service_validation", "web_enumeration", "web_fingerprint", "identity_context_discovery"}
+    )
 
     def __init__(
         self,
@@ -154,6 +159,8 @@ class ReconWorker(BaseWorkerAgent):
             raw_result = self._execute_host_discovery(task_spec, agent_input)
         elif task_spec.task_type == "service_validation":
             raw_result = self._execute_service_validation(task_spec, agent_input)
+        elif task_spec.task_type in {"web_enumeration", "web_fingerprint"}:
+            raw_result = self._execute_web_enumeration(task_spec, agent_input)
         elif task_spec.task_type == "identity_context_discovery":
             raw_result = self._execute_identity_context_discovery(task_spec, agent_input)
         else:
@@ -173,6 +180,7 @@ class ReconWorker(BaseWorkerAgent):
                 "result_type": raw_result.get("result_type", task_spec.task_type),
                 "tool": raw_result.get("tool", {}),
                 "parsed": raw_result.get("parsed", {}),
+                "task_candidates": raw_result.get("task_candidates", []),
             },
         )
         return AgentOutput(
@@ -405,6 +413,55 @@ class ReconWorker(BaseWorkerAgent):
             target_hint=identity_hint,
         )
 
+    def _execute_web_enumeration(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> dict[str, Any]:
+        """Execute low-risk web fingerprinting/enumeration for a confirmed HTTP service."""
+
+        canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
+        canonical_service_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Service")
+        target_url = (
+            task_spec.input_bindings.get("target_url")
+            or task_spec.constraints.get("target_url")
+            or agent_input.raw_payload.get("target_url")
+        )
+        service_hint = (
+            str(target_url)
+            if target_url
+            else str(task_spec.input_bindings.get("service_id") or canonical_service_id or "unknown-web-service")
+        )
+        metadata = dict(agent_input.raw_payload) | {
+            "target_url": target_url,
+            "port": task_spec.input_bindings.get("port") or task_spec.constraints.get("port"),
+            "protocol": task_spec.input_bindings.get("protocol") or task_spec.constraints.get("protocol"),
+        }
+        if canonical_host_id:
+            metadata.setdefault("canonical_host_id", canonical_host_id)
+            metadata.setdefault("host_id", canonical_host_id)
+        if canonical_service_id:
+            metadata.setdefault("canonical_service_id", canonical_service_id)
+            metadata.setdefault("service_id", canonical_service_id)
+        execution = self._run_probe(
+            task_id=task_spec.task_id,
+            metadata=metadata,
+            target_hint=service_hint,
+            mode="web_enumeration",
+        )
+        raw_result = self._build_worker_raw_result(
+            task_id=task_spec.task_id,
+            result_type="web_enumeration_result",
+            execution=execution,
+            refs=task_spec.target_refs,
+            metadata=metadata,
+            operation_id=agent_input.context.operation_id,
+            target_hint=service_hint,
+        )
+        raw_result["task_candidates"] = self._web_followup_task_candidates(
+            task_id=task_spec.task_id,
+            parsed=raw_result.get("parsed", {}),
+            refs=task_spec.target_refs,
+            input_bindings=task_spec.input_bindings,
+        )
+        return raw_result
+
     def _run_probe(
         self,
         *,
@@ -558,6 +615,7 @@ class ReconWorker(BaseWorkerAgent):
         mapping = {
             TaskType.ASSET_CONFIRMATION: "host_discovery_result",
             TaskType.SERVICE_VALIDATION: "service_validation_result",
+            TaskType.WEB_ENUMERATION: "web_enumeration_result",
             TaskType.REACHABILITY_VALIDATION: "service_validation_result",
             TaskType.IDENTITY_CONTEXT_CONFIRMATION: "identity_context_result",
         }
@@ -578,7 +636,125 @@ class ReconWorker(BaseWorkerAgent):
                 self._probe_adapters["masscan"],
                 self._probe_adapters["custom"],
             ]
+        if mode in {"web_enumeration", "web_enumeration_result", "web_fingerprint", "web_fingerprint_result"}:
+            return [
+                adapter
+                for name in ("httpx", "whatweb", "custom")
+                if (adapter := self._probe_adapters.get(name)) is not None
+            ]
         return [self._probe_adapters["custom"]]
+
+    @staticmethod
+    def _web_followup_task_candidates(
+        *,
+        task_id: str,
+        parsed: dict[str, Any],
+        refs: list[GraphRef],
+        input_bindings: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        service = parsed.get("service") if isinstance(parsed.get("service"), dict) else {}
+        hints = parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}
+        target_url = service.get("target_url") or hints.get("target_url") or input_bindings.get("target_url")
+        service_id = str(service.get("id") or service.get("service_id") or input_bindings.get("service_id") or "")
+        if not service_id or not target_url:
+            return []
+        host_id = str(service.get("host_id") or input_bindings.get("host_id") or "")
+        resource_keys = {f"service:{service_id}"}
+        if host_id:
+            resource_keys.add(f"host:{host_id}")
+        target_refs = []
+        for ref in refs:
+            payload = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            if payload.get("graph") not in {"kg", "ag", "tg", "query"}:
+                continue
+            payload.pop("metadata", None)
+            target_refs.append(payload)
+        candidates: list[dict[str, Any]] = []
+        default_credentials = ReconWorker._default_credentials_from_web_result(parsed)
+        if default_credentials:
+            username, password = default_credentials
+            credential_candidate = TaskCandidate(
+                source_action_id=f"default-credentials-idor::{task_id}::{service_id}",
+                task_type=TaskType.VULNERABILITY_VALIDATION,
+                input_bindings={
+                    "host_id": host_id,
+                    "service_id": service_id,
+                    "port": service.get("port") or input_bindings.get("port"),
+                    "protocol": service.get("protocol") or input_bindings.get("protocol") or "http",
+                    "target_url": target_url,
+                    "service_name": service.get("service_name") or "http",
+                    "validator_id": "default-credentials-idor",
+                    "vulnerability_id": "vuln-xbow-validation",
+                    "vulnerability_name": "XBOW benchmark vulnerability: idor, default_credentials",
+                    "username": username,
+                    "password": password,
+                },
+                target_refs=target_refs,
+                estimated_cost=0.28,
+                estimated_risk=0.08,
+                estimated_noise=0.08,
+                goal_relevance=0.98,
+                resource_keys=resource_keys,
+                approval_required=False,
+                parallelizable=False,
+                tags={"default_credentials", "idor", "safe_http_client"},
+            )
+            candidates.append(credential_candidate.model_dump(mode="json"))
+            return candidates
+
+        candidate = TaskCandidate(
+            source_action_id=f"web-fingerprint::{task_id}::{service_id}",
+            task_type=TaskType.VULNERABILITY_VALIDATION,
+            input_bindings={
+                "host_id": host_id,
+                "service_id": service_id,
+                "port": service.get("port") or input_bindings.get("port"),
+                "protocol": service.get("protocol") or input_bindings.get("protocol") or "http",
+                "target_url": target_url,
+                "service_name": service.get("service_name") or "http",
+                "validator_id": "http-fingerprint",
+                "vulnerability_id": f"vuln::http-fingerprint::{service_id}",
+                "vulnerability_name": "HTTP Fingerprint",
+                "http_method": "GET",
+            },
+            target_refs=target_refs,
+            estimated_cost=0.18,
+            estimated_risk=0.04,
+            estimated_noise=0.05,
+            goal_relevance=0.8,
+            resource_keys=resource_keys,
+            approval_required=False,
+            parallelizable=True,
+            tags={"web_fingerprint", "http_fingerprint"},
+        )
+        candidates.append(candidate.model_dump(mode="json"))
+        return candidates
+
+    @staticmethod
+    def _default_credentials_from_web_result(parsed: dict[str, Any]) -> tuple[str, str] | None:
+        evidence = parsed.get("evidence") if isinstance(parsed.get("evidence"), dict) else {}
+        text_parts = [
+            evidence.get("body_excerpt"),
+            evidence.get("stdout"),
+            parsed.get("raw_output"),
+        ]
+        tool = evidence.get("tool") if isinstance(evidence.get("tool"), dict) else {}
+        text_parts.append(tool.get("stdout"))
+        text = "\n".join(str(item) for item in text_parts if item)
+        if not text:
+            return None
+
+        patterns = [
+            r"(?:account|credential|creds?|login)[^A-Za-z0-9]{0,40}\(([A-Za-z0-9_.@-]{1,64}):([^\s:)<]{1,64})\)",
+            r"\b([A-Za-z0-9_.@-]{1,64}):([A-Za-z0-9_.@-]{1,64})\b",
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                username, password = match.group(1).strip(), match.group(2).strip()
+                if username.lower() in {"http", "https", "cache-control"}:
+                    continue
+                return username, password
+        return None
 
     def _fact_writes_from_parsed(
         self,

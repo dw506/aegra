@@ -137,7 +137,11 @@ def test_graph_llm_planner_advisor_accepts_valid_proposal() -> None:
     assert advice.proposal.rank_adjustments[0].target_ref.ref_id == "action-validate-service"
     assert advice.llm_metadata["model"] == "gpt-test"
     assert fake.calls[0]["temperature"] == 0.0
-    assert "GraphLLMPlanProposal" in str(fake.calls[0]["user_prompt"])
+    user_prompt = str(fake.calls[0]["user_prompt"])
+    assert "GraphLLMPlanProposal" in user_prompt
+    assert '"tool_catalog"' in user_prompt
+    assert "safe_http_client" in user_prompt
+    assert "required_capabilities" in user_prompt
     assert "Do not output shell commands" in str(fake.calls[0]["system_prompt"])
 
 

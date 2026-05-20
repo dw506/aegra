@@ -173,9 +173,11 @@ def test_settings_from_env(monkeypatch, tmp_path) -> None:
 
     assert policy.model_dump(mode="json") == {
         "blocked_hosts": ["host-9"],
+        "command_allowlist": [],
         "cidr_whitelist": ["10.0.0.0/24"],
         "authorized_hosts": [],
         "default_task_timeout_sec": 900,
+        "disabled_tools": [],
         "deny_egress": False,
         "loaded_at": policy.model_dump(mode="json")["loaded_at"],
         "loaded_from": str(policy_path.resolve()),

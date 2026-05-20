@@ -143,6 +143,33 @@ def _accepted_graph_llm_advice() -> GraphLLMPlannerAdvice:
     )
 
 
+def _accepted_graph_llm_web_advice() -> GraphLLMPlannerAdvice:
+    service_ref = AGGraphRef(graph="kg", ref_id="svc-http", ref_type="Service")
+    proposal = GraphLLMPlanProposal(
+        proposal_id="proposal-web-1",
+        task_proposals=[
+            GraphLLMTaskProposal(
+                proposal_id="task-proposal-web-1",
+                task_type=TaskType.WEB_ENUMERATION.value,
+                target_refs=[service_ref.model_dump(mode="json")],
+                rationale="LLM chose web enumeration for form and route evidence",
+                expected_evidence=["login form and safe web metadata"],
+                tool_hint="safe_http_client",
+                estimated_risk=0.1,
+                estimated_noise=0.1,
+                priority=85,
+            )
+        ],
+    )
+    return GraphLLMPlannerAdvice(
+        proposal=proposal,
+        validation=GraphLLMPlanValidationResult.accepted_result(
+            sanitized_payload=proposal.model_dump(mode="json"),
+        ),
+        llm_metadata={"model": "gpt-test", "base_url": "https://llm.example/v1"},
+    )
+
+
 def test_planner_default_does_not_use_graph_llm_advisor() -> None:
     advisor = StaticGraphLLMAdvisor(_accepted_graph_llm_advice())
     planner = PlannerAgent(graph_llm_advisor=advisor)
@@ -172,6 +199,65 @@ def test_planner_uses_accepted_graph_llm_proposal_as_task_candidate() -> None:
     assert task_candidate["task_type"] == TaskType.SERVICE_VALIDATION.value
     assert task_candidate["source_action_id"].startswith("graph-llm::")
     assert task_candidate["target_refs"][0]["ref_id"] == "host-1"
+
+
+def test_planner_enriches_graph_llm_task_with_tool_bindings() -> None:
+    advisor = StaticGraphLLMAdvisor(_accepted_graph_llm_web_advice())
+    planner = PlannerAgent(graph_llm_advisor=advisor)
+    planner_input = _planner_input(enable_graph_llm=True)
+    planner_input.raw_payload["graph_context"] = {
+        "operation_id": "op-tool-bindings",
+        "goals": [],
+        "known_services": [
+            {
+                "ref": {"graph": "kg", "ref_id": "svc-http", "ref_type": "Service"},
+                "state_type": "SERVICE_DISCOVERED",
+                "truth_status": "supported",
+                "confidence": 0.95,
+                "goal_relevance": 0.9,
+                "subject_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
+                "host": "127.0.0.1",
+                "port": 8080,
+                "protocol": "http",
+                "service_name": "http",
+                "properties": {"target_url": "http://127.0.0.1:8080"},
+            }
+        ],
+        "frontier_actions": [
+            {
+                "ref": {"graph": "ag", "ref_id": "action-web-enum", "ref_type": "ActionNode"},
+                "action_type": "ENUMERATE_WEB",
+                "activation_status": "activatable",
+                "cost": 0.1,
+                "risk": 0.1,
+                "noise": 0.1,
+                "expected_value": 0.9,
+                "success_probability_prior": 0.8,
+                "goal_relevance": 0.9,
+                "approval_required": False,
+                "target_refs": [{"graph": "kg", "ref_id": "svc-http", "ref_type": "Service"}],
+                "required_capabilities": ["http_probe"],
+                "resource_keys": ["http://127.0.0.1:8080"],
+            }
+        ],
+        "tasks_by_status": {},
+        "evidence": [],
+        "policy": {"authorized_hosts": ["127.0.0.1"]},
+        "context_stats": {"frontier_action_count": 1, "known_service_count": 1},
+    }
+
+    result = planner.run(planner_input)
+
+    assert result.success is True
+    task_candidate = result.output.decisions[0]["payload"]["planning_candidate"]["task_candidates"][0]
+    assert task_candidate["task_type"] == TaskType.WEB_ENUMERATION.value
+    assert task_candidate["input_bindings"]["tool_hint"] == "safe_http_client"
+    assert task_candidate["input_bindings"]["target_url"] == "http://127.0.0.1:8080"
+    assert task_candidate["input_bindings"]["service_id"] == "svc-http"
+    assert task_candidate["input_bindings"]["host_id"] == "host-1"
+    assert task_candidate["input_bindings"]["port"] == 8080
+    assert task_candidate["input_bindings"]["protocol"] == "http"
+    assert "safe_http_client" in task_candidate["tags"]
 
 
 def test_planner_uses_prebuilt_graph_context_for_graph_llm() -> None:

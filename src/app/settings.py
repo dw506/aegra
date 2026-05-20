@@ -38,11 +38,17 @@ class AppSettings(BaseModel):
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout_sec: float | None = Field(default=None, gt=0.0, le=300.0)
+    llm_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
+    llm_output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     enable_planner_llm_advisor: bool = False
     enable_critic_llm_advisor: bool = False
     enable_supervisor_llm_advisor: bool = False
     tool_nmap_path: str = "nmap"
     tool_python_path: str = "python"
+    incalmo_enabled: bool = False
+    incalmo_c2_url: str | None = None
+    incalmo_poll_interval_sec: float = Field(default=1.0, gt=0.0)
+    incalmo_command_timeout_sec: float = Field(default=60.0, gt=0.0)
 
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
@@ -82,6 +88,8 @@ class AppSettings(BaseModel):
             base_url=self.llm_base_url or DEFAULT_PACKY_BASE_URL,
             model=self.llm_model or DEFAULT_PACKY_MODEL,
             timeout_sec=self.llm_timeout_sec or 30.0,
+            input_cost_per_1m_tokens=self.llm_input_cost_per_1m_tokens,
+            output_cost_per_1m_tokens=self.llm_output_cost_per_1m_tokens,
         )
 
     @classmethod
@@ -152,6 +160,10 @@ class AppSettings(BaseModel):
             values["llm_model"] = environ["AEGRA_LLM_MODEL"] or None
         if "AEGRA_LLM_TIMEOUT_SEC" in environ:
             values["llm_timeout_sec"] = float(environ["AEGRA_LLM_TIMEOUT_SEC"])
+        if "AEGRA_LLM_INPUT_COST_PER_1M_TOKENS" in environ:
+            values["llm_input_cost_per_1m_tokens"] = float(environ["AEGRA_LLM_INPUT_COST_PER_1M_TOKENS"])
+        if "AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS" in environ:
+            values["llm_output_cost_per_1m_tokens"] = float(environ["AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS"])
         if "AEGRA_ENABLE_PLANNER_LLM_ADVISOR" in environ:
             values["enable_planner_llm_advisor"] = environ["AEGRA_ENABLE_PLANNER_LLM_ADVISOR"].strip().lower() in {
                 "1",
@@ -177,6 +189,19 @@ class AppSettings(BaseModel):
             values["tool_nmap_path"] = environ["AEGRA_TOOL_NMAP_PATH"]
         if "AEGRA_TOOL_PYTHON_PATH" in environ:
             values["tool_python_path"] = environ["AEGRA_TOOL_PYTHON_PATH"]
+        if "AEGRA_INCALMO_ENABLED" in environ:
+            values["incalmo_enabled"] = environ["AEGRA_INCALMO_ENABLED"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_INCALMO_C2_URL" in environ:
+            values["incalmo_c2_url"] = environ["AEGRA_INCALMO_C2_URL"] or None
+        if "AEGRA_INCALMO_POLL_INTERVAL_SEC" in environ:
+            values["incalmo_poll_interval_sec"] = float(environ["AEGRA_INCALMO_POLL_INTERVAL_SEC"])
+        if "AEGRA_INCALMO_COMMAND_TIMEOUT_SEC" in environ:
+            values["incalmo_command_timeout_sec"] = float(environ["AEGRA_INCALMO_COMMAND_TIMEOUT_SEC"])
         return cls.model_validate(values)
 
 

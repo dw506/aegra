@@ -891,10 +891,12 @@ class TaskGraphBuilder:
         stage_rank = {
             TaskType.ASSET_CONFIRMATION: 0,
             TaskType.SERVICE_VALIDATION: 1,
-            TaskType.REACHABILITY_VALIDATION: 2,
-            TaskType.IDENTITY_CONTEXT_CONFIRMATION: 3,
-            TaskType.PRIVILEGE_CONFIGURATION_VALIDATION: 4,
-            TaskType.GOAL_CONDITION_VALIDATION: 5,
+            TaskType.WEB_ENUMERATION: 2,
+            TaskType.VULNERABILITY_VALIDATION: 3,
+            TaskType.REACHABILITY_VALIDATION: 4,
+            TaskType.IDENTITY_CONTEXT_CONFIRMATION: 5,
+            TaskType.PRIVILEGE_CONFIGURATION_VALIDATION: 6,
+            TaskType.GOAL_CONDITION_VALIDATION: 7,
         }
         return stage_rank.get(producer, -1) >= 0 and stage_rank.get(producer, -1) < stage_rank.get(consumer, -1)
 

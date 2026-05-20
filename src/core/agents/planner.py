@@ -12,7 +12,7 @@ from typing import Any, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.agents.graph_context import GraphContext, GraphContextBuilder
+from src.core.agents.graph_context import GraphContext, GraphContextBuilder, GraphContextRef, GraphContextService
 from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvice, GraphLLMPlannerAdvisor, GraphLLMPlannerAdvisorConfig
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, load_llm_env_file
 from src.core.agents.agent_models import DecisionRecord, new_record_id
@@ -711,14 +711,15 @@ class PlannerAgent(BaseAgent):
                 continue
             task_target_refs = list(task_proposal.target_refs)
             source_action_id = self._graph_llm_source_action_id(task_proposal.proposal_id, index)
+            input_bindings = self._input_bindings_for_graph_llm_task(
+                task_proposal=task_proposal,
+                graph_context=graph_context,
+                proposal_id=advice.proposal.proposal_id,
+            )
             task_candidate = TaskCandidate(
                 source_action_id=source_action_id,
                 task_type=task_type,
-                input_bindings={
-                    "graph_llm_proposal_id": advice.proposal.proposal_id,
-                    "graph_llm_task_proposal_id": task_proposal.proposal_id,
-                    **dict(task_proposal.params),
-                },
+                input_bindings=input_bindings,
                 target_refs=task_target_refs,
                 expected_output_refs=[
                     AGGraphRef(graph="query", ref_id=f"evidence::{task_proposal.proposal_id}", ref_type="ExpectedEvidence")
@@ -728,7 +729,7 @@ class PlannerAgent(BaseAgent):
                 estimated_noise=task_proposal.estimated_noise,
                 goal_relevance=0.8,
                 approval_required=task_proposal.requires_human_review or advice.validation.requires_human_review,
-                tags={"graph_llm_proposal"},
+                tags={"graph_llm_proposal", *({task_proposal.tool_hint} if task_proposal.tool_hint else set())},
             )
             candidates.append(
                 PlanningCandidate(
@@ -758,6 +759,92 @@ class PlannerAgent(BaseAgent):
     @staticmethod
     def _graph_llm_source_action_id(task_proposal_id: str, index: int) -> str:
         return f"graph-llm::{task_proposal_id or index}"
+
+    def _input_bindings_for_graph_llm_task(
+        self,
+        *,
+        task_proposal: Any,
+        graph_context: GraphContext,
+        proposal_id: str,
+    ) -> dict[str, object]:
+        bindings: dict[str, object] = {
+            "graph_llm_proposal_id": proposal_id,
+            "graph_llm_task_proposal_id": task_proposal.proposal_id,
+            **dict(task_proposal.params),
+        }
+        if task_proposal.tool_hint:
+            bindings.setdefault("tool_hint", task_proposal.tool_hint)
+
+        service = self._matching_graph_context_service(task_proposal.target_refs, graph_context)
+        if service is None:
+            return bindings
+
+        bindings.setdefault("service_id", service.ref.ref_id)
+        host_id = self._host_id_for_graph_context_service(service)
+        if host_id:
+            bindings.setdefault("host_id", host_id)
+            bindings.setdefault("target_host", host_id)
+        if service.host:
+            bindings.setdefault("host", service.host)
+            bindings.setdefault("target_host", service.host)
+        if service.port is not None:
+            bindings.setdefault("port", service.port)
+            bindings.setdefault("service_port", service.port)
+        if service.protocol:
+            bindings.setdefault("protocol", service.protocol)
+            bindings.setdefault("scheme", service.protocol)
+        if service.service_name:
+            bindings.setdefault("service_name", service.service_name)
+        target_url = self._target_url_for_graph_context_service(service)
+        if target_url:
+            bindings.setdefault("target_url", target_url)
+        return bindings
+
+    @classmethod
+    def _matching_graph_context_service(
+        cls,
+        target_refs: Sequence[AGGraphRef],
+        graph_context: GraphContext,
+    ) -> GraphContextService | None:
+        target_keys = {cls._ag_ref_key(ref) for ref in target_refs}
+        target_keys.discard("")
+        for service in graph_context.known_services:
+            service_keys = {cls._graph_context_ref_key(service.ref)}
+            service_keys.update(cls._graph_context_ref_key(ref) for ref in service.subject_refs)
+            if target_keys & {key for key in service_keys if key}:
+                return service
+        if len(graph_context.known_services) == 1:
+            return graph_context.known_services[0]
+        return None
+
+    @staticmethod
+    def _host_id_for_graph_context_service(service: GraphContextService) -> str | None:
+        for ref in service.subject_refs:
+            if ref.ref_type == "Host":
+                return ref.ref_id
+        return service.host
+
+    @staticmethod
+    def _target_url_for_graph_context_service(service: GraphContextService) -> str | None:
+        target_url = service.properties.get("target_url") or service.properties.get("url")
+        if isinstance(target_url, str) and target_url:
+            return target_url
+        if not service.host or service.port is None:
+            return None
+        protocol = (service.protocol or service.service_name or "").lower()
+        if protocol not in {"http", "https"}:
+            return None
+        if (protocol == "http" and service.port == 80) or (protocol == "https" and service.port == 443):
+            return f"{protocol}://{service.host}"
+        return f"{protocol}://{service.host}:{service.port}"
+
+    @staticmethod
+    def _ag_ref_key(ref: AGGraphRef) -> str:
+        return f"{ref.graph}:{ref.ref_id}" if ref.graph and ref.ref_id else ""
+
+    @staticmethod
+    def _graph_context_ref_key(ref: GraphContextRef) -> str:
+        return f"{ref.graph}:{ref.ref_id}" if ref.graph and ref.ref_id else ""
 
     @staticmethod
     def _graph_llm_base_score(priority: int) -> float:

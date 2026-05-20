@@ -412,6 +412,14 @@ class AgentResultAdapter:
             if isinstance(item, dict)
         ]
         outcome = agent_output.outcomes[0] if agent_output.outcomes else {}
+        if isinstance(outcome, dict):
+            nested_payload = outcome.get("payload")
+            if isinstance(nested_payload, dict):
+                nested_result = nested_payload.get("agent_task_result")
+                if isinstance(nested_result, AgentTaskResult):
+                    return nested_result
+                if isinstance(nested_result, dict) and nested_result:
+                    return AgentTaskResult.model_validate(nested_result)
         status = cls._status_from_output(agent_output=agent_output, outcome=outcome)
         summary = str(
             (outcome.get("summary") if isinstance(outcome, dict) else None)
@@ -444,6 +452,8 @@ class AgentResultAdapter:
         task_type = str(agent_input.raw_payload.get("task_type") or "").upper()
         if "GOAL" in task_type:
             return AgentRole.GOAL_WORKER
+        if "VULNERABILITY" in task_type:
+            return AgentRole.VULNERABILITY_VALIDATION_WORKER
         if "PRIVILEGE" in task_type or "ACCESS" in task_type:
             return AgentRole.ACCESS_WORKER
         return AgentRole.RECON_WORKER

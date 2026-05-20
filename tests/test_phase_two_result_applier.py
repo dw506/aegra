@@ -126,6 +126,51 @@ def test_result_applier_syncs_successful_runtime_task_to_task_graph() -> None:
     assert state.execution.tasks["task-1"].status == TaskRuntimeStatus.SUCCEEDED
     assert task_graph.get_node("task-1").status == TaskStatus.SUCCEEDED
     assert task_graph.get_node("task-2").status == TaskStatus.READY
+
+
+def test_result_applier_merges_worker_task_candidates_into_task_graph() -> None:
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    task_graph = TaskGraph()
+    task_graph.add_node(build_task(TaskType.WEB_ENUMERATION))
+
+    applied = applier.apply(
+        AgentTaskResult(
+            request_id="request-1",
+            agent_role=AgentRole.RECON_WORKER,
+            operation_id="op-1",
+            task_id="task-1",
+            tg_node_id="task-1",
+            status=AgentResultStatus.SUCCEEDED,
+            summary="web enumeration completed",
+            outcome_payload={
+                "task_candidates": [
+                    {
+                        "source_action_id": "web-fingerprint::task-1::svc-1",
+                        "task_type": "VULNERABILITY_VALIDATION",
+                        "input_bindings": {
+                            "host_id": "host-1",
+                            "service_id": "svc-1",
+                            "target_url": "http://127.0.0.1:8080/",
+                            "validator_id": "http-fingerprint",
+                            "vulnerability_id": "vuln::http-fingerprint::svc-1",
+                        },
+                        "target_refs": [{"graph": "kg", "ref_id": "svc-1", "ref_type": "Service"}],
+                        "resource_keys": ["host:host-1", "service:svc-1"],
+                    }
+                ]
+            },
+        ),
+        state,
+        task_graph=task_graph,
+    )
+
+    merged = TaskGraph.from_dict(applied.tg_graph)
+    vuln_tasks = [
+        node for node in merged.list_nodes() if getattr(node, "task_type", None) == TaskType.VULNERABILITY_VALIDATION
+    ]
+    assert len(vuln_tasks) == 1
+    assert vuln_tasks[0].status == TaskStatus.READY
     assert applied.tg_graph is not None
 
 

@@ -151,6 +151,49 @@ def test_service_with_direct_evidence_ids_projects_confirmed_active_state() -> N
     assert validate_service.activation_status == ActivationStatus.ACTIVATABLE
 
 
+def test_scoped_http_target_projects_web_surface_from_open_unknown_service() -> None:
+    kg = KnowledgeGraph()
+    kg.add_node(
+        Host(
+            id="kg-host::target",
+            label="127.0.0.1",
+            status=EntityStatus.OBSERVED,
+            confidence=0.9,
+            properties={"url": "http://127.0.0.1:1482", "scheme": "http", "port": 1482},
+        )
+    )
+    kg.add_node(
+        Service(
+            id="kg-host::target:1482/tcp",
+            label="1482/tcp",
+            status=EntityStatus.OBSERVED,
+            confidence=1.0,
+            port=1482,
+            protocol="tcp",
+            service_name="miteksys-lm",
+            properties={"state": "open", "target_url": "http://127.0.0.1:1482", "validated": True},
+        )
+    )
+    kg.add_edge(
+        HostsEdge(
+            id="hosts::target::1482",
+            label="hosts",
+            source="kg-host::target",
+            target="kg-host::target:1482/tcp",
+            confidence=1.0,
+        )
+    )
+
+    ag = AttackGraphProjector().project(kg)
+
+    web_states = ag.find_states(StateNodeType.WEB_ATTACK_SURFACE)
+    web_actions = ag.find_actions(ActionNodeType.ENUMERATE_WEB_SURFACE)
+    assert web_states
+    assert web_states[0].properties["target_url"] == "http://127.0.0.1:1482"
+    assert web_actions
+    assert web_actions[0].bound_args["target_url"] == "http://127.0.0.1:1482"
+
+
 def test_policy_constraints_block_matching_actions() -> None:
     projector = AttackGraphProjector()
     ag = projector.project(

@@ -260,11 +260,14 @@ class AttackGraphProjector:
                         "evidence_count": len({ref.ref_id for ref in support_refs}),
                     },
                 )
-            if self._is_http_service(service) and (
+            if self._is_http_service(service, host=host) and (
                 service.status == EntityStatus.VALIDATED
                 or service.properties.get("http_status") is not None
+                or bool(service.properties.get("validated"))
+                or str(service.properties.get("state") or "").lower() == "open"
                 or has_service_support
             ):
+                target_url = self._service_target_url(service, host=host)
                 self._ensure_state(
                     ag,
                     state_type=StateNodeType.WEB_ATTACK_SURFACE,
@@ -281,8 +284,11 @@ class AttackGraphProjector:
                         "host_id": host.id,
                         "service_id": service.id,
                         "port": service.port,
+                        "protocol": service.protocol or service.properties.get("protocol") or host.properties.get("scheme"),
+                        "target_url": target_url,
                         "http_status": service.properties.get("http_status"),
                         "title": service.properties.get("title"),
+                        "web_enumerated": service.properties.get("web_enumerated"),
                     },
                 )
 
@@ -617,6 +623,8 @@ class AttackGraphProjector:
             )
 
         for state in ag.find_states(StateNodeType.WEB_ATTACK_SURFACE):
+            if state.properties.get("web_enumerated"):
+                continue
             host_id = str(state.properties["host_id"])
             service_id = str(state.properties["service_id"])
             self._bind_action(
@@ -627,6 +635,8 @@ class AttackGraphProjector:
                     "host_id": host_id,
                     "service_id": service_id,
                     "port": state.properties.get("port"),
+                    "protocol": state.properties.get("protocol"),
+                    "target_url": state.properties.get("target_url"),
                 },
                 required_states=[state],
                 produced_states=[],
@@ -1291,10 +1301,40 @@ class AttackGraphProjector:
         return all(state.truth_status in {TruthStatus.ACTIVE, TruthStatus.VALIDATED} for state in output_states)
 
     @staticmethod
-    def _is_http_service(service: Service) -> bool:
+    def _is_http_service(service: Service, *, host: Host | None = None) -> bool:
         service_name = str(service.service_name or service.properties.get("service_name") or "").lower()
         banner = str(service.properties.get("banner") or "").lower()
-        return service_name in {"http", "https", "http-alt"} or "http" in banner
+        protocol = str(service.protocol or service.properties.get("protocol") or "").lower()
+        target_url = str(service.properties.get("target_url") or service.properties.get("url") or "").lower()
+        if host is not None:
+            host_scheme = str(host.properties.get("scheme") or "").lower()
+            host_url = str(host.properties.get("url") or host.properties.get("target_url") or "").lower()
+            host_port = host.properties.get("port")
+            if host_scheme in {"http", "https"} and (
+                service.port is None or host_port is None or str(service.port) == str(host_port)
+            ):
+                return True
+            target_url = target_url or host_url
+        return (
+            service_name in {"http", "https", "http-alt"}
+            or protocol in {"http", "https"}
+            or target_url.startswith(("http://", "https://"))
+            or "http" in banner
+        )
+
+    @staticmethod
+    def _service_target_url(service: Service, *, host: Host) -> str | None:
+        explicit = service.properties.get("target_url") or service.properties.get("url")
+        if explicit:
+            return str(explicit)
+        host_url = host.properties.get("url") or host.properties.get("target_url")
+        if host_url and (service.port is None or str(host.properties.get("port")) == str(service.port)):
+            return str(host_url)
+        scheme = service.protocol or service.properties.get("protocol") or host.properties.get("scheme")
+        host_value = host.hostname or host.address or host.label
+        if scheme in {"http", "https"} and host_value and service.port:
+            return f"{scheme}://{host_value}:{service.port}/"
+        return None
 
     @staticmethod
     def _truth_rank(status: TruthStatus) -> int:

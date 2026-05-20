@@ -6,6 +6,10 @@ import pytest
 from src.core.agents.packy_llm import (
     PackyLLMClient,
     PackyLLMConfig,
+    get_llm_usage_ledger,
+    reset_llm_usage_ledger,
+    summarize_llm_usage_ledger,
+    _extract_usage_payload,
     _extract_text_from_completion_payload,
     _extract_text_from_sse_blob,
 )
@@ -77,11 +81,69 @@ def test_packy_client_falls_back_to_sse_text_when_gateway_returns_stream_blob() 
     assert response.model == "gpt-5.2"
 
 
+def test_extract_usage_payload_normalizes_openai_usage() -> None:
+    usage = _extract_usage_payload(
+        {
+            "usage": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 200,
+                "total_tokens": 1200,
+            }
+        }
+    )
+
+    assert usage == {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200}
+
+
+def test_packy_client_records_usage_and_estimated_cost() -> None:
+    reset_llm_usage_ledger()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/chat/completions"
+        return httpx.Response(
+            status_code=200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "{\"ok\": true}"},
+                    }
+                ],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200},
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
+        client = PackyLLMClient(
+            PackyLLMConfig(
+                api_key="test-key",
+                base_url="https://www.packyapi.com/v1",
+                model="gpt-5.2",
+                input_cost_per_1m_tokens=1.25,
+                output_cost_per_1m_tokens=10.0,
+            ),
+            http_client=http_client,
+        )
+        response = client.complete_chat(user_prompt="hello")
+
+    assert response.usage == {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200}
+    assert response.cost_usd == pytest.approx(0.00325)
+    assert len(get_llm_usage_ledger()) == 1
+    summary = summarize_llm_usage_ledger()
+    assert summary["prompt_tokens"] == 1000
+    assert summary["completion_tokens"] == 200
+    assert summary["total_tokens"] == 1200
+    assert summary["cost_usd"] == pytest.approx(0.00325)
+
+
 def test_packy_llm_config_from_env_prefers_aegra_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AEGRA_LLM_API_KEY", "aegra-key")
     monkeypatch.setenv("AEGRA_LLM_BASE_URL", "https://aegra.example/v1")
     monkeypatch.setenv("AEGRA_LLM_MODEL", "gpt-5.4")
     monkeypatch.setenv("AEGRA_LLM_TIMEOUT_SEC", "45")
+    monkeypatch.setenv("AEGRA_LLM_INPUT_COST_PER_1M_TOKENS", "1.25")
+    monkeypatch.setenv("AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS", "10")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example/v1")
 
@@ -91,6 +153,8 @@ def test_packy_llm_config_from_env_prefers_aegra_variables(monkeypatch: pytest.M
     assert config.base_url == "https://aegra.example/v1"
     assert config.model == "gpt-5.4"
     assert config.timeout_sec == 45.0
+    assert config.input_cost_per_1m_tokens == 1.25
+    assert config.output_cost_per_1m_tokens == 10.0
 
 
 def test_packy_llm_config_from_env_falls_back_to_openai_variables(monkeypatch: pytest.MonkeyPatch) -> None:

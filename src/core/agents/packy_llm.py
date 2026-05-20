@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -33,6 +34,8 @@ class PackyLLMConfig(BaseModel):
     base_url: str = Field(default=DEFAULT_PACKY_BASE_URL, min_length=1)
     model: str = Field(default=DEFAULT_PACKY_MODEL, min_length=1)
     timeout_sec: float = Field(default=30.0, gt=0.0, le=300.0)
+    input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
+    output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
 
     @classmethod
     def from_env(cls) -> "PackyLLMConfig":
@@ -51,7 +54,26 @@ class PackyLLMConfig(BaseModel):
         model = os.getenv("AEGRA_LLM_MODEL") or DEFAULT_PACKY_MODEL
         timeout_value = os.getenv("AEGRA_LLM_TIMEOUT_SEC")
         timeout_sec = float(timeout_value) if timeout_value else 30.0
-        return cls(api_key=api_key, base_url=base_url, model=model, timeout_sec=timeout_sec)
+        input_cost = _env_float("AEGRA_LLM_INPUT_COST_PER_1M_TOKENS")
+        output_cost = _env_float("AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS")
+        return cls(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            timeout_sec=timeout_sec,
+            input_cost_per_1m_tokens=input_cost,
+            output_cost_per_1m_tokens=output_cost,
+        )
+
+
+def _env_float(key: str) -> float | None:
+    value = os.getenv(key)
+    if value in {None, ""}:
+        return None
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
 
 
 def load_llm_env_file(path: str | Path = ".env") -> None:
@@ -87,9 +109,59 @@ class PackyLLMResponse(BaseModel):
 
     model: str = Field(min_length=1)
     text: str = Field(default="")
+    usage: dict[str, int] | None = None
+    cost_usd: float | None = None
     raw_payload: dict[str, Any] | None = None
     raw_text: str | None = None
     finish_reason: str | None = None
+
+
+_LLM_USAGE_LEDGER: list[dict[str, Any]] = []
+_LLM_USAGE_LEDGER_LOCK = Lock()
+
+
+def reset_llm_usage_ledger() -> None:
+    """Clear process-local LLM usage accounting."""
+
+    with _LLM_USAGE_LEDGER_LOCK:
+        _LLM_USAGE_LEDGER.clear()
+
+
+def get_llm_usage_ledger() -> list[dict[str, Any]]:
+    """Return a copy of process-local LLM usage records."""
+
+    with _LLM_USAGE_LEDGER_LOCK:
+        return [dict(item) for item in _LLM_USAGE_LEDGER]
+
+
+def summarize_llm_usage_ledger() -> dict[str, Any]:
+    """Aggregate process-local token usage and estimated cost."""
+
+    records = get_llm_usage_ledger()
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+    cost_usd = 0.0
+    for record in records:
+        usage = record.get("usage")
+        if isinstance(usage, dict):
+            prompt_tokens += int(usage.get("prompt_tokens") or 0)
+            completion_tokens += int(usage.get("completion_tokens") or 0)
+            total_tokens += int(usage.get("total_tokens") or 0)
+        cost_usd += float(record.get("cost_usd") or 0.0)
+    return {
+        "call_count": len(records),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_usd": cost_usd,
+        "records": records,
+    }
+
+
+def _append_llm_usage_record(record: dict[str, Any]) -> None:
+    with _LLM_USAGE_LEDGER_LOCK:
+        _LLM_USAGE_LEDGER.append(record)
 
 
 def _extract_text_from_content_blocks(content: Any) -> str:
@@ -255,14 +327,41 @@ class PackyLLMClient:
             text, finish_reason = _extract_text_from_sse_blob(raw_text)
         if not text:
             raise PackyLLMError("gateway returned no assistant text in JSON or SSE-compatible form")
+        usage = _extract_usage_payload(json_payload)
+        cost_usd = self._estimate_cost_usd(usage)
+        if usage is not None or cost_usd is not None:
+            _append_llm_usage_record(
+                {
+                    "model": str(payload["model"]),
+                    "usage": usage,
+                    "cost_usd": cost_usd or 0.0,
+                    "input_cost_per_1m_tokens": self._config.input_cost_per_1m_tokens,
+                    "output_cost_per_1m_tokens": self._config.output_cost_per_1m_tokens,
+                }
+            )
 
         return PackyLLMResponse(
             model=str(payload["model"]),
             text=text,
+            usage=usage,
+            cost_usd=cost_usd,
             raw_payload=json_payload,
             raw_text=raw_text,
             finish_reason=finish_reason,
         )
+
+    def _estimate_cost_usd(self, usage: dict[str, int] | None) -> float | None:
+        if usage is None:
+            return None
+        input_rate = self._config.input_cost_per_1m_tokens
+        output_rate = self._config.output_cost_per_1m_tokens
+        if input_rate is None and output_rate is None:
+            return None
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        input_cost = (prompt_tokens / 1_000_000.0) * float(input_rate or 0.0)
+        output_cost = (completion_tokens / 1_000_000.0) * float(output_rate or 0.0)
+        return input_cost + output_cost
 
     @staticmethod
     def _try_parse_json(raw_text: str) -> dict[str, Any] | None:
@@ -295,6 +394,41 @@ class PackyLLMClient:
         raise PackyLLMError(f"gateway request failed with status {response.status_code}: {detail}")
 
 
+def _extract_usage_payload(payload: dict[str, Any] | None) -> dict[str, int] | None:
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    prompt_tokens = _coerce_token_count(
+        usage.get("prompt_tokens")
+        or usage.get("input_tokens")
+        or usage.get("prompt")
+    )
+    completion_tokens = _coerce_token_count(
+        usage.get("completion_tokens")
+        or usage.get("output_tokens")
+        or usage.get("completion")
+    )
+    total_tokens = _coerce_token_count(usage.get("total_tokens") or usage.get("total"))
+    if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+        total_tokens = int(prompt_tokens or 0) + int(completion_tokens or 0)
+    normalized = {
+        "prompt_tokens": int(prompt_tokens or 0),
+        "completion_tokens": int(completion_tokens or 0),
+        "total_tokens": int(total_tokens or 0),
+    }
+    return normalized if any(normalized.values()) else None
+
+
+def _coerce_token_count(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 __all__ = [
     "DEFAULT_PACKY_BASE_URL",
     "DEFAULT_PACKY_MODEL",
@@ -302,7 +436,11 @@ __all__ = [
     "PackyLLMConfig",
     "PackyLLMError",
     "PackyLLMResponse",
+    "get_llm_usage_ledger",
     "load_llm_env_file",
+    "reset_llm_usage_ledger",
+    "summarize_llm_usage_ledger",
+    "_extract_usage_payload",
     "_extract_text_from_completion_payload",
     "_extract_text_from_sse_blob",
 ]

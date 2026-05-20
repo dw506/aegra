@@ -425,6 +425,15 @@ class AgentPipeline:
         explicit_name: str | None = None,
         preferred_name: str | None = None,
     ) -> BaseWorkerAgent:
+        spec = WorkerTaskSpec(
+            task_id=worker_input.task_ref or "unknown-task",
+            task_type=str(worker_input.raw_payload.get("task_type") or "unknown"),
+            input_bindings=self._mapping(worker_input.raw_payload.get("input_bindings")),
+            target_refs=list(worker_input.graph_refs),
+            resource_keys=[str(item) for item in worker_input.raw_payload.get("resource_keys", [])],
+            constraints=self._mapping(worker_input.raw_payload.get("constraints")),
+            timeout_seconds=worker_input.raw_payload.get("timeout_seconds"),
+        )
         for name in (explicit_name, preferred_name):
             if not name:
                 continue
@@ -435,17 +444,8 @@ class AgentPipeline:
                 # 调度结果里的 worker_id 可能来自 runtime worker 槽位，而不是 registry 中的 agent 名称。
                 # 这里找不到时继续回退到按 task_type 匹配的分支，避免 execution cycle 被无意义中断。
                 continue
-            if isinstance(agent, BaseWorkerAgent):
+            if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
                 return agent
-        spec = WorkerTaskSpec(
-            task_id=worker_input.task_ref or "unknown-task",
-            task_type=str(worker_input.raw_payload.get("task_type") or "unknown"),
-            input_bindings=self._mapping(worker_input.raw_payload.get("input_bindings")),
-            target_refs=list(worker_input.graph_refs),
-            resource_keys=[str(item) for item in worker_input.raw_payload.get("resource_keys", [])],
-            constraints=self._mapping(worker_input.raw_payload.get("constraints")),
-            timeout_seconds=worker_input.raw_payload.get("timeout_seconds"),
-        )
         for agent in self.registry.list_by_kind(AgentKind.WORKER):
             if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
                 return agent

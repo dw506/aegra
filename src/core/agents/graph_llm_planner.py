@@ -134,6 +134,8 @@ class GraphLLMPlannerAdvisor:
         llm_metadata = self._llm_metadata(
             model=response.model,
             finish_reason=response.finish_reason,
+            usage=response.usage,
+            cost_usd=response.cost_usd,
         )
         payload = self._extract_json_payload(response.text)
         if payload is None:
@@ -177,6 +179,7 @@ class GraphLLMPlannerAdvisor:
             "goal_refs": [ref.model_dump(mode="json") for ref in goal_refs],
             "visible_refs": sorted(visible_refs),
             "allowed_task_types": [task_type.value for task_type in TaskType],
+            "tool_catalog": self._tool_catalog(graph_context),
             "policy_context": policy_context,
             "recent_signals": list(recent_signals)[: self._config.max_recent_signals],
             "response_schema": {
@@ -188,8 +191,13 @@ class GraphLLMPlannerAdvisor:
                         "target_refs": [{"graph": "kg|ag|tg|query", "ref_id": "visible ref id", "ref_type": "optional"}],
                         "rationale": "short reason, no commands",
                         "expected_evidence": ["evidence this task should produce"],
-                        "tool_hint": "optional high-level tool category, not command syntax",
-                        "params": {"safe_structured_hint": "optional, no payloads or shell"},
+                        "tool_hint": "one tool_catalog tool_hint value, not command syntax",
+                        "params": {
+                            "safe_structured_hint": "optional",
+                            "target_url": "copy from tool_catalog when available",
+                            "service_id": "copy from tool_catalog when available",
+                            "validator_id": "safe validator id when proposing vulnerability_validation",
+                        },
                         "estimated_risk": 0.0,
                         "estimated_noise": 0.0,
                         "priority": 50,
@@ -213,9 +221,71 @@ class GraphLLMPlannerAdvisor:
         }
         return (
             "Return a single JSON object matching GraphLLMPlanProposal and response_schema. "
-            "Use only refs listed in visible_refs. Do not include command, shell, payload, reverse_shell, or raw output fields.\n\n"
+            "Use only refs listed in visible_refs and tool hints from tool_catalog. "
+            "Do not include command, shell, payload, reverse_shell, or raw output fields.\n\n"
             f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
+
+    def _tool_catalog(self, context: GraphContext) -> dict[str, Any]:
+        capabilities = sorted(
+            {
+                capability
+                for action in context.frontier_actions
+                for capability in action.required_capabilities
+                if capability
+            }
+        )
+        frontier_tools = [
+            {
+                "action_ref": action.ref.model_dump(mode="json"),
+                "action_type": action.action_type,
+                "target_refs": [ref.model_dump(mode="json") for ref in action.target_refs],
+                "required_capabilities": list(action.required_capabilities),
+                "resource_keys": list(action.resource_keys),
+            }
+            for action in context.frontier_actions
+        ]
+        return {
+            "available_capabilities": capabilities,
+            "task_type_tools": [
+                {
+                    "task_type": TaskType.ASSET_CONFIRMATION.value,
+                    "tool_hint": "safe_probe",
+                    "params": ["host_id", "target_host"],
+                },
+                {
+                    "task_type": TaskType.SERVICE_VALIDATION.value,
+                    "tool_hint": "safe_fingerprint",
+                    "params": ["host_id", "service_id", "port", "protocol", "service_name"],
+                },
+                {
+                    "task_type": TaskType.WEB_ENUMERATION.value,
+                    "tool_hint": "safe_http_client",
+                    "params": ["target_url", "service_id", "port", "protocol"],
+                },
+                {
+                    "task_type": TaskType.VULNERABILITY_VALIDATION.value,
+                    "tool_hint": "safe_vulnerability_validator",
+                    "params": ["validator_id", "target_url", "service_id", "port", "protocol"],
+                },
+            ],
+            "known_service_params": [self._service_tool_context(service) for service in context.known_services],
+            "frontier_tools": frontier_tools,
+        }
+
+    @staticmethod
+    def _service_tool_context(service: GraphContextService) -> dict[str, Any]:
+        return {
+            "service_ref": service.ref.model_dump(mode="json"),
+            "subject_refs": [ref.model_dump(mode="json") for ref in service.subject_refs],
+            "host": service.host,
+            "host_id": next((ref.ref_id for ref in service.subject_refs if ref.ref_type == "Host"), service.host),
+            "service_id": service.ref.ref_id,
+            "port": service.port,
+            "protocol": service.protocol,
+            "service_name": service.service_name,
+            "target_url": service.properties.get("target_url") or service.properties.get("url"),
+        }
 
     def _bounded_context(self, context: GraphContext) -> dict[str, Any]:
         payload = context.model_dump(mode="json")
