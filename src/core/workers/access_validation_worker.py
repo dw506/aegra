@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
+from src.core.models.tg import TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 
 
 class AccessValidationWorker(BaseWorkerAgent):
-    """Concrete worker for access and session/path validation tasks.
+    """Primary worker for access and session/path validation tasks.
 
     This worker executes validation-style work only. It does not mutate KG, AG,
     or TG directly. Its responsibility is to validate access conditions and emit:
@@ -30,6 +31,7 @@ class AccessValidationWorker(BaseWorkerAgent):
         {
             "access_validation",
             "session_path_validation",
+            TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
         }
     )
 
@@ -44,7 +46,7 @@ class AccessValidationWorker(BaseWorkerAgent):
     def execute_task(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> AgentOutput:
         """Execute one access-validation task and return outcome plus raw result."""
 
-        if task_spec.task_type == "access_validation":
+        if task_spec.task_type in {"access_validation", TaskType.IDENTITY_CONTEXT_CONFIRMATION.value}:
             raw_result = self._execute_access_validation(task_spec, agent_input)
         elif task_spec.task_type == "session_path_validation":
             raw_result = self._execute_session_path_validation(task_spec, agent_input)

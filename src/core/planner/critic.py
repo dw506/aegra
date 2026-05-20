@@ -20,7 +20,7 @@ from src.core.planner.planner import ActionChainCandidate
 from src.core.planner.scorer import HeuristicScorer
 
 
-class CriticContext(BaseModel):
+class KernelCriticContext(BaseModel):
     """Context used when critiquing branches and actions."""
 
     model_config = ConfigDict(extra="forbid")
@@ -30,7 +30,7 @@ class CriticContext(BaseModel):
     failure_threshold: int = 2
 
 
-class CriticFinding(BaseModel):
+class KernelCriticFinding(BaseModel):
     """Structured finding from the critic."""
 
     model_config = ConfigDict(extra="forbid")
@@ -42,18 +42,18 @@ class CriticFinding(BaseModel):
     recommendation: str
 
 
-class CriticResult(BaseModel):
+class KernelCriticResult(BaseModel):
     """Structured critique output."""
 
     model_config = ConfigDict(extra="forbid")
 
-    findings: list[CriticFinding] = Field(default_factory=list)
+    findings: list[KernelCriticFinding] = Field(default_factory=list)
     blocked_action_ids: list[str] = Field(default_factory=list)
     low_value_action_ids: list[str] = Field(default_factory=list)
     replan_hints: list[str] = Field(default_factory=list)
 
 
-class TaskCriticContext(BaseModel):
+class TaskKernelCriticContext(BaseModel):
     """Context used when critiquing a Task Graph."""
 
     model_config = ConfigDict(extra="forbid")
@@ -63,12 +63,12 @@ class TaskCriticContext(BaseModel):
     invalidated_ref_keys: set[str] = Field(default_factory=set)
 
 
-class TaskCriticResult(BaseModel):
+class TaskKernelCriticResult(BaseModel):
     """Structured TG critique output."""
 
     model_config = ConfigDict(extra="forbid")
 
-    findings: list[CriticFinding] = Field(default_factory=list)
+    findings: list[KernelCriticFinding] = Field(default_factory=list)
     duplicate_task_ids: list[str] = Field(default_factory=list)
     blocked_task_ids: list[str] = Field(default_factory=list)
     failed_branch_task_ids: list[str] = Field(default_factory=list)
@@ -86,12 +86,12 @@ class AttackGraphCritic:
         self,
         graph: AttackGraph,
         candidate_paths: list[ActionChainCandidate] | None = None,
-        context: CriticContext | None = None,
-    ) -> CriticResult:
+        context: KernelCriticContext | None = None,
+    ) -> KernelCriticResult:
         """Return structured pruning and replanning suggestions."""
 
-        ctx = context or CriticContext()
-        result = CriticResult()
+        ctx = context or KernelCriticContext()
+        result = KernelCriticResult()
 
         for action in graph.find_actions():
             if action.activation_status == ActivationStatus.BLOCKED:
@@ -102,7 +102,7 @@ class AttackGraphCritic:
                 ]
                 labels = [blocker.label for blocker in blockers if isinstance(blocker, ConstraintNode)]
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="blocked_action",
                         subject_id=action.id,
                         severity="high",
@@ -115,7 +115,7 @@ class AttackGraphCritic:
             action_score = self.scorer.score_action(action)
             if action_score < ctx.low_value_threshold:
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="low_value_action",
                         subject_id=action.id,
                         severity="medium",
@@ -127,7 +127,7 @@ class AttackGraphCritic:
 
             if ctx.failure_counts.get(action.id, 0) >= ctx.failure_threshold:
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="failure_saturated_branch",
                         subject_id=action.id,
                         severity="medium",
@@ -139,7 +139,7 @@ class AttackGraphCritic:
         for path in candidate_paths or []:
             if path.score < ctx.low_value_threshold:
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="low_value_path",
                         subject_id="->".join(path.action_ids),
                         severity="medium",
@@ -166,18 +166,18 @@ class TaskGraphCritic:
     def critique_task_graph(
         self,
         task_graph: TaskGraph,
-        context: TaskCriticContext | None = None,
-    ) -> TaskCriticResult:
+        context: TaskKernelCriticContext | None = None,
+    ) -> TaskKernelCriticResult:
         """Inspect a Task Graph for duplicate, blocked, failed and invalidated tasks."""
 
-        ctx = context or TaskCriticContext()
-        result = TaskCriticResult()
+        ctx = context or TaskKernelCriticContext()
+        result = TaskKernelCriticResult()
         duplicate_groups = self._duplicate_tasks(task_graph)
 
         for group in duplicate_groups:
             result.duplicate_task_ids.extend(task.id for task in group)
             result.findings.append(
-                CriticFinding(
+                KernelCriticFinding(
                     kind="duplicate_task",
                     subject_id=",".join(task.id for task in group),
                     severity="medium",
@@ -190,7 +190,7 @@ class TaskGraphCritic:
             if self._is_permanently_blocked(task_graph, task):
                 result.blocked_task_ids.append(task.id)
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="permanently_blocked_task",
                         subject_id=task.id,
                         severity="high",
@@ -203,7 +203,7 @@ class TaskGraphCritic:
             if task.status == TaskStatus.FAILED and task.attempt_count >= min(task.max_attempts, ctx.failure_threshold):
                 result.failed_branch_task_ids.append(task.id)
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="failure_saturated_task",
                         subject_id=task.id,
                         severity="medium",
@@ -216,7 +216,7 @@ class TaskGraphCritic:
             task_score = self._task_value_score(task)
             if task_score < ctx.low_value_threshold:
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="low_value_task",
                         subject_id=task.id,
                         severity="low",
@@ -229,7 +229,7 @@ class TaskGraphCritic:
             if ctx.invalidated_ref_keys and task_ref_keys & ctx.invalidated_ref_keys:
                 result.invalidated_task_ids.append(task.id)
                 result.findings.append(
-                    CriticFinding(
+                    KernelCriticFinding(
                         kind="invalidated_task",
                         subject_id=task.id,
                         severity="high",
@@ -346,3 +346,11 @@ class TaskGraphCritic:
             if ref.ref_type:
                 keys.add(f"{ref.graph}:{ref.ref_type}:{ref.ref_id}")
         return keys
+
+
+# Backward-compatible aliases for callers that still import the old kernel names.
+CriticContext = KernelCriticContext
+CriticFinding = KernelCriticFinding
+CriticResult = KernelCriticResult
+TaskCriticContext = TaskKernelCriticContext
+TaskCriticResult = TaskKernelCriticResult

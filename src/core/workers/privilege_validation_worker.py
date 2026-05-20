@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
+from src.core.models.tg import TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 
 
 class PrivilegeValidationWorker(BaseWorkerAgent):
-    """Concrete worker for privilege validation and escalation verification.
+    """Primary worker for privilege validation and escalation verification.
 
     This worker performs validation-only execution. It does not mutate KG, AG,
     or TG directly, and it does not perform planning. Its responsibility is to:
@@ -31,6 +32,7 @@ class PrivilegeValidationWorker(BaseWorkerAgent):
         {
             "privilege_validation",
             "privilege_escalation_verification",
+            TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value,
         }
     )
 
@@ -45,7 +47,7 @@ class PrivilegeValidationWorker(BaseWorkerAgent):
     def execute_task(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> AgentOutput:
         """Execute one privilege-validation task and return outcome plus raw result."""
 
-        if task_spec.task_type == "privilege_validation":
+        if task_spec.task_type in {"privilege_validation", TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value}:
             raw_result = self._execute_privilege_validation(task_spec, agent_input)
         elif task_spec.task_type == "privilege_escalation_verification":
             raw_result = self._execute_privilege_escalation_verification(task_spec, agent_input)

@@ -10,7 +10,7 @@ from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskS
 
 
 class GoalValidationWorker(BaseWorkerAgent):
-    """Concrete worker for goal reached and target-state confirmation.
+    """Primary worker for goal reached and target-state confirmation.
 
     This worker is read-only with respect to KG, AG, and TG. It validates goal
     conditions only and emits:

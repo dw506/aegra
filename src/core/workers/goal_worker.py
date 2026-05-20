@@ -1,4 +1,10 @@
-"""Worker responsible for goal-condition validation."""
+"""LEGACY worker responsible for goal-condition validation.
+
+New pipeline code should use `GoalValidationWorker`, based on
+`BaseWorkerAgent`. This class keeps the old
+`AgentTaskRequest -> AgentTaskResult` protocol alive for compatibility tests
+and existing runtime adapters.
+"""
 
 from __future__ import annotations
 
@@ -32,7 +38,7 @@ from src.core.workers.goal_command_validator import CommandGoalValidator
 
 
 class GoalWorker(BaseWorker):
-    """Worker that evaluates whether a goal condition is satisfied."""
+    """Legacy compatibility worker that evaluates goal conditions."""
 
     agent_role = AgentRole.GOAL_WORKER
     supported_task_types = frozenset({TaskType.GOAL_CONDITION_VALIDATION})

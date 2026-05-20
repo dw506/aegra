@@ -21,6 +21,7 @@ from src.core.agents.agent_protocol import (
     GraphScope,
     WritePermission,
 )
+from src.core.perception.parser_registry import ParserRegistry
 
 
 class PerceptionNormalizationAdvice(BaseModel):
@@ -53,7 +54,13 @@ class PerceptionLLMNormalizer(Protocol):
 class PerceptionAgent(BaseAgent):
     """Translate worker outcomes into structured observations and evidence."""
 
-    def __init__(self, name: str = "perception_agent", llm_normalizer: PerceptionLLMNormalizer | None = None) -> None:
+    def __init__(
+        self,
+        name: str = "perception_agent",
+        parser_registry: ParserRegistry | None = None,
+        llm_normalizer: PerceptionLLMNormalizer | None = None,
+    ) -> None:
+        self._parser_registry = parser_registry or ParserRegistry.default()
         self._llm_normalizer = llm_normalizer
         super().__init__(
             name=name,
@@ -81,24 +88,30 @@ class PerceptionAgent(BaseAgent):
         raw_result = self._coerce_mapping(agent_input.raw_payload.get("raw_result"))
         refs = self._collect_refs(agent_input, outcome, raw_result)
         raw_result, normalization_log = self._normalize_with_llm(outcome=outcome, raw_result=raw_result, refs=refs)
+        parsed = self._parser_registry.parse(raw_result, outcome)
 
         observations = self._extract_observations(
             outcome=outcome,
             raw_result=raw_result,
             refs=refs,
         )
+        observations.extend(self._records_from_parser_payloads(parsed.observations, ObservationRecord, refs=refs))
         evidence = self._extract_evidence(
             outcome=outcome,
             raw_result=raw_result,
             refs=refs,
             observations=observations,
         )
+        evidence.extend(self._records_from_parser_payloads(parsed.evidence, EvidenceRecord, refs=refs))
 
         logs = [
             f"processed outcome {outcome.id} for task {outcome.task_id}",
             f"interpreted outcome_type={outcome.outcome_type} success={outcome.success}",
             f"emitted {len(observations)} observation(s) and {len(evidence)} evidence record(s)",
         ]
+        parser_name = parsed.metadata.get("parser")
+        if parser_name and parser_name != "generic_parser":
+            logs.append(f"perception parser={parser_name}")
         if not raw_result:
             logs.append("raw_result missing or empty; perception used outcome payload only")
         if normalization_log is not None:
@@ -324,6 +337,23 @@ class PerceptionAgent(BaseAgent):
         if not isinstance(value, dict):
             raise TypeError("raw_payload.outcome must be an OutcomeRecord or mapping")
         return OutcomeRecord.model_validate(value)
+
+    def _records_from_parser_payloads(
+        self,
+        values: list[dict[str, Any]],
+        record_cls: type[ObservationRecord] | type[EvidenceRecord],
+        *,
+        refs: list[GraphRef],
+    ) -> list[ObservationRecord] | list[EvidenceRecord]:
+        records = []
+        for value in values:
+            payload = dict(value)
+            payload.setdefault("source_agent", self.name)
+            payload.setdefault("summary", self._coalesce_string(payload.get("summary"), "parsed worker result"))
+            payload.setdefault("confidence", 0.6)
+            payload.setdefault("refs", refs)
+            records.append(record_cls.model_validate(payload))
+        return records
 
     def _collect_refs(
         self,

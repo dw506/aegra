@@ -5,9 +5,9 @@ from __future__ import annotations
 from src.core.execution.tool_plan import ToolPlan
 from src.core.models.events import AgentResultStatus, AgentRole, AgentTaskResult
 from src.core.models.runtime import RuntimeState
-from src.core.perception.c2_parser import parse_incalmo_command_output
 from src.integrations.incalmo.client import IncalmoClient
 from src.integrations.incalmo.mapper import IncalmoMapper
+from src.integrations.incalmo.perception import parse_incalmo_command_output
 
 
 class IncalmoC2Adapter:

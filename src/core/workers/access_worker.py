@@ -1,4 +1,10 @@
-"""Worker for access validation and identity-context checks."""
+"""LEGACY worker for access validation and identity-context checks.
+
+New pipeline code should use `AccessValidationWorker` and
+`PrivilegeValidationWorker`, both based on `BaseWorkerAgent`. This class keeps
+the old `AgentTaskRequest -> AgentTaskResult` protocol alive for compatibility
+tests and existing runtime adapters.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +72,7 @@ class AccessExecutionContext:
 
 
 class AccessWorker(BaseWorker):
-    """Worker that validates access paths without mutating the fact graph directly."""
+    """Legacy compatibility worker for access and privilege validation."""
 
     agent_role = AgentRole.ACCESS_WORKER
     supported_task_types = frozenset(

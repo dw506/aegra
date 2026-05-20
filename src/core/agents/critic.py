@@ -30,7 +30,7 @@ from src.core.agents.llm_decision import (
 )
 from src.core.models.runtime import OutcomeCacheEntry, RuntimeState, TaskRuntimeStatus
 from src.core.models.tg import BaseTaskNode, ReplanFrontier, TaskGraph, TaskStatus
-from src.core.planner.critic import TaskCriticContext, TaskGraphCritic
+from src.core.planner.critic import KernelCriticFinding, TaskGraphCritic, TaskKernelCriticContext
 
 
 class CriticContext(BaseModel):
@@ -391,7 +391,7 @@ class CriticAgent(BaseAgent):
 
         return self._task_critic.critique_task_graph(
             task_graph,
-            context=TaskCriticContext(
+            context=TaskKernelCriticContext(
                 low_value_threshold=context.low_value_threshold,
                 failure_threshold=context.failure_threshold,
                 invalidated_ref_keys=set(context.invalidated_ref_keys),
@@ -408,7 +408,7 @@ class CriticAgent(BaseAgent):
 
         critique = self._task_critic.critique_task_graph(
             task_graph,
-            context=TaskCriticContext(
+            context=TaskKernelCriticContext(
                 low_value_threshold=context.low_value_threshold,
                 failure_threshold=context.failure_threshold,
                 invalidated_ref_keys=set(),
@@ -422,18 +422,30 @@ class CriticAgent(BaseAgent):
                 GraphRef(graph=GraphScope.TG, ref_id=task_id, ref_type="Task")
                 for task_id in critique.duplicate_task_ids
             ]
-            findings.append(
-                CriticFinding(
-                    finding_type="duplicate_tasks",
-                    severity=raw.severity,
-                    subject_refs=subject_refs,
-                    summary="duplicate task instances detected in TG",
-                    rationale=raw.reason,
-                    metadata={"recommendation": raw.recommendation},
-                )
-            )
+            findings.append(self._from_kernel_finding(raw, finding_type="duplicate_tasks", subject_refs=subject_refs))
             break
         return findings
+
+    def _from_kernel_finding(
+        self,
+        finding: KernelCriticFinding,
+        *,
+        finding_type: str | None = None,
+        subject_refs: list[GraphRef] | None = None,
+    ) -> CriticFinding:
+        """Translate deterministic kernel findings into agent-layer findings."""
+
+        refs = subject_refs
+        if refs is None:
+            refs = [GraphRef(graph=GraphScope.TG, ref_id=finding.subject_id, ref_type="Task")]
+        return CriticFinding(
+            finding_type=finding_type or finding.kind,
+            severity=finding.severity,
+            subject_refs=refs,
+            summary=finding.reason,
+            rationale=finding.recommendation,
+            metadata={"kernel_subject_id": finding.subject_id, "kernel_finding_type": finding.kind},
+        )
 
     def _detect_blocked_tasks(
         self,
