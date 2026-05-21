@@ -18,9 +18,11 @@ from src.core.models.runtime import (
 )
 from src.core.models.tg import TaskNode, TaskType
 from src.core.workers.access_worker import AccessWorker
+from src.core.workers.access_validation_worker import AccessValidationWorker
 from src.core.workers.base import WorkerTaskSpec
 from src.core.workers.goal_validation_worker import GoalValidationWorker
 from src.core.workers.goal_worker import GoalWorker
+from src.core.workers.services.access_validation_service import AccessValidationRequest, AccessValidationService
 from src.core.workers.services.goal_validation_service import GoalValidationService
 from src.core.workers.privilege_validation_worker import PrivilegeValidationWorker
 from src.core.workers.services.privilege_validation_service import PrivilegeValidationRequest, PrivilegeValidationService
@@ -248,7 +250,7 @@ def test_access_worker_uses_runtime_session_and_credential_views() -> None:
         )
     )
     request = worker.build_request(
-        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        task=build_task(TaskType.IDENTITY_CONTEXT_CONFIRMATION),
         operation_id="op-1",
         metadata={
             "require_session": True,
@@ -257,7 +259,6 @@ def test_access_worker_uses_runtime_session_and_credential_views() -> None:
             "session_probe": {"session_id": "sess-1", "status": "active"},
             "credential_validation": {"credential_id": "cred-1", "status": "valid"},
             "host_reachability": {"reachable": True},
-            "privilege_validation": {"validated": False, "required_level": "admin"},
         },
     )
 
@@ -265,10 +266,9 @@ def test_access_worker_uses_runtime_session_and_credential_views() -> None:
 
     assert result.status.value == "succeeded"
     assert result.outcome_payload["credential_status"] == "valid"
-    assert result.outcome_payload["privilege_validation"]["validated"] is False
     assert result.outcome_payload["session_id"] == "sess-1"
     assert {item.kind.value for item in result.fact_write_requests} >= {"entity_upsert", "relation_upsert"}
-    assert len(result.critic_signals) == 1
+    assert not result.critic_signals
 
 
 def test_access_worker_requests_new_session_when_runtime_snapshot_has_none() -> None:
@@ -322,7 +322,7 @@ def test_access_worker_fails_when_credential_validation_is_invalid() -> None:
         )
     )
     request = worker.build_request(
-        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        task=build_task(TaskType.IDENTITY_CONTEXT_CONFIRMATION),
         operation_id="op-1",
         metadata={
             "require_session": False,
@@ -342,7 +342,7 @@ def test_access_worker_fails_when_credential_validation_is_invalid() -> None:
 def test_access_worker_blocks_when_credential_validator_command_is_unavailable() -> None:
     worker = AccessWorker()
     request = worker.build_request(
-        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        task=build_task(TaskType.IDENTITY_CONTEXT_CONFIRMATION),
         operation_id="op-1",
         metadata={
             "require_session": False,
@@ -432,6 +432,121 @@ def test_access_worker_privilege_gap_emits_replan_runtime_request() -> None:
     assert len(result.critic_signals) == 1
     assert len(result.replan_hints) == 1
     assert any(item.request_type.value == "request_replan" for item in result.runtime_requests)
+
+
+def test_access_validation_worker_uses_service() -> None:
+    service = AccessValidationService()
+    worker = AccessValidationWorker(service=service)
+    task_spec = WorkerTaskSpec(
+        task_id="task-1",
+        task_type=TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
+        input_bindings={"host_id": "host-1"},
+        target_refs=[ProtocolGraphRef(graph=GraphScope.KG, ref_id="host-1", ref_type="Host")],
+        resource_keys=["host:host-1"],
+    )
+    agent_input = AgentInput(
+        graph_refs=task_spec.target_refs,
+        task_ref="task-1",
+        context=AgentContext(operation_id="op-1"),
+        raw_payload={
+            "task_type": task_spec.task_type,
+            "task_label": "Access validation",
+            "metadata": {
+                "require_session": False,
+                "host_reachability": {"reachable": True},
+            },
+        },
+    )
+
+    output = worker.execute_task(task_spec, agent_input)
+    outcome = output.outcomes[0]
+
+    assert outcome["task_id"] == "task-1"
+    assert outcome["outcome_type"] == TaskType.IDENTITY_CONTEXT_CONFIRMATION.value
+    assert outcome["success"] is True
+    assert output.observations[0]["category"] == "access"
+    assert output.evidence[0]["kind"] == "access_validation"
+    assert outcome["payload"]["reachable"] is True
+
+
+def test_legacy_access_worker_access_path_matches_access_service() -> None:
+    metadata = {
+        "require_session": False,
+        "host_reachability": {"reachable": True, "via": "direct"},
+    }
+    service = AccessValidationService()
+    worker = AccessWorker(access_service=service)
+    legacy_request = worker.build_request(
+        task=build_task(TaskType.IDENTITY_CONTEXT_CONFIRMATION),
+        operation_id="op-1",
+        metadata=metadata,
+    )
+
+    legacy_result = worker.execute_task(legacy_request)
+    service_result = service.validate(AccessValidationRequest.from_legacy_request(legacy_request))
+
+    assert legacy_result.status.value == service_result.status
+    assert legacy_result.outcome_payload["reachable"] == service_result.raw_payload["reachable"]
+    assert legacy_result.outcome_payload["selected_route"] == service_result.raw_payload["selected_route"]
+    assert legacy_result.runtime_requests[0].request_type.value == service_result.runtime_requests[0]["request_type"]
+
+
+def test_access_validation_service_open_session_request() -> None:
+    service = AccessValidationService()
+    request = AccessValidationRequest(
+        operation_id="op-1",
+        task_id="task-1",
+        task_type=TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
+        task_label="Access validation",
+        target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1")],
+        metadata={"require_session": True, "host_reachability": {"reachable": True}, "lease_seconds": 120},
+    )
+
+    result = service.validate(request)
+
+    assert result.status == "blocked"
+    assert result.raw_payload["blocked_on"] == "session"
+    assert result.runtime_requests[0]["request_type"] == "open_session"
+    assert result.runtime_requests[0]["lease_seconds"] == 120
+
+
+def test_access_validation_service_credential_failure() -> None:
+    service = AccessValidationService()
+    request = AccessValidationRequest(
+        operation_id="op-1",
+        task_id="task-1",
+        task_type=TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
+        task_label="Access validation",
+        target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1")],
+        metadata={
+            "require_session": False,
+            "require_credential": True,
+            "credential_validation": {"credential_id": "cred-1", "status": "invalid"},
+            "host_reachability": {"reachable": True},
+        },
+    )
+
+    result = service.validate(request)
+
+    assert result.status == "failed"
+    assert result.raw_payload["credential_status"] == "invalid"
+
+
+def test_access_validation_service_reachability_blocked() -> None:
+    service = AccessValidationService()
+    request = AccessValidationRequest(
+        operation_id="op-1",
+        task_id="task-1",
+        task_type=TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
+        task_label="Access validation",
+        target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1")],
+        metadata={"require_session": False, "host_reachability": {"reachable": False}},
+    )
+
+    result = service.validate(request)
+
+    assert result.status == "blocked"
+    assert result.raw_payload["blocked_on"] == "reachability"
 
 
 def test_privilege_validation_worker_outputs_agent_output_contract() -> None:

@@ -583,13 +583,12 @@ def test_worker_results_apply_into_formal_kg_entity_and_relation_updates() -> No
 
     access_worker = AccessWorker()
     access_request = access_worker.build_request(
-        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        task=build_task(TaskType.IDENTITY_CONTEXT_CONFIRMATION),
         operation_id="op-1",
         metadata={
             "runtime_session": {"session_id": "sess-1", "status": "active"},
             "runtime_credential": {"credential_id": "cred-1", "status": "valid"},
             "host_reachability": {"reachable": True, "source_id": "host-0", "source_type": "Host", "via": "pivot"},
-            "privilege_validation": {"validated": True, "required_level": "admin"},
         },
     )
     access_result = access_worker.execute_task(access_request)
@@ -600,9 +599,21 @@ def test_worker_results_apply_into_formal_kg_entity_and_relation_updates() -> No
     )
     assert any(delta["patch"]["entity_type"] == "Session" for delta in access_applied.kg_state_deltas if delta["delta_type"] == "upsert_entity")
     assert any(delta["patch"]["entity_type"] == "Credential" for delta in access_applied.kg_state_deltas if delta["delta_type"] == "upsert_entity")
-    assert any(delta["patch"]["entity_type"] == "PrivilegeState" for delta in access_applied.kg_state_deltas if delta["delta_type"] == "upsert_entity")
     assert any(delta["patch"]["relation_type"] == "CAN_REACH" for delta in access_applied.kg_state_deltas if delta["delta_type"] == "upsert_relation")
-    assert any(delta["patch"]["relation_type"] == "HAS_PRIVILEGE_STATE" for delta in access_applied.kg_state_deltas if delta["delta_type"] == "upsert_relation")
+
+    privilege_request = access_worker.build_request(
+        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        operation_id="op-1",
+        metadata={"privilege_validation": {"validated": True, "required_level": "admin"}},
+    )
+    privilege_result = access_worker.execute_task(privilege_request)
+    privilege_applied = applier.apply(
+        privilege_result,
+        state,
+        kg_ref=ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
+    )
+    assert any(delta["patch"]["entity_type"] == "PrivilegeState" for delta in privilege_applied.kg_state_deltas if delta["delta_type"] == "upsert_entity")
+    assert any(delta["patch"]["relation_type"] == "HAS_PRIVILEGE_STATE" for delta in privilege_applied.kg_state_deltas if delta["delta_type"] == "upsert_relation")
 
     goal_worker = GoalWorker()
     goal_request = goal_worker.build_request(

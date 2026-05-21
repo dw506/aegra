@@ -132,11 +132,11 @@ def test_access_worker_succeeds_with_session_and_may_emit_replan_signal() -> Non
 
     assert result.status == AgentResultStatus.SUCCEEDED
     assert result.outcome_payload["validated"] is True
-    assert result.outcome_payload["session_id"] == "sess-1"
     assert {item.kind.value for item in result.fact_write_requests} >= {"entity_upsert", "relation_upsert"}
     assert len(result.critic_signals) == 1
     assert len(result.replan_hints) == 1
     assert any(item.request_type == RuntimeControlType.REQUEST_REPLAN for item in result.runtime_requests)
+    assert result.outcome_payload["privilege_satisfied"] is False
 
 
 def test_goal_worker_requests_local_replan_when_goal_unsatisfied() -> None:
