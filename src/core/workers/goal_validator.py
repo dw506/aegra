@@ -1,4 +1,4 @@
-"""Goal validator abstractions used by GoalWorker."""
+"""Goal validator abstractions used by goal validation services."""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
-from src.core.models.events import AgentTaskRequest
-
 
 class GoalEvaluation(BaseModel):
     """Standardized goal validation result consumed by GoalWorker."""
@@ -29,19 +26,21 @@ class GoalValidator(ABC):
     """Interface for producing one standardized goal evaluation."""
 
     @abstractmethod
-    def evaluate(self, request: AgentTaskRequest) -> GoalEvaluation:
+    def evaluate(self, request: Any) -> GoalEvaluation:
         """Return one structured goal evaluation for the request."""
 
 
 class MetadataGoalValidator(GoalValidator):
     """Compatibility validator that normalizes metadata-backed goal results."""
 
-    def evaluate(self, request: AgentTaskRequest) -> GoalEvaluation:
-        raw = request.metadata.get("goal_validator_output") or request.context.metadata.get("goal_validator_output")
+    def evaluate(self, request: Any) -> GoalEvaluation:
+        context_metadata = dict(getattr(request, "context_metadata", {}) or {})
+        metadata = dict(getattr(request, "metadata", {}) or {})
+        raw = metadata.get("goal_validator_output") or context_metadata.get("goal_validator_output")
         if raw is None:
-            raw = request.metadata.get("goal_evaluation") or request.context.metadata.get("goal_evaluation") or {}
+            raw = metadata.get("goal_evaluation") or context_metadata.get("goal_evaluation") or {}
         if "satisfied" not in raw:
-            raw = {"satisfied": bool(request.metadata.get("goal_satisfied", True)), **dict(raw)}
+            raw = {"satisfied": bool(metadata.get("goal_satisfied", True)), **dict(raw)}
         validated_ref_ids = raw.get("validated_ref_ids")
         if not isinstance(validated_ref_ids, list):
             validated_ref_ids = [ref.ref_id for ref in request.target_refs]
@@ -53,7 +52,7 @@ class MetadataGoalValidator(GoalValidator):
             missing_requirements=[str(item) for item in raw.get("missing_requirements", []) if str(item).strip()],
             validated_ref_ids=[str(item) for item in validated_ref_ids if str(item).strip()],
             supporting_evidence=[dict(item) for item in supporting_evidence if isinstance(item, dict)],
-            confidence=float(raw.get("confidence", request.metadata.get("confidence", 0.9))),
+            confidence=float(raw.get("confidence", metadata.get("confidence", 0.9))),
             blocked=bool(raw.get("blocked", False)),
             failure_reason=(
                 str(raw.get("failure_reason") or raw.get("reason"))

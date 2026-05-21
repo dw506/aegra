@@ -38,10 +38,13 @@ from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.session_manager import RuntimeSessionManager
 from src.core.workers.access_validators import (
     CredentialValidatorAdapter,
-    PrivilegeValidatorAdapter,
     SessionProbeAdapter,
 )
 from src.core.workers.base import BaseWorker
+from src.core.workers.services.privilege_validation_service import (
+    PrivilegeValidationRequest,
+    PrivilegeValidationService,
+)
 from src.core.workers.tool_runner import ToolRunner
 
 
@@ -83,7 +86,12 @@ class AccessWorker(BaseWorker):
     )
     capabilities = frozenset({"validate_access", "request_sessions", "propose_access_facts"})
 
-    def __init__(self, *, tool_runner: ToolRunner | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tool_runner: ToolRunner | None = None,
+        privilege_service: PrivilegeValidationService | None = None,
+    ) -> None:
         self._tool_runner = tool_runner or ToolRunner()
         self._session_manager = RuntimeSessionManager()
         self._credential_manager = RuntimeCredentialManager()
@@ -96,7 +104,7 @@ class AccessWorker(BaseWorker):
             credential_manager=self._credential_manager,
             tool_runner=self._tool_runner,
         )
-        self._privilege_validator = PrivilegeValidatorAdapter()
+        self._privilege_service = privilege_service or PrivilegeValidationService()
 
     def default_intent(self, task_type: TaskType) -> AgentTaskIntent:
         return AgentTaskIntent.VALIDATE_ACCESS
@@ -439,9 +447,10 @@ class AccessWorker(BaseWorker):
             raw.setdefault("via", "direct")
         return raw
 
-    @staticmethod
-    def _privilege_validation_view(request: AgentTaskRequest) -> dict[str, Any]:
-        return PrivilegeValidatorAdapter().validate(request=request).model_dump(mode="json")
+    def _privilege_validation_view(self, request: AgentTaskRequest) -> dict[str, Any]:
+        domain_request = PrivilegeValidationRequest.from_legacy_request(request)
+        result = self._privilege_service.validate(domain_request)
+        return dict(result.raw_payload.get("privilege_validation", {}))
 
     @staticmethod
     def _build_fact_writes(

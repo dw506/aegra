@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.core.models.events import AgentTaskRequest
 from src.core.workers.goal_validator import GoalEvaluation, GoalValidator, MetadataGoalValidator
 from src.core.workers.tool_runner import ToolExecutionSpec, ToolRunner
 
@@ -22,17 +21,18 @@ class CommandGoalValidator(GoalValidator):
         self._tool_runner = tool_runner or ToolRunner()
         self._fallback = fallback or MetadataGoalValidator()
 
-    def evaluate(self, request: AgentTaskRequest) -> GoalEvaluation:
-        command = request.metadata.get("goal_validator_command")
+    def evaluate(self, request: Any) -> GoalEvaluation:
+        metadata = dict(getattr(request, "metadata", {}) or {})
+        command = metadata.get("goal_validator_command")
         if not isinstance(command, list) or not command:
             return self._fallback.evaluate(request)
         result = self._tool_runner.run(
             ToolExecutionSpec(
                 command=[str(item) for item in command],
-                timeout_sec=int(request.metadata.get("goal_validator_timeout_sec", 15)),
-                retries=int(request.metadata.get("goal_validator_retries", 0)),
-                cwd=request.metadata.get("goal_validator_cwd"),
-                env={str(key): str(value) for key, value in dict(request.metadata.get("goal_validator_env", {})).items()},
+                timeout_sec=int(metadata.get("goal_validator_timeout_sec", 15)),
+                retries=int(metadata.get("goal_validator_retries", 0)),
+                cwd=metadata.get("goal_validator_cwd"),
+                env={str(key): str(value) for key, value in dict(metadata.get("goal_validator_env", {})).items()},
             )
         )
         if result.category in {"command_not_found", "process_error", "timeout"}:
@@ -55,7 +55,7 @@ class CommandGoalValidator(GoalValidator):
             return GoalEvaluation(
                 satisfied=True,
                 validated_ref_ids=[ref.ref_id for ref in request.target_refs],
-                confidence=float(request.metadata.get("confidence", 0.9)),
+                confidence=float(metadata.get("confidence", 0.9)),
                 metadata={"tool": result.to_payload(), "source": "goal_validator_command"},
             )
         return GoalEvaluation(
@@ -65,7 +65,7 @@ class CommandGoalValidator(GoalValidator):
                 str(item) for item in payload.get("validated_ref_ids", [ref.ref_id for ref in request.target_refs]) if str(item).strip()
             ],
             supporting_evidence=[dict(item) for item in payload.get("supporting_evidence", []) if isinstance(item, dict)],
-            confidence=float(payload.get("confidence", request.metadata.get("confidence", 0.9))),
+            confidence=float(payload.get("confidence", metadata.get("confidence", 0.9))),
             blocked=bool(payload.get("blocked", False)),
             failure_reason=(
                 str(payload.get("failure_reason") or payload.get("reason"))

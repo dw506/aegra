@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 
+from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef as ProtocolGraphRef, GraphScope
 from src.core.models.ag import GraphRef
 from src.core.models.runtime import (
     CredentialKind,
@@ -17,7 +18,12 @@ from src.core.models.runtime import (
 )
 from src.core.models.tg import TaskNode, TaskType
 from src.core.workers.access_worker import AccessWorker
+from src.core.workers.base import WorkerTaskSpec
+from src.core.workers.goal_validation_worker import GoalValidationWorker
 from src.core.workers.goal_worker import GoalWorker
+from src.core.workers.services.goal_validation_service import GoalValidationService
+from src.core.workers.privilege_validation_worker import PrivilegeValidationWorker
+from src.core.workers.services.privilege_validation_service import PrivilegeValidationRequest, PrivilegeValidationService
 from src.core.workers.probe_adapters import CustomProbeAdapter, NmapAdapter
 from src.core.workers.recon_worker import ReconWorker
 from src.core.workers.tool_runner import ToolExecutionResult
@@ -428,6 +434,88 @@ def test_access_worker_privilege_gap_emits_replan_runtime_request() -> None:
     assert any(item.request_type.value == "request_replan" for item in result.runtime_requests)
 
 
+def test_privilege_validation_worker_outputs_agent_output_contract() -> None:
+    service = PrivilegeValidationService()
+    worker = PrivilegeValidationWorker(service=service)
+    task_spec = WorkerTaskSpec(
+        task_id="task-1",
+        task_type=TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value,
+        input_bindings={"principal": "alice", "privilege_level": "admin"},
+        target_refs=[ProtocolGraphRef(graph=GraphScope.KG, ref_id="host-1", ref_type="Host")],
+        resource_keys=["host:host-1"],
+    )
+    agent_input = AgentInput(
+        graph_refs=task_spec.target_refs,
+        task_ref="task-1",
+        context=AgentContext(operation_id="op-1"),
+        raw_payload={
+            "task_type": task_spec.task_type,
+            "task_label": "Privilege validation",
+            "metadata": {
+                "privilege_validation": {
+                    "validated": False,
+                    "required_level": "admin",
+                    "principal": "alice",
+                }
+            },
+        },
+    )
+
+    output = worker.execute_task(task_spec, agent_input)
+    outcome = output.outcomes[0]
+
+    assert outcome["task_id"] == "task-1"
+    assert outcome["outcome_type"] == TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value
+    assert outcome["success"] is True
+    assert output.observations[0]["category"] == "privilege"
+    assert output.evidence[0]["kind"] == "privilege_validation"
+    assert outcome["payload"]["privilege_validation"]["validated"] is False
+    assert outcome["payload"]["runtime_requests"][-1]["request_type"] == "request_replan"
+
+
+def test_privilege_validation_worker_uses_service() -> None:
+    service = PrivilegeValidationService()
+    request = PrivilegeValidationRequest(
+        operation_id="op-1",
+        task_id="task-1",
+        task_type=TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value,
+        task_label="Privilege validation",
+        target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host", label="host-1")],
+        metadata={"privilege_validation": {"validated": True, "required_level": "admin"}},
+    )
+
+    result = service.validate(request)
+
+    assert result.status == "succeeded"
+    assert result.raw_payload["privilege_validation"]["required_level"] == "admin"
+    assert {item["kind"] for item in result.fact_write_requests} >= {"entity_upsert", "relation_upsert"}
+
+
+def test_legacy_access_worker_privilege_path_matches_privilege_service() -> None:
+    metadata = {
+        "require_session": False,
+        "privilege_validation": {
+            "validated": False,
+            "required_level": "admin",
+            "principal": "alice",
+        }
+    }
+    service = PrivilegeValidationService()
+    access_worker = AccessWorker(privilege_service=service)
+    legacy_request = access_worker.build_request(
+        task=build_task(TaskType.PRIVILEGE_CONFIGURATION_VALIDATION),
+        operation_id="op-1",
+        metadata=metadata,
+    )
+
+    legacy_result = access_worker.execute_task(legacy_request)
+    service_result = service.validate(PrivilegeValidationRequest.from_legacy_request(legacy_request))
+
+    assert legacy_result.outcome_payload["privilege_validation"] == service_result.raw_payload["privilege_validation"]
+    assert len(legacy_result.critic_signals) == len(service_result.critic_signals)
+    assert legacy_result.runtime_requests[-1].request_type.value == service_result.runtime_requests[-1]["request_type"]
+
+
 def test_goal_worker_prefers_structured_goal_evaluation() -> None:
     worker = GoalWorker()
     request = worker.build_request(
@@ -517,6 +605,50 @@ def test_goal_worker_uses_command_validator_output() -> None:
 
     assert result.status.value == "needs_replan"
     assert result.outcome_payload["goal_evaluation"]["supporting_evidence"][0]["payload_ref"] == "runtime://validators/goal/cmd"
+
+
+def test_goal_validation_worker_and_legacy_goal_worker_share_service_result() -> None:
+    metadata = {
+        "goal_validator_output": {
+            "satisfied": False,
+            "missing_requirements": ["proof-of-access"],
+            "validated_ref_ids": ["host-1"],
+            "supporting_evidence": [{"payload_ref": "runtime://validators/goal/shared"}],
+            "confidence": 0.86,
+        }
+    }
+    service = GoalValidationService()
+    legacy_worker = GoalWorker(service=service)
+    legacy_request = legacy_worker.build_request(
+        task=build_task(TaskType.GOAL_CONDITION_VALIDATION),
+        operation_id="op-1",
+        metadata=metadata,
+    )
+    legacy_result = legacy_worker.execute_task(legacy_request)
+
+    primary_worker = GoalValidationWorker(service=service)
+    task_spec = WorkerTaskSpec(
+        task_id="task-1",
+        task_type=TaskType.GOAL_CONDITION_VALIDATION.value,
+        input_bindings={"host_id": "host-1"},
+        target_refs=[ProtocolGraphRef(graph=GraphScope.KG, ref_id="host-1", ref_type="Host")],
+        resource_keys=["host:host-1"],
+    )
+    agent_input = AgentInput(
+        graph_refs=task_spec.target_refs,
+        task_ref="task-1",
+        context=AgentContext(operation_id="op-1"),
+        raw_payload={"task_type": task_spec.task_type, "task_label": "Task Label", "metadata": metadata},
+    )
+
+    agent_output = primary_worker.execute_task(task_spec, agent_input)
+    outcome_payload = agent_output.outcomes[0]["payload"]
+
+    assert outcome_payload["status"] == legacy_result.status.value
+    assert outcome_payload["goal_satisfied"] == legacy_result.outcome_payload["goal_satisfied"]
+    assert outcome_payload["goal_evaluation"] == legacy_result.outcome_payload["goal_evaluation"]
+    assert {item["kind"] for item in outcome_payload["fact_write_requests"]} >= {"entity_upsert", "relation_upsert"}
+    assert outcome_payload["runtime_requests"][-1]["request_type"] == "request_replan"
 
 
 def test_runtime_state_tracks_credentials_leases_and_pivot_routes() -> None:
