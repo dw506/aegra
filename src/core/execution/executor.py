@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
+from src.core.execution.adapters.base import ExecutionAdapter
 from src.core.execution.tool_plan import ToolPlan
 from src.core.execution.tool_policy import ToolPolicy
+from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.events import AgentResultStatus, AgentRole, AgentTaskResult
 from src.core.models.runtime import RuntimeState
 from src.core.models.tg import BaseTaskNode
 
 
-class ExecutionAdapter(Protocol):
-    """Adapter contract for external execution backends."""
+class ExecutionExecutor:
+    """Dispatch ToolPlans to adapter-neutral execution backends."""
 
-    def execute(self, plan: ToolPlan, runtime_state: RuntimeState) -> AgentTaskResult:
-        """Execute a plan and return a canonical worker result."""
+    def __init__(self, adapters: list[ExecutionAdapter] | None = None) -> None:
+        self._adapters = list(adapters or [])
+
+    def register_adapter(self, adapter: ExecutionAdapter) -> ExecutionAdapter:
+        self._adapters.append(adapter)
+        return adapter
+
+    def execute(self, plan: ToolPlan) -> ToolExecutionResult:
+        for adapter in self._adapters:
+            if adapter.supports(plan):
+                return adapter.execute(plan)
+        raise ValueError(f"No adapter supports plan adapter={plan.adapter}, tool={plan.tool}")
 
 
 class ToolExecutor:

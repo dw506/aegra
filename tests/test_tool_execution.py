@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from src.core.execution import ToolExecutor, ToolPlan, build_tool_plan
+import sys
+
+import pytest
+
+from src.core.execution import ExecutionExecutor, LocalShellAdapter, ToolExecutor, ToolPlan, build_tool_plan
 from src.core.models.ag import GraphRef
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.models.scope import Asset, Engagement
@@ -60,3 +64,80 @@ def test_tool_executor_reports_missing_adapter_after_policy_allows() -> None:
 
     assert result.status.value == "failed"
     assert "not registered" in result.summary
+
+
+def test_local_shell_adapter_executes_allowed_command() -> None:
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="python",
+        adapter="local_shell",
+        command=sys.executable,
+        args={"argv": [sys.executable, "-c", "print('ok')"]},
+    )
+
+    result = LocalShellAdapter().execute(plan)
+
+    assert result.success is True
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "ok"
+    assert result.stderr == ""
+
+
+def test_local_shell_adapter_returns_failure_result_on_nonzero_exit() -> None:
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="python",
+        adapter="local_shell",
+        command=sys.executable,
+        args={"argv": [sys.executable, "-c", "import sys; sys.exit(7)"]},
+    )
+
+    result = LocalShellAdapter().execute(plan)
+
+    assert result.success is False
+    assert result.exit_code == 7
+
+
+def test_local_shell_adapter_rejects_unallowed_command_by_default() -> None:
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="powershell",
+        adapter="local_shell",
+        command="powershell",
+    )
+
+    result = LocalShellAdapter().execute(plan)
+
+    assert result.success is False
+    assert result.exit_code == "policy_denied"
+    assert "not allowed" in result.stderr
+
+
+def test_execution_executor_selects_matching_adapter() -> None:
+    executor = ExecutionExecutor([LocalShellAdapter()])
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="python",
+        adapter="local_shell",
+        command=sys.executable,
+        args={"argv": [sys.executable, "-c", "print('selected')"]},
+    )
+
+    result = executor.execute(plan)
+
+    assert result.success is True
+    assert result.stdout.strip() == "selected"
+    assert result.adapter == "local_shell"
+
+
+def test_execution_executor_rejects_unsupported_adapter() -> None:
+    executor = ExecutionExecutor([LocalShellAdapter()])
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="whoami",
+        adapter="missing_adapter",
+        command="whoami",
+    )
+
+    with pytest.raises(ValueError, match="No adapter supports"):
+        executor.execute(plan)

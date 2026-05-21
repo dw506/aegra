@@ -44,6 +44,6 @@ class ToolPolicy:
                 approval_id=gate_decision.approval_id,
                 metadata={"policy_gate_action": gate_decision.action.value, "plan": plan.model_dump(mode="json")},
             )
-        if not plan.command.strip():
+        if not (plan.command or "").strip():
             return ToolPolicyDecision(allowed=False, gate="tool_plan", reason="tool plan command is empty")
         return ToolPolicyDecision(allowed=True, gate="tool_policy", reason="tool plan allowed")
