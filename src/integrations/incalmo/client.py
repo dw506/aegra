@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +34,7 @@ class IncalmoClient:
         self.config = config
         self._base_url = config.c2_url.rstrip("/")
         self._command_agents: dict[str, str] = {}
+        self._opener = build_opener(ProxyHandler({}))
 
     @classmethod
     def from_settings(cls, settings: AppSettings, *, config_path: Path | None = None) -> "IncalmoClient":
@@ -125,7 +126,7 @@ class IncalmoClient:
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )
         try:
-            with urlopen(request, timeout=self.config.command_timeout_sec) as response:
+            with self._opener.open(request, timeout=self.config.command_timeout_sec) as response:
                 raw = response.read().decode("utf-8")
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

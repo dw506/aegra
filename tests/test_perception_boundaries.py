@@ -25,6 +25,8 @@ def test_parser_registry_default_uses_generic_parser() -> None:
     registry = ParserRegistry.default()
 
     assert any(parser.name == "generic_parser" for parser in registry.parsers)
+    assert any(parser.name == "tool_execution_parser" for parser in registry.parsers)
+    assert registry.parsers[-1].name == "generic_parser"
     assert not any("incalmo" in parser.name for parser in registry.parsers)
 
 

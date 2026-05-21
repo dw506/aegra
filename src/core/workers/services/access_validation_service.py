@@ -9,6 +9,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.agent_protocol import AgentInput
+from src.core.execution.executor import ExecutionExecutor
+from src.core.execution.tool_plan import ToolPlan
+from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.ag import GraphRef as EventGraphRef
 from src.core.models.events import (
     AgentResultStatus,
@@ -130,6 +133,7 @@ class AccessExecutionContext:
     bound_identity: str | None
     bound_target: str | None
     confidence: float
+    tool_execution: dict[str, Any] | None = None
 
     @property
     def session_usable(self) -> bool:
@@ -143,7 +147,13 @@ class AccessExecutionContext:
 class AccessValidationService:
     """Validate access path, session and credential state."""
 
-    def __init__(self, *, tool_runner: ToolRunner | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tool_runner: ToolRunner | None = None,
+        executor: ExecutionExecutor | None = None,
+    ) -> None:
+        self._executor = executor
         self._tool_runner = tool_runner or ToolRunner()
         self._session_manager = RuntimeSessionManager()
         self._credential_manager = RuntimeCredentialManager()
@@ -158,6 +168,9 @@ class AccessValidationService:
         )
 
     def validate(self, request: AccessValidationRequest) -> WorkerDomainResult:
+        tool_execution = self._run_session_probe_if_available(request)
+        if tool_execution is not None:
+            request = self._request_with_tool_execution(request, tool_execution)
         primary_ref = self._event_ref(request.target_refs[0]) if request.target_refs else None
         context = self._build_execution_context(request, primary_ref=primary_ref)
 
@@ -185,6 +198,7 @@ class AccessValidationService:
                     "status": AgentResultStatus.BLOCKED.value,
                     "blocked_on": "session_probe",
                     "validated": False,
+                    **self._tool_execution_payload(context),
                     "session_probe": context.session_probe,
                     "selected_route": context.selected_route,
                     "error_message": failure_reason,
@@ -217,6 +231,7 @@ class AccessValidationService:
                 raw_payload={
                     "status": AgentResultStatus.BLOCKED.value,
                     "blocked_on": "session",
+                    **self._tool_execution_payload(context),
                     "session_probe": context.session_probe,
                     "selected_route": context.selected_route,
                     "runtime_requests": [item.model_dump(mode="json") for item in runtime_requests],
@@ -261,6 +276,7 @@ class AccessValidationService:
             payload={
                 "session_id": context.selected_session_id,
                 "session_probe": context.session_probe,
+                **self._tool_execution_payload(context),
                 "credential_status": context.credential_status,
                 "credential_validation": context.credential_validation,
                 "reachable": context.reachability.get("reachable", True),
@@ -276,6 +292,7 @@ class AccessValidationService:
             metadata={
                 "selected_route_id": context.selected_route.get("route_id"),
                 "session_probe": context.session_probe,
+                **self._tool_execution_payload(context),
                 "credential_validation": context.credential_validation,
             },
         )
@@ -313,11 +330,13 @@ class AccessValidationService:
             "status": AgentResultStatus.SUCCEEDED.value,
             "session_id": context.selected_session_id,
             "validated": True,
+            "session_probe": context.session_probe,
             "credential_status": context.credential_status,
             "credential_validation": context.credential_validation,
             "reachable": context.reachability.get("reachable", True),
             "reachability": context.reachability,
             "selected_route": context.selected_route,
+            **self._tool_execution_payload(context),
             "fact_write_requests": [item.model_dump(mode="json") for item in fact_write_requests],
             "projection_requests": [item.model_dump(mode="json") for item in projection_requests],
             "runtime_requests": [item.model_dump(mode="json") for item in runtime_requests],
@@ -334,6 +353,71 @@ class AccessValidationService:
             runtime_requests=raw_payload["runtime_requests"],
             raw_payload=raw_payload,
         )
+
+    def _run_session_probe_if_available(self, request: AccessValidationRequest) -> ToolExecutionResult | None:
+        if self._executor is None:
+            return None
+
+        command = request.metadata.get("probe_command")
+        adapter = request.metadata.get("execution_adapter")
+        if not command or not adapter:
+            return None
+
+        agent_id = self._string(request.metadata.get("agent_id") or request.metadata.get("target_agent_ref"))
+        args: dict[str, Any] = {}
+        if agent_id:
+            args["agent_id"] = agent_id
+        if isinstance(command, list):
+            args["argv"] = [str(part) for part in command]
+            command_text = " ".join(str(part) for part in command)
+        else:
+            command_text = str(command)
+        metadata = {"probe": "session"}
+        if agent_id:
+            metadata["agent_id"] = agent_id
+        plan = ToolPlan(
+            task_id=request.task_id,
+            tool="session_probe",
+            adapter=str(adapter),
+            command=command_text,
+            target_agent_ref=agent_id,
+            args=args,
+            timeout_seconds=int(request.metadata.get("timeout_seconds") or request.metadata.get("probe_timeout_seconds") or 30),
+            payloads=dict(request.metadata.get("payloads", {})),
+            metadata=metadata,
+        )
+        return self._executor.execute(plan)
+
+    def _request_with_tool_execution(
+        self,
+        request: AccessValidationRequest,
+        tool_execution: ToolExecutionResult,
+    ) -> AccessValidationRequest:
+        metadata = dict(request.metadata)
+        payload = tool_execution.model_dump(mode="json")
+        metadata["tool_execution"] = payload
+        if "session_probe" not in metadata:
+            session_id = (
+                self._string(metadata.get("session_id"))
+                or self._string(metadata.get("agent_id"))
+                or self._string(tool_execution.command_id)
+                or f"session-probe::{request.task_id}"
+            )
+            metadata["session_probe"] = {
+                "session_id": session_id,
+                "status": "active" if tool_execution.success else "failed",
+                "usable": tool_execution.success,
+                "blocked": not tool_execution.success,
+                "failure_reason": None if tool_execution.success else (tool_execution.stderr or "session probe execution failed"),
+                "tool_execution": payload,
+            }
+        return request.model_copy(update={"metadata": metadata}, deep=True)
+
+    @staticmethod
+    def _tool_execution_payload(context: AccessExecutionContext) -> dict[str, Any]:
+        if isinstance(context.tool_execution, dict):
+            return {"tool_execution": dict(context.tool_execution)}
+        return {}
 
     def _build_execution_context(
         self,
@@ -370,6 +454,11 @@ class AccessValidationService:
             bound_identity=bound_identity,
             bound_target=bound_target,
             confidence=float(request.metadata.get("confidence", 0.85)),
+            tool_execution=(
+                dict(request.metadata["tool_execution"])
+                if isinstance(request.metadata.get("tool_execution"), dict)
+                else None
+            ),
         )
 
     def _runtime_snapshot(self, request: AccessValidationRequest) -> RuntimeState | None:

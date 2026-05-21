@@ -7,13 +7,14 @@ from typing import Any, Iterable
 from src.core.agents.agent_models import OutcomeRecord
 from src.core.perception.generic_parser import GenericParser
 from src.core.perception.parser_protocol import ParsedWorkerResult, ResultParser
+from src.core.perception.tool_execution_parser import ToolExecutionParser
 
 
 class ParserRegistry:
     """Ordered parser registry with a generic fallback parser."""
 
     def __init__(self, parsers: Iterable[ResultParser] | None = None) -> None:
-        self.parsers: list[ResultParser] = list(parsers) if parsers is not None else [GenericParser()]
+        self.parsers: list[ResultParser] = list(parsers) if parsers is not None else [ToolExecutionParser(), GenericParser()]
 
     @classmethod
     def default(cls) -> "ParserRegistry":
