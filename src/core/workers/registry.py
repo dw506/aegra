@@ -36,6 +36,8 @@ class WorkerRegistry:
         )
 
     def register(self, worker: BaseWorkerAgent) -> BaseWorkerAgent:
+        if not isinstance(worker, BaseWorkerAgent):
+            raise TypeError("WorkerRegistry only accepts BaseWorkerAgent workers")
         self._workers[worker.name] = worker
         return worker
 

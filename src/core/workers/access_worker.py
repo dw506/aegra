@@ -1,4 +1,9 @@
-"""LEGACY wrapper for access and privilege validation tasks."""
+"""LEGACY compatibility wrapper.
+
+New execution pipeline should use AccessValidationWorker /
+PrivilegeValidationWorker. This class remains for old AgentTaskRequest /
+AgentTaskResult compatibility.
+"""
 
 from __future__ import annotations
 

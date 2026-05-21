@@ -13,14 +13,17 @@ class ParserRegistry:
     """Ordered parser registry with a generic fallback parser."""
 
     def __init__(self, parsers: Iterable[ResultParser] | None = None) -> None:
-        self.parsers: list[ResultParser] = list(parsers or [])
-        self._generic = GenericParser()
+        self.parsers: list[ResultParser] = list(parsers) if parsers is not None else [GenericParser()]
 
     @classmethod
     def default(cls) -> "ParserRegistry":
         return cls()
 
     def register(self, parser: ResultParser) -> ResultParser:
+        for index, existing in enumerate(self.parsers):
+            if isinstance(existing, GenericParser):
+                self.parsers.insert(index, parser)
+                return parser
         self.parsers.append(parser)
         return parser
 
@@ -31,7 +34,8 @@ class ParserRegistry:
                 metadata = dict(parsed.metadata)
                 metadata.setdefault("parser", parser.name)
                 return parsed.model_copy(update={"metadata": metadata})
-        return self._generic.parse(raw_result, outcome)
+        generic = GenericParser()
+        return generic.parse(raw_result, outcome)
 
 
 __all__ = ["ParserRegistry"]

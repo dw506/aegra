@@ -1,4 +1,8 @@
-"""LEGACY wrapper for goal-condition validation."""
+"""LEGACY compatibility wrapper.
+
+New execution pipeline should use GoalValidationWorker. This class remains for
+old AgentTaskRequest / AgentTaskResult compatibility.
+"""
 
 from __future__ import annotations
 

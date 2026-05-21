@@ -11,10 +11,10 @@ from src.core.perception.parser_protocol import ParsedWorkerResult
 from src.integrations.incalmo.models import CommandResult
 
 
-class IncalmoC2CommandParser:
+class IncalmoC2Parser:
     """Parser plugin for Incalmo C2 command raw results."""
 
-    name = "incalmo_c2_command_parser"
+    name = "incalmo_c2_parser"
 
     def supports(self, raw_result: dict[str, Any], outcome: OutcomeRecord) -> bool:
         return raw_result.get("adapter") == "incalmo_c2" or raw_result.get("integration") == "incalmo"
@@ -42,6 +42,9 @@ class IncalmoC2CommandParser:
             ],
             metadata={"parser": self.name},
         )
+
+
+IncalmoC2CommandParser = IncalmoC2Parser
 
 
 def parse_incalmo_command_output(
@@ -80,4 +83,4 @@ def parse_incalmo_command_output(
     return observations, facts
 
 
-__all__ = ["IncalmoC2CommandParser", "parse_incalmo_command_output"]
+__all__ = ["IncalmoC2Parser", "IncalmoC2CommandParser", "parse_incalmo_command_output"]
