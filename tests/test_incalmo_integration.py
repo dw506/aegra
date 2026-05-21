@@ -6,7 +6,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from src.core.execution.adapters.incalmo_c2_adapter import IncalmoC2Adapter
 from src.core.execution.tool_plan import ToolPlan
-from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.integrations.incalmo.client import IncalmoClient, IncalmoClientConfig
 from src.integrations.incalmo.mapper import IncalmoMapper
 from src.integrations.incalmo.models import Agent, CommandResult, CommandStatus
@@ -101,19 +100,20 @@ def test_incalmo_adapter_returns_canonical_result() -> None:
     try:
         client = IncalmoClient(IncalmoClientConfig(c2_url=f"http://127.0.0.1:{server.server_port}", poll_interval_sec=0.01))
         adapter = IncalmoC2Adapter(client)
-        state = RuntimeState(operation_id="op-1", execution=OperationRuntime(operation_id="op-1"))
         plan = ToolPlan(
             task_id="task-1",
+            tool="whoami",
             adapter="incalmo_c2",
             command="whoami",
             payloads={"agent_id": "agent-1"},
             target_agent_ref="agent-1",
         )
 
-        result = adapter.execute(plan, state)
+        result = adapter.execute(plan)
 
-        assert result.status.value == "succeeded"
-        assert result.observations
-        assert result.fact_write_requests
+        assert result.success is True
+        assert result.stdout == "ok"
+        assert result.command_id == "cmd-1"
+        assert result.metadata["agent_id"] == "agent-1"
     finally:
         server.shutdown()

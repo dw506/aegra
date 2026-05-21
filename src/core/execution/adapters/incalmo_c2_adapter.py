@@ -2,60 +2,92 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.core.execution.tool_plan import ToolPlan
-from src.core.models.events import AgentResultStatus, AgentRole, AgentTaskResult
-from src.core.models.runtime import RuntimeState
+from src.core.execution.tool_result import ToolExecutionResult
 from src.integrations.incalmo.client import IncalmoClient
-from src.integrations.incalmo.mapper import IncalmoMapper
-from src.integrations.incalmo.perception import parse_incalmo_command_output
 
 
 class IncalmoC2Adapter:
-    """Run ToolPlans through Incalmo without mutating Aegra stores directly."""
+    """Run ToolPlans through Incalmo and return adapter-neutral results."""
 
-    def __init__(self, client: IncalmoClient, mapper: IncalmoMapper | None = None) -> None:
-        self._client = client
-        self._mapper = mapper or IncalmoMapper()
+    name = "incalmo_c2"
 
-    def execute(self, plan: ToolPlan, runtime_state: RuntimeState) -> AgentTaskResult:
-        agent_ref = plan.target_agent_ref or str(plan.payloads.get("agent_id") or "")
-        if not agent_ref:
-            return AgentTaskResult(
-                request_id=f"incalmo::{plan.task_id}",
-                agent_role=AgentRole.RECON_WORKER,
-                operation_id=runtime_state.operation_id,
-                task_id=plan.task_id,
-                tg_node_id=str(plan.metadata.get("tg_node_id") or plan.task_id),
-                status=AgentResultStatus.BLOCKED,
-                summary="Incalmo C2 execution requires target_agent_ref or agent_id",
-                metadata={"tool_plan": plan.model_dump(mode="json")},
-            )
-        try:
-            command = self._client.send_command(agent_ref, plan.command, plan.payloads)
-            result = self._client.wait_for_command(
-                agent_ref,
-                command.command_id,
-                timeout_sec=plan.timeout_seconds,
-            )
-        except Exception as exc:
-            return AgentTaskResult(
-                request_id=f"incalmo::{plan.task_id}",
-                agent_role=AgentRole.RECON_WORKER,
-                operation_id=runtime_state.operation_id,
-                task_id=plan.task_id,
-                tg_node_id=str(plan.metadata.get("tg_node_id") or plan.task_id),
-                status=AgentResultStatus.FAILED,
-                summary="Incalmo C2 command failed before result collection",
-                error_message=str(exc),
-                metadata={"tool_plan": plan.model_dump(mode="json"), "integration": "incalmo"},
-            )
-        task_result = self._mapper.command_result_to_task_result(
-            result,
-            operation_id=runtime_state.operation_id,
-            task_id=plan.task_id,
-            tg_node_id=str(plan.metadata.get("tg_node_id") or plan.task_id),
+    def __init__(self, client: IncalmoClient) -> None:
+        self.client = client
+
+    def supports(self, plan: ToolPlan) -> bool:
+        return plan.adapter == self.name
+
+    def execute(self, plan: ToolPlan) -> ToolExecutionResult:
+        agent_id = self._resolve_agent_id(plan)
+        command = self._resolve_command(plan)
+        command_response = self.client.send_command(
+            agent_id=agent_id,
+            command=command,
+            payloads=plan.payloads or plan.args or [],
         )
-        observations, facts = parse_incalmo_command_output(result, source_task_id=plan.task_id)
-        task_result.observations.extend(observations)
-        task_result.fact_write_requests.extend(facts)
-        return task_result
+        raw_command_response = self._coerce_mapping(command_response)
+        command_id = self._extract_command_id(raw_command_response)
+        result = self.client.wait_for_command_result(
+            command_id=command_id,
+            max_attempts=max(1, int(plan.timeout_seconds)),
+        )
+        raw_result = self._coerce_mapping(result)
+        exit_code = raw_result.get("exit_code")
+        status = str(raw_result.get("status") or "").lower()
+        success = str(exit_code).lower() in {"0", "success"} or status in {"completed", "succeeded", "success"}
+        return ToolExecutionResult(
+            adapter=self.name,
+            tool=plan.tool,
+            success=success,
+            exit_code=exit_code,
+            stdout=str(raw_result.get("output") or raw_result.get("stdout") or ""),
+            stderr=str(raw_result.get("stderr") or ""),
+            command_id=command_id,
+            payload_ref=str(raw_result.get("payload_ref") or f"incalmo://commands/{command_id}"),
+            metadata={
+                "agent_id": agent_id,
+                "raw_command_response": raw_command_response,
+                "raw_result": raw_result,
+                "tool_plan": plan.model_dump(mode="json"),
+            },
+        )
+
+    def _resolve_agent_id(self, plan: ToolPlan) -> str:
+        agent_id = plan.target_agent_ref or plan.metadata.get("agent_id") or plan.args.get("agent_id")
+        if agent_id is None:
+            raise ValueError("Incalmo C2 execution requires target_agent_ref, metadata.agent_id, or args.agent_id")
+        value = str(agent_id).strip()
+        if not value:
+            raise ValueError("Incalmo C2 execution requires a non-empty agent id")
+        return value
+
+    def _resolve_command(self, plan: ToolPlan) -> str:
+        command = plan.command or plan.args.get("command")
+        if command is None:
+            raise ValueError("Incalmo C2 execution requires command or args.command")
+        value = str(command).strip()
+        if not value:
+            raise ValueError("Incalmo C2 execution requires a non-empty command")
+        return value
+
+    def _extract_command_id(self, payload: dict[str, Any]) -> str:
+        command_id = payload.get("id") or payload.get("command_id") or payload.get("uuid")
+        if command_id is None:
+            raise ValueError("Incalmo C2 command response did not include an id")
+        value = str(command_id).strip()
+        if not value:
+            raise ValueError("Incalmo C2 command response included an empty id")
+        return value
+
+    def _coerce_mapping(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        if hasattr(value, "model_dump"):
+            return dict(value.model_dump(mode="json"))
+        raise TypeError(f"Incalmo C2 client returned unsupported payload type: {type(value).__name__}")
+
+
+__all__ = ["IncalmoC2Adapter"]

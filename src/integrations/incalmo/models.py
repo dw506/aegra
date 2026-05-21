@@ -41,7 +41,7 @@ class Command(BaseModel):
     command_id: str = Field(min_length=1)
     agent_id: str = Field(min_length=1)
     command: str = Field(min_length=1)
-    payloads: dict[str, Any] = Field(default_factory=dict)
+    payloads: Any = Field(default_factory=dict)
     status: CommandStatus = CommandStatus.PENDING
     metadata: dict[str, Any] = Field(default_factory=dict)
 

@@ -28,9 +28,12 @@ class IncalmoClientConfig(BaseModel):
 class IncalmoClient:
     """Minimal JSON-over-HTTP client for Incalmo C2 operations."""
 
-    def __init__(self, config: IncalmoClientConfig) -> None:
+    def __init__(self, config: IncalmoClientConfig | str, timeout_seconds: int = 45) -> None:
+        if isinstance(config, str):
+            config = IncalmoClientConfig(c2_url=config, command_timeout_sec=float(timeout_seconds))
         self.config = config
         self._base_url = config.c2_url.rstrip("/")
+        self._command_agents: dict[str, str] = {}
 
     @classmethod
     def from_settings(cls, settings: AppSettings, *, config_path: Path | None = None) -> "IncalmoClient":
@@ -54,7 +57,7 @@ class IncalmoClient:
     def get_agent(self, agent_id: str) -> Agent:
         return Agent.model_validate(self._request("GET", f"/agents/{agent_id}"))
 
-    def send_command(self, agent_id: str, command: str, payloads: dict[str, Any] | None = None) -> Command:
+    def send_command(self, agent_id: str, command: str, payloads: Any = None) -> Command:
         response = self._request(
             "POST",
             f"/agents/{agent_id}/commands",
@@ -64,9 +67,16 @@ class IncalmoClient:
             response["command_id"] = str(response.get("id") or response.get("uuid") or "")
         response.setdefault("agent_id", agent_id)
         response.setdefault("command", command)
-        return Command.model_validate(response)
+        model = Command.model_validate(response)
+        self._command_agents[model.command_id] = agent_id
+        return model
 
-    def command_status(self, agent_id: str, command_id: str) -> CommandResult:
+    def command_status(self, agent_id: str, command_id: str | None = None) -> CommandResult:
+        if command_id is None:
+            command_id = agent_id
+            agent_id = self._command_agents.get(command_id) or ""
+        if not agent_id:
+            raise ValueError(f"agent id is unknown for command_id={command_id}")
         response = self._request("GET", f"/agents/{agent_id}/commands/{command_id}")
         response.setdefault("agent_id", agent_id)
         response.setdefault("command_id", command_id)
@@ -81,6 +91,27 @@ class IncalmoClient:
         if last_result.status.value in {"pending", "running"}:
             return last_result.model_copy(update={"status": CommandStatus.TIMEOUT})
         return last_result
+
+    def wait_for_command_result(
+        self,
+        *,
+        command_id: str,
+        poll_interval_seconds: float = 1.0,
+        max_attempts: int = 45,
+    ) -> dict[str, Any]:
+        agent_id = self._command_agents.get(command_id)
+        if not agent_id:
+            raise ValueError(f"agent id is unknown for command_id={command_id}")
+        original_interval = self.config.poll_interval_sec
+        try:
+            self.config.poll_interval_sec = poll_interval_seconds
+            result = self.wait_for_command(agent_id, command_id, timeout_sec=max(1, max_attempts) * poll_interval_seconds)
+        finally:
+            self.config.poll_interval_sec = original_interval
+        payload = result.model_dump(mode="json")
+        payload.setdefault("id", result.command_id)
+        payload.setdefault("output", result.stdout)
+        return payload
 
     def report_environment_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/environment", payload)

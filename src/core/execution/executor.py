@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from src.core.execution.adapters.base import ExecutionAdapter
 from src.core.execution.tool_plan import ToolPlan
 from src.core.execution.tool_policy import ToolPolicy
@@ -9,6 +11,13 @@ from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.events import AgentResultStatus, AgentRole, AgentTaskResult
 from src.core.models.runtime import RuntimeState
 from src.core.models.tg import BaseTaskNode
+
+
+class LegacyToolAdapter(Protocol):
+    """Compatibility adapter contract used by ToolExecutor."""
+
+    def execute(self, plan: ToolPlan, runtime_state: RuntimeState) -> AgentTaskResult:
+        """Execute a plan and return a legacy task result."""
 
 
 class ExecutionExecutor:
@@ -34,13 +43,13 @@ class ToolExecutor:
     def __init__(
         self,
         *,
-        adapters: dict[str, ExecutionAdapter] | None = None,
+        adapters: dict[str, LegacyToolAdapter] | None = None,
         policy: ToolPolicy | None = None,
     ) -> None:
         self._adapters = dict(adapters or {})
         self._policy = policy or ToolPolicy()
 
-    def register_adapter(self, name: str, adapter: ExecutionAdapter) -> None:
+    def register_adapter(self, name: str, adapter: LegacyToolAdapter) -> None:
         self._adapters[name] = adapter
 
     def execute(
