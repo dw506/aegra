@@ -165,6 +165,7 @@ class PhaseTwoResultApplier:
             apply_result.logs.append(f"synced TG task {canonical_result.tg_node_id} lifecycle from runtime result")
         self._record_recent_outcome(state=state, result=canonical_result)
         self._audit_tool_invocations(state=state, result=canonical_result)
+        self._audit_tool_execution_from_result(state=state, result=canonical_result)
         self._record_evidence_and_findings(state=state, result=canonical_result)
 
         state_writer_input: AgentInput | None = None
@@ -1378,6 +1379,69 @@ class PhaseTwoResultApplier:
                     "payload_ref": evidence.payload_ref,
                 },
             )
+
+    def _audit_tool_execution_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        for tool_execution in self._tool_execution_candidates(result):
+            normalized = self._normalize_tool_execution(tool_execution)
+            if not normalized:
+                continue
+            fingerprint = tuple(sorted((key, str(value)) for key, value in normalized.items() if value is not None))
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            success = bool(normalized.get("success", False))
+            self._append_audit_log(
+                state,
+                {
+                    "event_type": "tool_execution_recorded" if success else "tool_execution_failed",
+                    "source_task_id": result.task_id,
+                    "worker_result_id": result.result_id,
+                    "adapter": normalized.get("adapter"),
+                    "tool": normalized.get("tool"),
+                    "success": success,
+                    "exit_code": normalized.get("exit_code"),
+                    "command_id": normalized.get("command_id"),
+                    "payload_ref": normalized.get("payload_ref"),
+                    "stdout_excerpt": normalized.get("stdout_excerpt"),
+                    "stderr_excerpt": normalized.get("stderr_excerpt"),
+                },
+            )
+
+    @staticmethod
+    def _tool_execution_candidates(result: AgentTaskResult) -> list[Any]:
+        candidates: list[Any] = [
+            result.outcome_payload.get("tool_execution"),
+            result.metadata.get("tool_execution"),
+        ]
+        for evidence in result.evidence:
+            candidates.append(evidence.metadata.get("tool_execution"))
+        return [candidate for candidate in candidates if candidate is not None]
+
+    @classmethod
+    def _normalize_tool_execution(cls, tool_execution: Any) -> dict[str, Any]:
+        if isinstance(tool_execution, BaseModel):
+            data = tool_execution.model_dump(mode="json")
+        elif isinstance(tool_execution, dict):
+            data = dict(tool_execution)
+        else:
+            return {}
+        return {
+            "adapter": cls._string(data.get("adapter")) or "unknown_adapter",
+            "tool": cls._string(data.get("tool")) or "unknown_tool",
+            "success": bool(data.get("success", False)),
+            "exit_code": data.get("exit_code"),
+            "command_id": cls._string(data.get("command_id")),
+            "payload_ref": cls._string(data.get("payload_ref")),
+            "stdout_excerpt": cls._excerpt(data.get("stdout")),
+            "stderr_excerpt": cls._excerpt(data.get("stderr")),
+        }
+
+    @staticmethod
+    def _excerpt(value: Any, limit: int = 500) -> str:
+        if value is None:
+            return ""
+        return str(value)[:limit]
 
     def _audit_fact_writes(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         for request in result.fact_write_requests:
