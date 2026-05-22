@@ -40,9 +40,12 @@ class AppSettings(BaseModel):
     llm_timeout_sec: float | None = Field(default=None, gt=0.0, le=300.0)
     llm_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     llm_output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
+    enable_planner_rank_llm_advisor: bool = False
+    enable_graph_llm_planner_advisor: bool = False
     enable_planner_llm_advisor: bool = False
     enable_critic_llm_advisor: bool = False
     enable_supervisor_llm_advisor: bool = False
+    debug_scheduler_io: bool = False
     tool_nmap_path: str = "nmap"
     tool_python_path: str = "python"
     incalmo_enabled: bool = False
@@ -165,7 +168,28 @@ class AppSettings(BaseModel):
         if "AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS" in environ:
             values["llm_output_cost_per_1m_tokens"] = float(environ["AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS"])
         if "AEGRA_ENABLE_PLANNER_LLM_ADVISOR" in environ:
-            values["enable_planner_llm_advisor"] = environ["AEGRA_ENABLE_PLANNER_LLM_ADVISOR"].strip().lower() in {
+            legacy_planner_enabled = environ["AEGRA_ENABLE_PLANNER_LLM_ADVISOR"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            values["enable_planner_llm_advisor"] = legacy_planner_enabled
+            values.setdefault("enable_planner_rank_llm_advisor", legacy_planner_enabled)
+            values.setdefault("enable_graph_llm_planner_advisor", legacy_planner_enabled)
+        if "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR" in environ:
+            values["enable_planner_rank_llm_advisor"] = environ[
+                "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR"
+            ].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR" in environ:
+            values["enable_graph_llm_planner_advisor"] = environ[
+                "AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR"
+            ].strip().lower() in {
                 "1",
                 "true",
                 "yes",
@@ -180,6 +204,13 @@ class AppSettings(BaseModel):
             }
         if "AEGRA_ENABLE_SUPERVISOR_LLM_ADVISOR" in environ:
             values["enable_supervisor_llm_advisor"] = environ["AEGRA_ENABLE_SUPERVISOR_LLM_ADVISOR"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_DEBUG_SCHEDULER_IO" in environ:
+            values["debug_scheduler_io"] = environ["AEGRA_DEBUG_SCHEDULER_IO"].strip().lower() in {
                 "1",
                 "true",
                 "yes",

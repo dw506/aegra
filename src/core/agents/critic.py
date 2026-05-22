@@ -222,6 +222,11 @@ class CriticAgent(BaseAgent):
             runtime_state=runtime_state,
         )
         if not reviews:
+            failure = getattr(self._llm_advisor, "last_failure", None)
+            if isinstance(failure, dict) and failure.get("reason"):
+                self._last_llm_decision_rejected_reasons = [str(failure["reason"])]
+                self._last_llm_decision_validation_summary = {"accepted": 0, "rejected": 1}
+                return list(findings)
             self._last_llm_decision_validation_summary = {"accepted": 0, "rejected": 0}
             self._last_llm_decision_rejected_reasons = []
             return list(findings)

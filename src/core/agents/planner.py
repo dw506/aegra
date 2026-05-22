@@ -446,6 +446,9 @@ class PlannerAgent(BaseAgent):
             planning_context=planning_context,
         )
         if not llm_output:
+            failure = getattr(self._llm_advisor, "last_failure", None)
+            if isinstance(failure, dict) and failure.get("reason"):
+                logs.append(f"planner llm advisor failed: {failure.get('reason')}")
             return list(candidates)
         if isinstance(llm_output, PlannerLLMDecision):
             return self._apply_llm_strategy_decision(

@@ -19,6 +19,7 @@ from src.core.agents.llm_decision import (
     LLMDecisionStatus,
     LLMDecisionValidator,
 )
+from src.core.agents.llm_safety import response_within_limits, sanitize_llm_payload
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, PackyLLMError
 from src.core.agents.planner import (
     PlannerLLMDecision,
@@ -37,6 +38,8 @@ class PackyPlannerAdvisorConfig(BaseModel):
     model: str | None = None
     max_candidates: int = Field(default=5, ge=1, le=10)
     max_abs_score_delta: float = Field(default=0.2, gt=0.0, le=1.0)
+    max_response_chars: int = Field(default=20000, ge=1000, le=200000)
+    max_response_json_depth: int = Field(default=12, ge=2, le=50)
     system_prompt: str = (
         "你是 Aegra 的规划建议助手。"
         "你只能对候选任务做排序建议和解释增强，不能生成攻击步骤、工具命令或执行参数。"
@@ -55,6 +58,7 @@ class PackyPlannerAdvisor:
     ) -> None:
         self._client = client
         self._config = config or PackyPlannerAdvisorConfig()
+        self.last_failure: dict[str, Any] | None = None
 
     @classmethod
     def from_env(
@@ -80,6 +84,7 @@ class PackyPlannerAdvisor:
     ) -> PlannerLLMDecision | list:
         if not candidates:
             return []
+        self.last_failure = None
 
         limited_candidates = self._limit_candidates(candidates)
         allowed_candidate_ids = {candidate.candidate_id for candidate in limited_candidates}
@@ -97,9 +102,10 @@ class PackyPlannerAdvisor:
                 model=self._config.model,
                 temperature=0.0,
             )
-        except PackyLLMError:
+        except PackyLLMError as exc:
             # 中文注释：
             # advisor 失败时必须安全回退为空建议，不能把 planner 主流程打崩。
+            self.last_failure = {"reason": "llm_call_failed", "error": str(exc)}
             return []
 
         advice = self._parse_advice_text(
@@ -178,7 +184,7 @@ class PackyPlannerAdvisor:
         return (
             "请基于下面的候选列表返回 JSON。"
             "只允许对已有候选做排序和风险建议，不能发明新的 candidate_id，不能生成任务、命令或工具参数。\n\n"
-            f"{json.dumps(prompt_payload, ensure_ascii=False, indent=2)}"
+            f"{json.dumps(sanitize_llm_payload(prompt_payload), ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
@@ -228,6 +234,15 @@ class PackyPlannerAdvisor:
     ) -> PlannerLLMDecision | list:
         payload = self._extract_json_payload(text)
         if payload is None:
+            self.last_failure = {"reason": "invalid_or_oversized_json_response"}
+            return []
+        if not response_within_limits(
+            payload,
+            raw_text=text,
+            max_chars=self._config.max_response_chars,
+            max_depth=self._config.max_response_json_depth,
+        ):
+            self.last_failure = {"reason": "llm_response_exceeds_limits"}
             return []
 
         if not isinstance(payload, (dict, list)):

@@ -251,6 +251,36 @@ def test_packy_planner_advisor_builds_prompt_from_candidate_context() -> None:
     assert '"candidate_id": "cand-2"' not in str(call["user_prompt"])
 
 
+def test_packy_planner_advisor_redacts_sensitive_prompt_fields_and_rejects_oversized_response() -> None:
+    candidate = _candidate("cand-1")
+    candidate.metadata["api_key"] = "secret-key"
+    fake_client = FakePackyClient(response=PackyLLMResponse(model="gpt-5.2", text='{"advice": []}'))
+    advisor = PackyPlannerAdvisor(client=fake_client)
+
+    advisor.advise(
+        graph=AttackGraph(),
+        goal_ref=GraphRef(graph=GraphScope.KG, ref_id="goal-1", ref_type="Goal"),
+        candidates=[candidate],
+        planning_context=PlanningContext(
+            policy_context={"authorization": "Bearer secret-token"},
+        ),
+    )
+
+    prompt = str(fake_client.calls[0]["user_prompt"])
+    assert "secret-key" not in prompt
+    assert "secret-token" not in prompt
+    assert "[REDACTED]" in prompt
+
+    oversized = PackyPlannerAdvisor(
+        client=FakePackyClient(PackyLLMResponse(model="gpt-5.2", text='{"advice": []}')),
+        config=PackyPlannerAdvisorConfig(max_response_chars=1000),
+    )
+    huge_text = json.dumps({"advice": [{"candidate_id": "cand-1", "metadata": {"blob": "x" * 1200}}]})
+
+    assert oversized._parse_advice_text(huge_text, allowed_candidate_ids={"cand-1"}, goal_id="goal-1") == []  # noqa: SLF001
+    assert oversized.last_failure == {"reason": "llm_response_exceeds_limits"}
+
+
 def test_planner_agent_can_consume_packy_planner_advisor_without_dispatch_side_effects() -> None:
     planner_input = _build_planner_input()
     advisor = PackyPlannerAdvisor(client=PromptAwareFakePackyClient())

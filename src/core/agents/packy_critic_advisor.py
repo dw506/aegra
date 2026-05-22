@@ -24,6 +24,7 @@ from src.core.agents.llm_decision import (
     LLMDecisionStatus,
     LLMDecisionValidator,
 )
+from src.core.agents.llm_safety import response_within_limits, sanitize_llm_payload
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, PackyLLMError
 from src.core.models.runtime import RuntimeState
 
@@ -35,6 +36,8 @@ class PackyCriticAdvisorConfig(BaseModel):
 
     model: str | None = None
     max_findings: int = Field(default=8, ge=1, le=20)
+    max_response_chars: int = Field(default=20000, ge=1000, le=200000)
+    max_response_json_depth: int = Field(default=12, ge=2, le=50)
     system_prompt: str = (
         "你是 Aegra 的执行复盘助手。"
         "你只能归纳已有 finding 的失败原因、补充摘要和解释增强。"
@@ -54,6 +57,7 @@ class PackyCriticAdvisor:
     ) -> None:
         self._client = client
         self._config = config or PackyCriticAdvisorConfig()
+        self.last_failure: dict[str, Any] | None = None
 
     @classmethod
     def from_env(
@@ -78,6 +82,7 @@ class PackyCriticAdvisor:
     ) -> list[CriticLLMReview]:
         if not findings:
             return []
+        self.last_failure = None
 
         limited_findings = self._limit_findings(findings)
         allowed_finding_ids = {finding.finding_id for finding in limited_findings}
@@ -94,7 +99,8 @@ class PackyCriticAdvisor:
                 model=self._config.model,
                 temperature=0.0,
             )
-        except PackyLLMError:
+        except PackyLLMError as exc:
+            self.last_failure = {"reason": "llm_call_failed", "error": str(exc)}
             return []
 
         return self._parse_review_text(response.text, allowed_finding_ids=allowed_finding_ids)
@@ -141,7 +147,7 @@ class PackyCriticAdvisor:
         return (
             "请基于下面的 Critic findings 返回 JSON。"
             "只能补充归纳和摘要，不允许发明新的 finding_id。\n\n"
-            f"{json.dumps(prompt_payload, ensure_ascii=False, indent=2)}"
+            f"{json.dumps(sanitize_llm_payload(prompt_payload), ensure_ascii=False, indent=2)}"
         )
 
     @staticmethod
@@ -180,6 +186,15 @@ class PackyCriticAdvisor:
     ) -> list[CriticLLMReview]:
         payload = self._extract_json_payload(text)
         if payload is None:
+            self.last_failure = {"reason": "invalid_or_oversized_json_response"}
+            return []
+        if not response_within_limits(
+            payload,
+            raw_text=text,
+            max_chars=self._config.max_response_chars,
+            max_depth=self._config.max_response_json_depth,
+        ):
+            self.last_failure = {"reason": "llm_response_exceeds_limits"}
             return []
 
         if isinstance(payload, dict):

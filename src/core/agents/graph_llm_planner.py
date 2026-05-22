@@ -23,6 +23,7 @@ from src.core.agents.graph_context import (
 )
 from src.core.agents.graph_llm_models import GraphLLMPlanProposal, GraphLLMPlanValidationResult
 from src.core.agents.llm_decision import validate_graph_plan_proposal
+from src.core.agents.llm_safety import response_within_limits, sanitize_llm_payload
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, PackyLLMError
 from src.core.models.ag import GraphRef
 from src.core.models.tg import TaskType
@@ -35,6 +36,8 @@ class GraphLLMPlannerAdvisorConfig(BaseModel):
 
     model: str | None = None
     max_context_chars: int = Field(default=12000, ge=1000, le=100000)
+    max_response_chars: int = Field(default=20000, ge=1000, le=200000)
+    max_response_json_depth: int = Field(default=12, ge=2, le=50)
     max_recent_signals: int = Field(default=12, ge=0, le=50)
     risk_review_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     noise_review_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
@@ -86,6 +89,7 @@ class GraphLLMPlannerAdvisor:
     ) -> None:
         self._client = client
         self._config = config or GraphLLMPlannerAdvisorConfig()
+        self.last_failure: dict[str, Any] | None = None
 
     @classmethod
     def from_env(
@@ -110,6 +114,7 @@ class GraphLLMPlannerAdvisor:
         recent_signals: Sequence[dict[str, Any]] | None = None,
     ) -> GraphLLMPlannerAdvice:
         visible_refs = self._visible_refs(graph_context, goal_refs or [])
+        self.last_failure = None
         user_prompt = self._build_user_prompt(
             graph_context=graph_context,
             goal_refs=goal_refs or [],
@@ -126,6 +131,7 @@ class GraphLLMPlannerAdvisor:
                 temperature=0.0,
             )
         except PackyLLMError as exc:
+            self.last_failure = {"reason": "llm_call_failed", "error": str(exc)}
             return GraphLLMPlannerAdvice.empty(
                 reason="llm call failed",
                 llm_metadata=self._llm_metadata(error=str(exc)),
@@ -139,8 +145,20 @@ class GraphLLMPlannerAdvisor:
         )
         payload = self._extract_json_payload(response.text)
         if payload is None:
+            self.last_failure = {"reason": "invalid_graph_llm_planner_json"}
             return GraphLLMPlannerAdvice.empty(
                 reason="invalid graph llm planner json",
+                llm_metadata=llm_metadata,
+            )
+        if not response_within_limits(
+            payload,
+            raw_text=response.text,
+            max_chars=self._config.max_response_chars,
+            max_depth=self._config.max_response_json_depth,
+        ):
+            self.last_failure = {"reason": "llm_response_exceeds_limits"}
+            return GraphLLMPlannerAdvice.empty(
+                reason="llm response exceeds configured limits",
                 llm_metadata=llm_metadata,
             )
 
@@ -152,6 +170,7 @@ class GraphLLMPlannerAdvisor:
             noise_review_threshold=self._config.noise_review_threshold,
         )
         if not validation.accepted:
+            self.last_failure = {"reason": validation.reason}
             return GraphLLMPlannerAdvice.empty(
                 reason=validation.reason,
                 llm_metadata=llm_metadata,
@@ -223,7 +242,7 @@ class GraphLLMPlannerAdvisor:
             "Return a single JSON object matching GraphLLMPlanProposal and response_schema. "
             "Use only refs listed in visible_refs and tool hints from tool_catalog. "
             "Do not include command, shell, payload, reverse_shell, or raw output fields.\n\n"
-            f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
+            f"{json.dumps(sanitize_llm_payload(payload), ensure_ascii=False, indent=2)}"
         )
 
     def _tool_catalog(self, context: GraphContext) -> dict[str, Any]:

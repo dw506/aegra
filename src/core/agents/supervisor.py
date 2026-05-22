@@ -104,6 +104,13 @@ class SupervisorAgent(BaseAgent):
                     logs.append("supervisor adopted llm strategy suggestion")
                 else:
                     logs.append(f"supervisor rejected llm strategy suggestion: {validation.reason}")
+            elif not validation.accepted:
+                failure = getattr(self._llm_advisor, "last_failure", None)
+                if isinstance(failure, dict) and failure.get("reason"):
+                    validation = LLMDecisionValidationResult.rejected_result(
+                        reason=f"supervisor llm advisor failed: {failure['reason']}"
+                    )
+                    logs.append(validation.reason)
 
         record = self._decision_record(
             decision,

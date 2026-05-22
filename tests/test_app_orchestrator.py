@@ -167,6 +167,8 @@ def test_settings_from_env(monkeypatch, tmp_path) -> None:
     assert settings.llm_model == "gpt-5.4"
     assert settings.llm_timeout_sec == 45.0
     assert settings.enable_planner_llm_advisor is True
+    assert settings.enable_planner_rank_llm_advisor is True
+    assert settings.enable_graph_llm_planner_advisor is True
     assert settings.enable_critic_llm_advisor is True
     assert settings.enable_supervisor_llm_advisor is True
     policy = settings.load_runtime_policy()
@@ -255,6 +257,8 @@ def test_orchestrator_create_import_and_start_operation(tmp_path) -> None:
     assert created.execution.metadata["runtime_policy"]["loaded_from"] == "settings"
     assert created.execution.metadata["control_plane"]["llm_advisors"] == {
         "planner_enabled": False,
+        "planner_rank_enabled": False,
+        "graph_planner_enabled": False,
         "critic_enabled": False,
         "supervisor_enabled": False,
         "configured": False,
@@ -308,6 +312,7 @@ def test_orchestrator_builds_default_pipeline_without_planner_llm_when_no_key(tm
     options = captured["options"]
     assert isinstance(options, AgentPipelineAssemblyOptions)
     assert options.enable_packy_planner_advisor is False
+    assert options.enable_graph_llm_planner_advisor is False
     assert options.enable_packy_critic_advisor is False
     assert isinstance(orchestrator.pipeline, AgentPipeline)
 
@@ -349,6 +354,7 @@ def test_orchestrator_builds_default_pipeline_with_planner_llm_when_key_exists(t
     options = captured["options"]
     assert isinstance(options, AgentPipelineAssemblyOptions)
     assert options.enable_packy_planner_advisor is True
+    assert options.enable_graph_llm_planner_advisor is True
     assert options.enable_packy_critic_advisor is True
     assert options.enable_packy_supervisor_advisor is True
     assert captured["planner_llm_advisor"] is None
@@ -659,6 +665,8 @@ def test_orchestrator_health_and_readiness_status(tmp_path) -> None:
         "operation_count": 1,
         "llm_advisors": {
             "planner_enabled": True,
+            "planner_rank_enabled": True,
+            "graph_planner_enabled": True,
             "critic_enabled": False,
             "supervisor_enabled": False,
             "configured": True,
@@ -672,6 +680,8 @@ def test_orchestrator_health_and_readiness_status(tmp_path) -> None:
         "recovery_enabled": True,
         "llm_advisors": {
             "planner_enabled": True,
+            "planner_rank_enabled": True,
+            "graph_planner_enabled": True,
             "critic_enabled": False,
             "supervisor_enabled": False,
             "configured": True,
@@ -734,6 +744,8 @@ def test_orchestrator_cycle_summary_records_llm_advisor_status(tmp_path) -> None
 
     assert result.runtime_state.execution.metadata["last_control_cycle"]["llm_advisors"] == {
         "planner_enabled": True,
+        "planner_rank_enabled": True,
+        "graph_planner_enabled": True,
         "critic_enabled": True,
         "supervisor_enabled": False,
         "configured": True,

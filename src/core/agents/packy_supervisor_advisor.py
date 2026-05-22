@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.llm_decision import contains_forbidden_llm_decision_key
+from src.core.agents.llm_safety import response_within_limits, sanitize_llm_payload
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, PackyLLMError
 from src.core.agents.supervisor import SupervisorContext, SupervisorDecision
 
@@ -18,6 +19,8 @@ class PackySupervisorAdvisorConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     model: str | None = None
+    max_response_chars: int = Field(default=8000, ge=1000, le=100000)
+    max_response_json_depth: int = Field(default=8, ge=2, le=30)
     system_prompt: str = (
         "你是 Aegra 的高层策略建议助手。"
         "你只能从允许的 supervisor strategy 中选择一个结构化建议，不能生成工具命令、任务、参数或图写入。"
@@ -36,6 +39,7 @@ class PackySupervisorAdvisor:
     ) -> None:
         self._client = client
         self._config = config or PackySupervisorAdvisorConfig()
+        self.last_failure: dict[str, Any] | None = None
 
     @classmethod
     def from_env(
@@ -53,6 +57,7 @@ class PackySupervisorAdvisor:
 
     def advise(self, *, context: SupervisorContext) -> SupervisorDecision | None:
         user_prompt = self._build_user_prompt(context)
+        self.last_failure = None
         try:
             response = self._client.complete_chat(
                 user_prompt=user_prompt,
@@ -60,9 +65,17 @@ class PackySupervisorAdvisor:
                 model=self._config.model,
                 temperature=0.0,
             )
-        except PackyLLMError:
+        except PackyLLMError as exc:
+            self.last_failure = {"reason": "llm_call_failed", "error": str(exc)}
             return None
-        return self._parse_decision_text(response.text)
+        decision = self._parse_decision_text(
+            response.text,
+            max_response_chars=self._config.max_response_chars,
+            max_response_json_depth=self._config.max_response_json_depth,
+        )
+        if decision is None:
+            self.last_failure = {"reason": "invalid_or_oversized_json_response"}
+        return decision
 
     @staticmethod
     def _build_user_prompt(context: SupervisorContext) -> str:
@@ -90,13 +103,26 @@ class PackySupervisorAdvisor:
         return (
             "请基于下面的 operation 摘要返回 supervisor strategy JSON。"
             "不要生成任务、命令、工具参数、图 patch 或 cancel/replace 动作。\n\n"
-            f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
+            f"{json.dumps(sanitize_llm_payload(payload), ensure_ascii=False, indent=2)}"
         )
 
     @classmethod
-    def _parse_decision_text(cls, text: str) -> SupervisorDecision | None:
+    def _parse_decision_text(
+        cls,
+        text: str,
+        *,
+        max_response_chars: int = 8000,
+        max_response_json_depth: int = 8,
+    ) -> SupervisorDecision | None:
         payload = cls._extract_json_payload(text)
         if not isinstance(payload, dict):
+            return None
+        if not response_within_limits(
+            payload,
+            raw_text=text,
+            max_chars=max_response_chars,
+            max_depth=max_response_json_depth,
+        ):
             return None
         if contains_forbidden_llm_decision_key(payload) is not None:
             return None

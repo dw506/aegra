@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
+from src.app.llm_decision_observer import LLMDecisionObserver
 from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentKind, GraphRef as AgentGraphRef, GraphScope
 from src.core.agents.graph_context import GraphContextBuilder
@@ -449,7 +450,7 @@ class AppOrchestrator:
                 ag=ag,
                 tg=task_graph,
                 runtime_state=state,
-                enable_graph_llm_planning=self.settings.enable_planner_llm_advisor,
+                enable_graph_llm_planning=self._graph_llm_planner_enabled(self.settings),
             ),
             context=context,
         )
@@ -1095,27 +1096,24 @@ class AppOrchestrator:
 
         task_graph.refresh_blocked_states()
         ready_tasks = task_graph.find_schedulable_tasks()
-        print(
-            "[TG_READY_TASKS_BEFORE_SCHEDULER]",
-            [
-                {
-                    "id": task.id,
-                    "type": task.task_type.value,
-                    "status": task.status.value,
-                    "source_action_id": task.source_action_id,
-                    "target_refs": [ref.key() for ref in task.target_refs],
-                    "resource_keys": sorted(task.resource_keys),
-                    "assigned_agent": task.assigned_agent,
-                }
-                for task in ready_tasks
-            ],
-            flush=True,
-        )
-        self._debug_print_draft_tasks(task_graph)
-        print(
-            "[SCHEDULER_INPUT_TASK_GRAPH]",
-            {
-                "nodes": [
+        if self.settings.debug_scheduler_io:
+            self._log_operation_event(
+                runtime_state,
+                event_type="scheduler_debug_input",
+                ready_tasks=[
+                    {
+                        "id": task.id,
+                        "type": task.task_type.value,
+                        "status": task.status.value,
+                        "source_action_id": task.source_action_id,
+                        "target_refs": [ref.key() for ref in task.target_refs],
+                        "resource_keys": sorted(task.resource_keys),
+                        "assigned_agent": task.assigned_agent,
+                    }
+                    for task in ready_tasks
+                ],
+                draft_tasks=self._draft_task_debug_records(task_graph),
+                task_graph_nodes=[
                     {
                         "id": node.id,
                         "kind": getattr(node, "kind", None),
@@ -1123,10 +1121,8 @@ class AppOrchestrator:
                         "status": getattr(getattr(node, "status", None), "value", None),
                     }
                     for node in task_graph.list_nodes()
-                ]
-            },
-            flush=True,
-        )
+                ],
+            )
         payload = {
             **self._mapping(scheduler_payload),
             "tg_graph": task_graph.to_dict(),
@@ -1142,16 +1138,15 @@ class AppOrchestrator:
             worker_agent=self._default_worker_agent_name(pipeline, scheduler_payload),
             context=context,
         )
-        print(
-            "[SCHEDULER_OUTPUT]",
-            {
-                "success": execution.success,
-                "decisions": execution.final_output.decisions,
-                "logs": execution.final_output.logs,
-                "errors": execution.final_output.errors,
-            },
-            flush=True,
-        )
+        if self.settings.debug_scheduler_io:
+            self._log_operation_event(
+                runtime_state,
+                event_type="scheduler_debug_output",
+                success=execution.success,
+                decisions=execution.final_output.decisions,
+                logs=execution.final_output.logs,
+                errors=execution.final_output.errors,
+            )
         return execution
 
     def _run_feedback_phase(
@@ -1269,164 +1264,7 @@ class AppOrchestrator:
         cycle_index: int,
         cycle: PipelineCycleResult,
     ) -> list[LLMDecisionHistoryRecord]:
-        records: list[LLMDecisionHistoryRecord] = []
-        seen: set[tuple[str, str, bool, str | None]] = set()
-        for step in cycle.steps:
-            if step.agent_kind not in {AgentKind.PLANNER, AgentKind.CRITIC, AgentKind.SUPERVISOR}:
-                continue
-            for container in (
-                step.agent_output.decisions,
-                step.agent_output.replan_requests,
-            ):
-                for item in container:
-                    for payload in self._iter_llm_payloads(item):
-                        record = self._history_record_from_payload(
-                            cycle_index=cycle_index,
-                            agent_kind=step.agent_kind,
-                            payload=payload,
-                        )
-                        if record is None:
-                            continue
-                        key = (
-                            record.agent_kind,
-                            record.decision_type,
-                            record.accepted,
-                            record.rejected_reason,
-                        )
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        records.append(record)
-            for record in self._history_records_from_logs(
-                cycle_index=cycle_index,
-                agent_kind=step.agent_kind,
-                logs=step.agent_output.logs,
-            ):
-                key = (
-                    record.agent_kind,
-                    record.decision_type,
-                    record.accepted,
-                    record.rejected_reason,
-                )
-                if key in seen:
-                    continue
-                seen.add(key)
-                records.append(record)
-        return records
-
-    def _history_record_from_payload(
-        self,
-        *,
-        cycle_index: int,
-        agent_kind: AgentKind,
-        payload: dict[str, Any],
-    ) -> LLMDecisionHistoryRecord | None:
-        validation = self._mapping(payload.get("llm_decision_validation"))
-        if not validation and isinstance(payload.get("validation"), dict):
-            validation = self._mapping(payload.get("validation"))
-        if not validation:
-            return None
-        accepted = bool(validation.get("accepted"))
-        reason = str(validation.get("reason") or "") or None
-        decision = self._mapping(payload.get("llm_decision")) or self._mapping(payload.get("decision"))
-        decision_type = str(
-            decision.get("decision_type")
-            or payload.get("decision_type")
-            or self._default_llm_decision_type(agent_kind)
-        )
-        decision_metadata = self._mapping(decision.get("metadata"))
-        return LLMDecisionHistoryRecord(
-            cycle_index=cycle_index,
-            agent_kind=agent_kind.value,
-            advisor_type=self._advisor_type(agent_kind, observed=True),
-            enabled=self._llm_advisor_enabled(agent_kind, observed=True),
-            configured=self.settings.to_packy_llm_config() is not None,
-            decision_type=decision_type,
-            accepted=accepted,
-            rejected_reason=None if accepted else reason,
-            model=self._llm_model(),
-            usage=self._mapping(decision_metadata.get("llm_usage")) or None,
-            cost_usd=self._coerce_optional_float(decision_metadata.get("llm_cost_usd")),
-        )
-
-    def _history_records_from_logs(
-        self,
-        *,
-        cycle_index: int,
-        agent_kind: AgentKind,
-        logs: list[str],
-    ) -> list[LLMDecisionHistoryRecord]:
-        records: list[LLMDecisionHistoryRecord] = []
-        marker = "llm"
-        rejected_marker = "rejected:"
-        for log in logs:
-            lowered = log.lower()
-            if marker not in lowered or rejected_marker not in lowered:
-                continue
-            reason = log.split(rejected_marker, 1)[1].strip()
-            records.append(
-                LLMDecisionHistoryRecord(
-                    cycle_index=cycle_index,
-                    agent_kind=agent_kind.value,
-                    advisor_type=self._advisor_type(agent_kind, observed=True),
-                    enabled=self._llm_advisor_enabled(agent_kind, observed=True),
-                    configured=self.settings.to_packy_llm_config() is not None,
-                    decision_type=self._default_llm_decision_type(agent_kind),
-                    accepted=False,
-                    rejected_reason=reason or "llm decision rejected",
-                    model=self._llm_model(),
-                )
-            )
-        return records
-
-    def _iter_llm_payloads(self, value: Any) -> list[dict[str, Any]]:
-        payloads: list[dict[str, Any]] = []
-        if isinstance(value, dict):
-            if "llm_decision_validation" in value or (
-                "validation" in value and ("llm_decision" in value or "decision" in value)
-            ):
-                payloads.append(value)
-            for item in value.values():
-                payloads.extend(self._iter_llm_payloads(item))
-        elif isinstance(value, list):
-            for item in value:
-                payloads.extend(self._iter_llm_payloads(item))
-        return payloads
-
-    def _llm_advisor_enabled(self, agent_kind: AgentKind, *, observed: bool = False) -> bool:
-        if agent_kind == AgentKind.PLANNER:
-            return self.settings.enable_planner_llm_advisor or observed
-        if agent_kind == AgentKind.CRITIC:
-            return self.settings.enable_critic_llm_advisor or observed
-        if agent_kind == AgentKind.SUPERVISOR:
-            return self.settings.enable_supervisor_llm_advisor or observed
-        return observed
-
-    def _advisor_type(self, agent_kind: AgentKind, *, observed: bool = False) -> str:
-        if not self._llm_advisor_enabled(agent_kind, observed=observed):
-            return "none"
-        return "packy" if self.settings.to_packy_llm_config() is not None else "injected"
-
-    @staticmethod
-    def _default_llm_decision_type(agent_kind: AgentKind) -> str:
-        if agent_kind == AgentKind.PLANNER:
-            return "planner_strategy_decision"
-        if agent_kind == AgentKind.CRITIC:
-            return "critic_finding_review"
-        if agent_kind == AgentKind.SUPERVISOR:
-            return "supervisor_strategy"
-        return "llm_decision"
-
-    def _llm_model(self) -> str | None:
-        config = self.settings.to_packy_llm_config()
-        return config.model if config is not None else None
-
-    @staticmethod
-    def _coerce_optional_float(value: Any) -> float | None:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+        return LLMDecisionObserver(self.settings).extract(cycle_index=cycle_index, cycle=cycle)
 
     def _task_graph_from_planning(self, *, planning: PipelineCycleResult, state: RuntimeState) -> TaskGraph:
         payload = state.execution.metadata.get("task_graph")
@@ -1515,7 +1353,8 @@ class AppOrchestrator:
         }
 
     @staticmethod
-    def _debug_print_draft_tasks(task_graph: TaskGraph) -> None:
+    def _draft_task_debug_records(task_graph: TaskGraph) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
         for node in task_graph.list_nodes(status=TaskStatus.DRAFT):
             if isinstance(node, BaseTaskNode):
                 dependency_predecessors = task_graph.predecessors(node.id, DependencyType.DEPENDS_ON)
@@ -1534,7 +1373,7 @@ class AppOrchestrator:
                     draft_blockers.append("gate_ids uncleared: " + ", ".join(sorted(node.gate_ids)))
                 if not draft_blockers:
                     draft_blockers.append("draft after refresh_blocked_states without TG dependency blocker")
-                print(
+                records.append(
                     {
                         "id": node.id,
                         "type": node.task_type.value,
@@ -1556,6 +1395,7 @@ class AppOrchestrator:
                         ],
                     }
                 )
+        return records
 
     @staticmethod
     def _kg_ref(graph_refs: list[AgentGraphRef]) -> AgentGraphRef | None:
@@ -1639,6 +1479,10 @@ class AppOrchestrator:
         enabled_advisors: list[str] = []
         if settings.enable_planner_llm_advisor:
             enabled_advisors.append("enable_planner_llm_advisor")
+        if settings.enable_planner_rank_llm_advisor:
+            enabled_advisors.append("enable_planner_rank_llm_advisor")
+        if settings.enable_graph_llm_planner_advisor:
+            enabled_advisors.append("enable_graph_llm_planner_advisor")
         if settings.enable_critic_llm_advisor:
             enabled_advisors.append("enable_critic_llm_advisor")
         if settings.enable_supervisor_llm_advisor:
@@ -1647,8 +1491,8 @@ class AppOrchestrator:
             raise ValueError(f"{', '.join(enabled_advisors)} require llm_api_key in AppSettings")
         return build_optional_agent_pipeline(
             options=AgentPipelineAssemblyOptions(
-                enable_packy_planner_advisor=settings.enable_planner_llm_advisor,
-                enable_graph_llm_planner_advisor=settings.enable_planner_llm_advisor,
+                enable_packy_planner_advisor=AppOrchestrator._planner_rank_llm_enabled(settings),
+                enable_graph_llm_planner_advisor=AppOrchestrator._graph_llm_planner_enabled(settings),
                 enable_packy_critic_advisor=settings.enable_critic_llm_advisor,
                 enable_packy_supervisor_advisor=settings.enable_supervisor_llm_advisor,
             ),
@@ -1659,13 +1503,31 @@ class AppOrchestrator:
     def _llm_advisor_status(settings: AppSettings) -> dict[str, Any]:
         config = settings.to_packy_llm_config()
         return {
-            "planner_enabled": settings.enable_planner_llm_advisor,
+            "planner_enabled": AppOrchestrator._planner_llm_enabled(settings),
+            "planner_rank_enabled": AppOrchestrator._planner_rank_llm_enabled(settings),
+            "graph_planner_enabled": AppOrchestrator._graph_llm_planner_enabled(settings),
             "critic_enabled": settings.enable_critic_llm_advisor,
             "supervisor_enabled": settings.enable_supervisor_llm_advisor,
             "configured": config is not None,
             "model": config.model if config is not None else None,
             "base_url": config.base_url if config is not None else None,
         }
+
+    @staticmethod
+    def _planner_rank_llm_enabled(settings: AppSettings) -> bool:
+        return settings.enable_planner_rank_llm_advisor or settings.enable_planner_llm_advisor
+
+    @staticmethod
+    def _graph_llm_planner_enabled(settings: AppSettings) -> bool:
+        return settings.enable_graph_llm_planner_advisor or settings.enable_planner_llm_advisor
+
+    @staticmethod
+    def _planner_llm_enabled(settings: AppSettings) -> bool:
+        return (
+            settings.enable_planner_llm_advisor
+            or settings.enable_planner_rank_llm_advisor
+            or settings.enable_graph_llm_planner_advisor
+        )
 
     @staticmethod
     def _build_runtime_store(settings: AppSettings) -> RuntimeStore:

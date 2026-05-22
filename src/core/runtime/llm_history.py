@@ -23,6 +23,9 @@ class LLMDecisionHistoryRecord(BaseModel):
     enabled: bool
     configured: bool
     decision_type: str = Field(min_length=1)
+    decision_id: str | None = None
+    target_id: str | None = None
+    target_kind: str | None = None
     accepted: bool
     rejected_reason: str | None = None
     model: str | None = None

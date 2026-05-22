@@ -93,6 +93,53 @@ def test_llm_decision_history_records_planner_decision(tmp_path) -> None:
     assert "secret-key" not in str(history[-1])
 
 
+def test_llm_decision_history_keeps_distinct_targets_in_same_cycle(tmp_path) -> None:
+    orchestrator = _orchestrator(tmp_path, enable_planner_rank_llm_advisor=True, llm_api_key="secret-key")
+    orchestrator.create_operation("op-history")
+    output = AgentOutput(
+        decisions=[
+            {
+                "decision_type": "plan_selection",
+                "payload": {
+                    "planning_candidate": {
+                        "metadata": {
+                            "llm_decision": {
+                                "decision_id": "llm-1",
+                                "decision_type": "planner_strategy_decision",
+                                "target_id": "goal-a",
+                                "target_kind": "planner_goal",
+                            },
+                            "llm_decision_validation": _validation(accepted=True),
+                        }
+                    }
+                },
+            },
+            {
+                "decision_type": "plan_selection",
+                "payload": {
+                    "planning_candidate": {
+                        "metadata": {
+                            "llm_decision": {
+                                "decision_id": "llm-2",
+                                "decision_type": "planner_strategy_decision",
+                                "target_id": "goal-b",
+                                "target_kind": "planner_goal",
+                            },
+                            "llm_decision_validation": _validation(accepted=True),
+                        }
+                    }
+                },
+            },
+        ]
+    )
+
+    orchestrator.record_llm_decision_cycle("op-history", cycle_index=1, cycle=_cycle(AgentKind.PLANNER, output))
+    history = orchestrator.get_llm_decision_history("op-history")
+
+    assert [item["target_id"] for item in history] == ["goal-a", "goal-b"]
+    assert [item["decision_id"] for item in history] == ["llm-1", "llm-2"]
+
+
 def test_llm_decision_history_records_critic_decision(tmp_path) -> None:
     orchestrator = _orchestrator(tmp_path, enable_critic_llm_advisor=False)
     orchestrator.create_operation("op-history")
