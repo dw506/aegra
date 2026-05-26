@@ -17,7 +17,7 @@ class ToolPlan(BaseModel):
 
     task_id: str = Field(min_length=1)
     tool: str = ""
-    adapter: str = Field(default="local_shell", min_length=1)
+    adapter: str | None = None
     command: str | None = None
     target: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
@@ -34,11 +34,15 @@ class ToolPlan(BaseModel):
         return self
 
 
-def build_tool_plan(task: BaseTaskNode, *, default_adapter: str = "local_shell") -> ToolPlan:
+def build_tool_plan(task: BaseTaskNode, *, default_adapter: str | None = None) -> ToolPlan:
     """Convert one TG task into a ToolPlan without executing it."""
 
     bindings = dict(task.input_bindings)
-    adapter = str(bindings.get("adapter") or bindings.get("execution_adapter") or default_adapter)
+    selected_route = bindings.get("selected_route") if isinstance(bindings.get("selected_route"), dict) else {}
+    route_metadata = selected_route.get("metadata") if isinstance(selected_route.get("metadata"), dict) else {}
+    route_transport = route_metadata.get("transport") if isinstance(route_metadata.get("transport"), dict) else {}
+    adapter_value = bindings.get("adapter") or bindings.get("execution_adapter") or route_transport.get("adapter") or default_adapter
+    adapter = str(adapter_value) if adapter_value is not None else None
     command = str(
         bindings.get("command")
         or bindings.get("command_name")
@@ -49,6 +53,8 @@ def build_tool_plan(task: BaseTaskNode, *, default_adapter: str = "local_shell")
     target = bindings.get("target") or bindings.get("target_address") or bindings.get("host")
     target_agent_ref = bindings.get("target_agent_ref") or bindings.get("agent_id") or bindings.get("session_id")
     timeout = bindings.get("timeout_seconds") or bindings.get("timeout_sec")
+    route_id = bindings.get("route_id") or bindings.get("selected_route_id")
+    session_id = bindings.get("session_id")
     return ToolPlan(
         task_id=task.id,
         tool=command,
@@ -65,5 +71,15 @@ def build_tool_plan(task: BaseTaskNode, *, default_adapter: str = "local_shell")
             "source_action_id": task.source_action_id,
             "resource_keys": sorted(task.resource_keys),
             "approval_required": task.approval_required,
+            "route_id": str(route_id) if route_id is not None else None,
+            "selected_route_id": str(route_id) if route_id is not None else None,
+            "selected_route": selected_route,
+            "session_id": str(session_id) if session_id is not None else None,
+            "proxy_url": bindings.get("proxy_url"),
+            "tunnel_endpoint": bindings.get("tunnel_endpoint"),
+            "network_namespace": bindings.get("network_namespace"),
+            "tool_hint": bindings.get("tool_hint") or bindings.get("tool"),
+            "mcp_server_id": bindings.get("mcp_server_id"),
+            "mcp_tool_name": bindings.get("mcp_tool_name"),
         },
     )

@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.models.runtime import RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerStatus, utc_now
-from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
+from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus, TaskType
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
 from src.core.runtime.lease_manager import RuntimeLeaseManager
@@ -34,6 +34,7 @@ class SchedulingDecision(BaseModel):
     task_id: str = Field(min_length=1)
     worker_id: str | None = None
     session_id: str | None = None
+    route_id: str | None = None
     action: str = Field(min_length=1)
     accepted: bool = False
     reason: str | None = None
@@ -190,6 +191,7 @@ class RuntimeScheduler:
                 continue
 
             session_id = self._select_session_for_task(runtime_state, task)
+            route_id = self._selected_route_id(task)
             reserved_workers.add(worker_id)
             self._reserve_task_resources(
                 runtime_state,
@@ -197,12 +199,14 @@ class RuntimeScheduler:
                 reserved_hosts=reserved_hosts,
                 reserved_subnets=reserved_subnets,
                 session_id=session_id,
+                route_id=route_id,
             )
             decisions.append(
                 SchedulingDecision(
                     task_id=task_id,
                     worker_id=worker_id,
                     session_id=session_id,
+                    route_id=route_id,
                     action="assign",
                     accepted=True,
                     reason="ready in TG and admissible in runtime",
@@ -216,6 +220,7 @@ class RuntimeScheduler:
                 accepted=True,
                 worker_id=worker_id,
                 session_id=session_id,
+                route_id=route_id,
                 required_resource_keys=sorted(self._required_lock_keys(runtime_state, task)),
             )
 
@@ -349,6 +354,9 @@ class RuntimeScheduler:
             return "session policy conflict"
         if self._has_unusable_bound_credential(runtime_state, task):
             return "bound credential unavailable"
+        route_reason = self._ensure_required_reachability_route(runtime_state, task)
+        if route_reason is not None:
+            return route_reason
         if self._has_unusable_bound_pivot_route(runtime_state, task):
             return "pivot route unavailable"
         if self._exceeds_host_concurrency(runtime_state, task, reserved_hosts=reserved_hosts or {}, policy=policy):
@@ -447,6 +455,108 @@ class RuntimeScheduler:
                 if isinstance(value, str) and value.strip():
                     route_ids.add(value.strip())
         return sorted(route_ids)
+
+    def _ensure_required_reachability_route(self, runtime_state: RuntimeState, task: BaseTaskNode) -> str | None:
+        if not self._requires_reachability_route(task):
+            return None
+        if self._task_route_ids(task):
+            return None
+        destination_host = self._task_destination_host(task)
+        if destination_host is None:
+            return "reachable route required but target host is unknown"
+        port, protocol = self._task_service_selector(task)
+        route = self.pivot_routes.select_best_route(
+            runtime_state,
+            destination_host,
+            source_host=self._task_source_host(task),
+            destination_zone=self._task_destination_zone(task),
+            destination_cidr=self._task_destination_cidr(task),
+            port=port,
+            protocol=protocol,
+        )
+        if route is None:
+            return "no reachable route to target"
+        task.input_bindings["route_id"] = route.route_id
+        task.input_bindings["selected_route_id"] = route.route_id
+        task.input_bindings["selected_route"] = route.model_dump(mode="json")
+        runtime_task = runtime_state.execution.tasks.get(task.id)
+        if runtime_task is not None:
+            runtime_task.metadata["selected_route_id"] = route.route_id
+            runtime_task.metadata["selected_route"] = route.model_dump(mode="json")
+            if route.session_id is not None:
+                runtime_task.metadata["session_id"] = route.session_id
+        return None
+
+    @staticmethod
+    def _requires_reachability_route(task: BaseTaskNode) -> bool:
+        bindings = task.input_bindings if isinstance(task.input_bindings, dict) else {}
+        metadata = getattr(task, "metadata", {}) if isinstance(getattr(task, "metadata", {}), dict) else {}
+        reachability = bindings.get("reachability") if isinstance(bindings.get("reachability"), dict) else {}
+        metadata_reachability = metadata.get("reachability") if isinstance(metadata.get("reachability"), dict) else {}
+        return (
+            bool(bindings.get("require_reachable_route"))
+            or bool(bindings.get("requires_pivot"))
+            or bool(metadata.get("require_reachable_route"))
+            or bool(metadata.get("requires_pivot"))
+            or str(reachability.get("via", "")).lower() in {"pivot", "session"}
+            or str(metadata_reachability.get("via", "")).lower() in {"pivot", "session"}
+        )
+
+    @staticmethod
+    def _task_destination_host(task: BaseTaskNode) -> str | None:
+        if isinstance(task.input_bindings, dict):
+            for key in ("target_host_id", "host_id", "destination_host", "bound_target"):
+                value = task.input_bindings.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        for ref in task.target_refs:
+            if ref.ref_type == "Host":
+                return ref.ref_id
+        return None
+
+    @staticmethod
+    def _task_source_host(task: BaseTaskNode) -> str | None:
+        if isinstance(task.input_bindings, dict):
+            for key in ("source_host_id", "source_host"):
+                value = task.input_bindings.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    @staticmethod
+    def _task_destination_zone(task: BaseTaskNode) -> str | None:
+        if isinstance(task.input_bindings, dict):
+            value = task.input_bindings.get("destination_zone") or task.input_bindings.get("target_zone")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _task_destination_cidr(task: BaseTaskNode) -> str | None:
+        if isinstance(task.input_bindings, dict):
+            value = task.input_bindings.get("destination_cidr") or task.input_bindings.get("target_cidr")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _task_service_selector(task: BaseTaskNode) -> tuple[int | None, str | None]:
+        port = None
+        protocol = None
+        if isinstance(task.input_bindings, dict):
+            for key in ("port", "service_port", "target_port"):
+                try:
+                    value = task.input_bindings.get(key)
+                    port = int(value) if value is not None else None
+                    break
+                except (TypeError, ValueError):
+                    continue
+            for key in ("protocol", "scheme", "service_protocol"):
+                value = task.input_bindings.get(key)
+                if isinstance(value, str) and value.strip():
+                    protocol = value.strip().lower()
+                    break
+        return port, protocol
 
     @staticmethod
     def _task_session_binding(task: Any) -> str | None:
@@ -570,7 +680,14 @@ class RuntimeScheduler:
     @staticmethod
     def _requires_sensitive_approval(task: BaseTaskNode, runtime_state: RuntimeState, *, policy: RuntimePolicy) -> bool:
         sensitive_types = set(policy.sensitive_task_types)
+        sensitive_types.update(
+            {
+                TaskType.CREDENTIAL_REUSE_VALIDATION.value,
+                TaskType.LATERAL_REACHABILITY_VALIDATION.value,
+            }
+        )
         sensitive_tags = {str(item).lower() for item in policy.sensitive_tags}
+        sensitive_tags.update({"credential_reuse", "lateral", "lateral_reachability", "sensitive"})
         needs_approval = (
             task.approval_required
             or bool(task.gate_ids)
@@ -663,6 +780,7 @@ class RuntimeScheduler:
         reserved_hosts: dict[str, int],
         reserved_subnets: dict[str, int],
         session_id: str | None,
+        route_id: str | None,
     ) -> None:
         for host_id in self._task_host_ids(task):
             reserved_hosts[host_id] = reserved_hosts.get(host_id, 0) + 1
@@ -681,6 +799,23 @@ class RuntimeScheduler:
             runtime_task.resource_keys = set(self._required_lock_keys(runtime_state, task))
             if session_id is not None:
                 runtime_task.metadata["session_id"] = session_id
+            if route_id is not None:
+                runtime_task.metadata["selected_route_id"] = route_id
+                route = runtime_state.pivot_routes.get(route_id)
+                if route is not None:
+                    runtime_task.metadata["selected_route"] = route.model_dump(mode="json")
+                    if route.session_id is not None:
+                        runtime_task.metadata["session_id"] = route.session_id
+
+    @staticmethod
+    def _selected_route_id(task: BaseTaskNode) -> str | None:
+        if not isinstance(task.input_bindings, dict):
+            return None
+        for key in ("selected_route_id", "route_id"):
+            value = task.input_bindings.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     @staticmethod
     def _parse_time(value: Any) -> Any:

@@ -101,7 +101,10 @@ class FingerprintWorker(BaseWorkerAgent):
             ),
             task_label=str(agent_input.raw_payload.get("task_label") or "Normalize service fingerprint"),
             input_bindings=dict(task_spec.input_bindings),
-            target_refs=[KGFactRef.model_validate(ref.model_dump(mode="json")) for ref in task_spec.target_refs],
+            target_refs=[
+                KGFactRef.model_validate(_strip_graph_ref_metadata(ref.model_dump(mode="json")))
+                for ref in task_spec.target_refs
+            ],
             metadata=dict(agent_input.raw_payload) | dict(task_spec.constraints),
         )
         result = self._execute_request(request)
@@ -422,3 +425,9 @@ class FingerprintWorker(BaseWorkerAgent):
 
 
 __all__ = ["FingerprintWorker"]
+
+
+def _strip_graph_ref_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(payload)
+    payload.pop("metadata", None)
+    return payload

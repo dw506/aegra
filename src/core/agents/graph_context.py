@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.graph.topology import NetworkTopology
 from src.core.models.ag import (
     ActivationStatus,
     ActionNode,
@@ -23,7 +24,7 @@ from src.core.models.ag import (
     StateNodeType,
 )
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.kg import Evidence, Finding, Observation
+from src.core.models.kg import Evidence, Finding, NetworkZone, Observation
 from src.core.models.runtime import RuntimeState, TaskRuntimeStatus
 from src.core.models.tg import BaseTaskNode, TaskGraph
 
@@ -42,6 +43,9 @@ class GraphContextBuilderConfig(BaseModel):
     max_tasks_per_status: int = Field(default=10, ge=1)
     max_evidence_items: int = Field(default=20, ge=1)
     max_replan_requests: int = Field(default=10, ge=1)
+    max_network_zones: int = Field(default=20, ge=1)
+    max_reachability_paths: int = Field(default=30, ge=1)
+    max_pivot_routes: int = Field(default=20, ge=1)
     max_policy_items: int = Field(default=30, ge=1)
     max_metadata_items: int = Field(default=12, ge=0)
     max_string_chars: int = Field(default=240, ge=40)
@@ -162,6 +166,54 @@ class GraphContextPolicy(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class GraphContextNetworkZone(BaseModel):
+    """Network zone summary visible to planning."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    ref: GraphContextRef
+    cidr: str | None = None
+    zone_kind: str | None = None
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphContextReachabilityPath(BaseModel):
+    """Reachability path summary visible to planning."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    source_host: str
+    destination_host: str
+    service_id: str | None = None
+    via: str
+    route_id: str | None = None
+    session_id: str | None = None
+    protocol: str | None = None
+    port: int | None = None
+    hops: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphContextPivotRoute(BaseModel):
+    """Runtime pivot route summary visible to planning."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    route_id: str
+    destination_host: str
+    source_host: str | None = None
+    via_host: str | None = None
+    session_id: str | None = None
+    status: str
+    protocol: str | None = None
+    allowed_ports: list[int] = Field(default_factory=list)
+    protocols: list[str] = Field(default_factory=list)
+    hop_count: int = 1
+    confidence: float = 0.0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class GraphContext(BaseModel):
     """Compact context slice passed to graph-driven LLM planners."""
 
@@ -175,6 +227,9 @@ class GraphContext(BaseModel):
     tasks_by_status: dict[str, list[GraphContextTask]] = Field(default_factory=dict)
     evidence: list[GraphContextEvidence] = Field(default_factory=list)
     replan_requests: list[dict[str, Any]] = Field(default_factory=list)
+    network_zones: list[GraphContextNetworkZone] = Field(default_factory=list)
+    reachable_paths: list[GraphContextReachabilityPath] = Field(default_factory=list)
+    pivot_routes: list[GraphContextPivotRoute] = Field(default_factory=list)
     policy: GraphContextPolicy = Field(default_factory=GraphContextPolicy)
     context_stats: dict[str, Any] = Field(default_factory=dict)
 
@@ -229,6 +284,9 @@ class GraphContextBuilder:
             evidence=evidence or [],
         )
         replan_requests = self._build_replan_requests(runtime_state)
+        network_zones = self._build_network_zones(knowledge_graph)
+        reachable_paths = self._build_reachable_paths(knowledge_graph)
+        pivot_routes = self._build_pivot_routes(runtime_state)
         policy = self._build_policy(policy_context or {}, runtime_state)
 
         context = GraphContext(
@@ -244,6 +302,9 @@ class GraphContextBuilder:
             tasks_by_status=tasks,
             evidence=evidence_items,
             replan_requests=replan_requests,
+            network_zones=network_zones,
+            reachable_paths=reachable_paths,
+            pivot_routes=pivot_routes,
             policy=policy,
         )
         return context.model_copy(update={"context_stats": self._stats(context)})
@@ -523,6 +584,65 @@ class GraphContextBuilder:
             for request in requests
         ]
 
+    def _build_network_zones(self, graph: KnowledgeGraph | None) -> list[GraphContextNetworkZone]:
+        if graph is None:
+            return []
+        zones = [node for node in graph.list_nodes() if isinstance(node, NetworkZone)]
+        zones = sorted(zones, key=lambda item: item.id)[: self.config.max_network_zones]
+        return [
+            GraphContextNetworkZone(
+                ref=GraphContextRef(graph="kg", ref_id=zone.id, ref_type=zone.type.value, label=zone.label),
+                cidr=zone.cidr,
+                zone_kind=zone.zone_kind,
+                properties=self._sanitize_mapping(zone.properties),
+            )
+            for zone in zones
+        ]
+
+    def _build_reachable_paths(self, graph: KnowledgeGraph | None) -> list[GraphContextReachabilityPath]:
+        if graph is None:
+            return []
+        topology = NetworkTopology(graph)
+        paths = topology.reachable_paths()[: self.config.max_reachability_paths]
+        return [
+            GraphContextReachabilityPath(
+                source_host=path.source_host,
+                destination_host=path.destination_host,
+                service_id=path.service_id,
+                via=path.via,
+                route_id=path.route_id,
+                session_id=path.session_id,
+                protocol=path.protocol,
+                port=path.port,
+                hops=path.hops,
+                confidence=path.confidence,
+                metadata=self._sanitize_mapping(path.metadata),
+            )
+            for path in paths
+        ]
+
+    def _build_pivot_routes(self, runtime_state: RuntimeState | None) -> list[GraphContextPivotRoute]:
+        if runtime_state is None:
+            return []
+        routes = sorted(runtime_state.pivot_routes.values(), key=lambda item: item.route_id)[: self.config.max_pivot_routes]
+        return [
+            GraphContextPivotRoute(
+                route_id=route.route_id,
+                destination_host=route.destination_host,
+                source_host=route.source_host,
+                via_host=route.via_host,
+                session_id=route.session_id,
+                status=route.status.value,
+                protocol=route.protocol,
+                allowed_ports=sorted(route.allowed_ports),
+                protocols=sorted(route.protocols),
+                hop_count=route.hop_count,
+                confidence=route.confidence,
+                metadata=self._sanitize_mapping(route.metadata),
+            )
+            for route in routes
+        ]
+
     def _build_policy(
         self,
         policy_context: dict[str, Any],
@@ -594,6 +714,9 @@ class GraphContextBuilder:
             "frontier_action_count": len(context.frontier_actions),
             "task_count": sum(len(items) for items in context.tasks_by_status.values()),
             "evidence_count": len(context.evidence),
+            "network_zone_count": len(context.network_zones),
+            "reachable_path_count": len(context.reachable_paths),
+            "pivot_route_count": len(context.pivot_routes),
             "estimated_context_chars": len(str(dumped)),
             "large_artifacts_included": False,
         }
@@ -676,7 +799,10 @@ __all__ = [
     "GraphContextBuilderConfig",
     "GraphContextEvidence",
     "GraphContextGoal",
+    "GraphContextNetworkZone",
+    "GraphContextPivotRoute",
     "GraphContextPolicy",
+    "GraphContextReachabilityPath",
     "GraphContextRef",
     "GraphContextService",
     "GraphContextTask",

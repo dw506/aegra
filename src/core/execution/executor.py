@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from src.core.execution.adapter_resolver import ToolAdapterResolver
 from src.core.execution.adapters.base import ExecutionAdapter
 from src.core.execution.tool_plan import ToolPlan
 from src.core.execution.tool_policy import ToolPolicy
@@ -23,18 +24,31 @@ class LegacyToolAdapter(Protocol):
 class ExecutionExecutor:
     """Dispatch ToolPlans to adapter-neutral execution backends."""
 
-    def __init__(self, adapters: list[ExecutionAdapter] | None = None) -> None:
+    def __init__(
+        self,
+        adapters: list[ExecutionAdapter] | None = None,
+        *,
+        resolver: ToolAdapterResolver | None = None,
+    ) -> None:
         self._adapters = list(adapters or [])
+        self._resolver = resolver or ToolAdapterResolver()
 
     def register_adapter(self, adapter: ExecutionAdapter) -> ExecutionAdapter:
         self._adapters.append(adapter)
         return adapter
 
     def execute(self, plan: ToolPlan) -> ToolExecutionResult:
+        adapter_map = {adapter.name: adapter for adapter in self._adapters}
+        resolution = self._resolver.resolve(plan, adapter_map)
+        if not resolution.allowed:
+            raise ValueError(f"No adapter supports plan adapter={plan.adapter}, tool={plan.tool}: {resolution.reason}")
+        resolved_plan = self._resolver.plan_for_resolution(plan, resolution)
         for adapter in self._adapters:
-            if adapter.supports(plan):
-                return adapter.execute(plan)
-        raise ValueError(f"No adapter supports plan adapter={plan.adapter}, tool={plan.tool}")
+            if adapter.supports(resolved_plan):
+                result = adapter.execute(resolved_plan)
+                result.metadata.setdefault("adapter_resolution", resolution.model_dump(mode="json"))
+                return result
+        raise ValueError(f"No adapter supports plan adapter={resolved_plan.adapter}, tool={resolved_plan.tool}")
 
 
 class ToolExecutor:

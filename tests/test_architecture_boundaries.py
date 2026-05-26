@@ -5,9 +5,20 @@ from pathlib import Path
 
 from src.core.workers.access_validation_worker import AccessValidationWorker
 from src.core.workers.base import BaseWorkerAgent
+from src.core.workers.credential_reuse_worker import CredentialReuseWorker
+from src.core.workers.credential_validation_worker import CredentialValidationWorker
+from src.core.workers.fingerprint_worker import FingerprintWorker
 from src.core.workers.goal_validation_worker import GoalValidationWorker
+from src.core.workers.internal_service_fingerprint_worker import InternalServiceFingerprintWorker
+from src.core.workers.lateral_reachability_worker import LateralReachabilityWorker
+from src.core.workers.port_scan_worker import PortScanWorker
+from src.core.workers.pivot_validation_worker import PivotValidationWorker
 from src.core.workers.privilege_validation_worker import PrivilegeValidationWorker
+from src.core.workers.recon_worker import ReconWorker
 from src.core.workers.registry import WorkerRegistry
+from src.core.workers.vulnerability_validation_worker import GenericVulnerabilityValidationWorker
+from src.core.workers.web_discovery_worker import WebDiscoveryWorker
+from src.core.workers.web_enum_worker import WebEnumerationWorker
 
 
 def test_core_planner_does_not_import_agent_wrappers() -> None:
@@ -45,8 +56,19 @@ def test_worker_registry_default_excludes_legacy_workers() -> None:
 
     assert {type(worker) for worker in workers} == {
         AccessValidationWorker,
+        CredentialReuseWorker,
+        CredentialValidationWorker,
+        FingerprintWorker,
+        GenericVulnerabilityValidationWorker,
         GoalValidationWorker,
+        InternalServiceFingerprintWorker,
+        LateralReachabilityWorker,
+        PortScanWorker,
+        PivotValidationWorker,
         PrivilegeValidationWorker,
+        ReconWorker,
+        WebDiscoveryWorker,
+        WebEnumerationWorker,
     }
     assert all(isinstance(worker, BaseWorkerAgent) for worker in workers)
 

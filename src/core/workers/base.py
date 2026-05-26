@@ -39,10 +39,17 @@ class WorkerCapability(str, Enum):
     """Capabilities that a worker agent may advertise."""
 
     RECON = "recon"
+    PORT_SCAN = "port_scan"
     FINGERPRINT = "fingerprint"
+    INTERNAL_SERVICE_FINGERPRINT = "internal_service_fingerprint"
+    WEB_ENUMERATION = "web_enumeration"
+    WEB_DISCOVERY = "web_discovery"
     CONTEXT_VALIDATION = "context_validation"
     VULNERABILITY_VALIDATION = "vulnerability_validation"
     ACCESS_VALIDATION = "access_validation"
+    CREDENTIAL_VALIDATION = "credential_validation"
+    CREDENTIAL_REUSE_VALIDATION = "credential_reuse_validation"
+    LATERAL_REACHABILITY_VALIDATION = "lateral_reachability_validation"
     PRIVILEGE_VALIDATION = "privilege_validation"
     GOAL_VALIDATION = "goal_validation"
 

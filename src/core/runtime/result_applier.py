@@ -67,6 +67,7 @@ from src.core.runtime.lease_manager import RuntimeLeaseManager
 from src.core.runtime.locks import RuntimeLockManager
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
+from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
 
@@ -107,6 +108,7 @@ class PhaseTwoResultApplier:
         lock_manager: RuntimeLockManager | None = None,
         attack_graph_projector: AttackGraphProjector | None = None,
         task_graph_builder: AttackGraphTaskBuilder | None = None,
+        reachability_propagator: ReachabilityPropagator | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
         self._graph_projection = graph_projection or GraphProjectionAgent()
@@ -116,6 +118,7 @@ class PhaseTwoResultApplier:
         self._credential_manager = credential_manager or RuntimeCredentialManager()
         self._lease_manager = lease_manager or RuntimeLeaseManager()
         self._pivot_route_manager = pivot_route_manager or RuntimePivotRouteManager()
+        self._reachability_propagator = reachability_propagator or ReachabilityPropagator(self._pivot_route_manager)
         self._budget_manager = budget_manager or RuntimeBudgetManager()
         self._checkpoint_manager = checkpoint_manager or RuntimeCheckpointManager()
         self._lock_manager = lock_manager or RuntimeLockManager()
@@ -548,6 +551,12 @@ class PhaseTwoResultApplier:
                 task_id=request.source_task_id,
                 session_id=session.session_id,
             )
+            execution_endpoint = self._mapping(request.metadata.get("execution_endpoint"))
+            if execution_endpoint:
+                session.metadata["execution_endpoint"] = execution_endpoint
+            capabilities = self._mapping(request.metadata.get("capabilities"))
+            if capabilities:
+                session.metadata["capabilities"] = capabilities
             return [
                 self._push_runtime_event(
                     state,
@@ -561,6 +570,95 @@ class PhaseTwoResultApplier:
                     ),
                 )
             ]
+        if request.request_type == RuntimeControlType.REGISTER_PIVOT_ROUTE:
+            route_id = self._string(request.metadata.get("route_id")) or f"route-{request.request_id}"
+            destination_host = self._string(request.metadata.get("destination_host") or request.metadata.get("target_host"))
+            if destination_host is None:
+                raise ValueError("register_pivot_route runtime request requires metadata.destination_host")
+            route = self._pivot_route_manager.register_candidate(
+                state,
+                route_id,
+                destination_host,
+                source_host=self._string(request.metadata.get("source_host")),
+                via_host=self._string(request.metadata.get("via_host")),
+                session_id=request.session_id or self._string(request.metadata.get("session_id")),
+                protocol=self._string(request.metadata.get("protocol")),
+                destination_zone=self._string(request.metadata.get("destination_zone")),
+                destination_cidr=self._string(request.metadata.get("destination_cidr")),
+                allowed_ports=self._list_or_set(request.metadata.get("allowed_ports") or request.metadata.get("port")),
+                protocols=self._list_or_set(request.metadata.get("protocols")),
+                hop_count=self._int(request.metadata.get("hop_count")),
+                confidence=self._float(request.metadata.get("confidence")),
+                metadata={
+                    "created_by": "result_applier",
+                    "request_id": request.request_id,
+                    "transport": self._mapping(request.metadata.get("transport")),
+                },
+            )
+            if bool(request.metadata.get("active", False)):
+                route = self._pivot_route_manager.activate_route(state, route.route_id)
+            return [self._runtime_control_event(state, request, summary=f"registered pivot route {route.route_id}")]
+        if request.request_type == RuntimeControlType.VERIFY_PIVOT_ROUTE:
+            route_id = self._string(request.metadata.get("route_id")) or self._string(request.session_id)
+            if route_id is None:
+                raise ValueError("verify_pivot_route runtime request requires metadata.route_id")
+            reachable = bool(request.metadata.get("reachable", True))
+            if reachable:
+                self._pivot_route_manager.activate_route(state, route_id)
+            else:
+                self._pivot_route_manager.fail_route(state, route_id, reason=request.reason or "pivot_verification_failed")
+            return [self._runtime_control_event(state, request, summary=f"verified pivot route {route_id}")]
+        if request.request_type == RuntimeControlType.OPEN_TUNNEL:
+            route_id = self._string(request.metadata.get("route_id"))
+            if route_id is not None and route_id in state.pivot_routes:
+                route = state.pivot_routes[route_id]
+                transport = dict(route.metadata.get("transport", {})) if isinstance(route.metadata.get("transport"), dict) else {}
+                transport.update(
+                    {
+                        "kind": "tcp_tunnel",
+                        "tunnel_endpoint": self._string(request.metadata.get("tunnel_endpoint") or request.metadata.get("endpoint")),
+                        "health": "ready",
+                    }
+                )
+                route.metadata["transport"] = {key: value for key, value in transport.items() if value is not None}
+            session_id = request.session_id or self._string(request.metadata.get("session_id"))
+            if session_id is not None and session_id in state.sessions:
+                endpoint = dict(state.sessions[session_id].metadata.get("execution_endpoint", {})) if isinstance(state.sessions[session_id].metadata.get("execution_endpoint"), dict) else {}
+                endpoint.update({"kind": "tunnel", "adapter": "tcp_tunnel", "tunnel_endpoint": self._string(request.metadata.get("tunnel_endpoint") or request.metadata.get("endpoint"))})
+                state.sessions[session_id].metadata["execution_endpoint"] = {key: value for key, value in endpoint.items() if value is not None}
+            return [self._runtime_control_event(state, request, summary="opened tunnel")]
+        if request.request_type == RuntimeControlType.CLOSE_TUNNEL:
+            route_id = self._string(request.metadata.get("route_id"))
+            if route_id is not None and route_id in state.pivot_routes:
+                route = state.pivot_routes[route_id]
+                transport = dict(route.metadata.get("transport", {})) if isinstance(route.metadata.get("transport"), dict) else {}
+                transport["health"] = "closed"
+                route.metadata["transport"] = transport
+            return [self._runtime_control_event(state, request, summary="closed tunnel")]
+        if request.request_type == RuntimeControlType.ATTACH_NETWORK_NAMESPACE:
+            namespace = self._string(request.metadata.get("network_namespace") or request.metadata.get("namespace"))
+            if namespace is None:
+                raise ValueError("attach_network_namespace runtime request requires metadata.network_namespace")
+            for session_id in [request.session_id, self._string(request.metadata.get("session_id"))]:
+                if session_id is not None and session_id in state.sessions:
+                    endpoint = dict(state.sessions[session_id].metadata.get("execution_endpoint", {})) if isinstance(state.sessions[session_id].metadata.get("execution_endpoint"), dict) else {}
+                    endpoint.update({"adapter": "netns_shell", "namespace": namespace})
+                    state.sessions[session_id].metadata["execution_endpoint"] = endpoint
+            route_id = self._string(request.metadata.get("route_id"))
+            if route_id is not None and route_id in state.pivot_routes:
+                transport = dict(state.pivot_routes[route_id].metadata.get("transport", {})) if isinstance(state.pivot_routes[route_id].metadata.get("transport"), dict) else {}
+                transport.update({"kind": "netns", "namespace": namespace, "health": "ready"})
+                state.pivot_routes[route_id].metadata["transport"] = transport
+            return [self._runtime_control_event(state, request, summary=f"attached network namespace {namespace}")]
+        if request.request_type == RuntimeControlType.DETACH_NETWORK_NAMESPACE:
+            route_id = self._string(request.metadata.get("route_id"))
+            if route_id is not None and route_id in state.pivot_routes:
+                transport = dict(state.pivot_routes[route_id].metadata.get("transport", {})) if isinstance(state.pivot_routes[route_id].metadata.get("transport"), dict) else {}
+                transport.pop("namespace", None)
+                if transport.get("kind") == "netns":
+                    transport["health"] = "closed"
+                state.pivot_routes[route_id].metadata["transport"] = transport
+            return [self._runtime_control_event(state, request, summary="detached network namespace")]
         if request.request_type == RuntimeControlType.EXTEND_SESSION:
             if not request.session_id:
                 raise ValueError("extend_session runtime request requires session_id")
@@ -1039,32 +1137,7 @@ class PhaseTwoResultApplier:
         )
 
     def _sync_pivot_route_view(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
-        reachability = self._dict(result.outcome_payload.get("reachability"))
-        route_view = self._dict(result.outcome_payload.get("selected_route"))
-        route_id = self._string(route_view.get("route_id")) or self._string(reachability.get("route_id"))
-        destination_host = (
-            self._string(route_view.get("destination_host"))
-            or self._string(result.outcome_payload.get("bound_target"))
-            or self._result_target_host_id(result)
-        )
-        if destination_host is None:
-            task = state.execution.tasks.get(result.task_id)
-            destination_host = self._string((task.metadata if task is not None else {}).get("bound_target"))
-        if destination_host is None:
-            return
-        if self._string(reachability.get("via")) not in {"pivot", "session"} and route_id is None and not route_view:
-            return
-        self._pivot_route_manager.refresh_from_reachability(
-            state,
-            route_id=route_id,
-            destination_host=destination_host,
-            reachable=bool(reachability.get("reachable", result.status.value == "succeeded")),
-            source_host=self._string(route_view.get("source_host")) or self._string(reachability.get("source_id")),
-            via_host=self._string(route_view.get("via_host")),
-            session_id=self._string(route_view.get("session_id")) or self._result_session_id(result=result, task=state.execution.tasks.get(result.task_id)),
-            protocol=self._string(route_view.get("protocol")),
-            metadata={"source_task_id": result.task_id, "result_status": result.status.value},
-        )
+        self._reachability_propagator.sync_from_task_result(state=state, result=result)
 
     def _release_task_execution_resources(self, *, state: RuntimeState, task_id: str) -> None:
         task = state.execution.tasks.get(task_id)
@@ -1539,6 +1612,59 @@ class PhaseTwoResultApplier:
     @staticmethod
     def _append_audit_log(state: RuntimeState, entry: dict[str, Any]) -> None:
         append_audit_log(state, entry)
+
+    def _runtime_control_event(
+        self,
+        state: RuntimeState,
+        request: RuntimeControlRequest,
+        *,
+        summary: str,
+    ) -> RuntimeEventRef:
+        self._append_audit_log(
+            state,
+            {
+                "event_type": request.request_type.value,
+                "source_task_id": request.source_task_id,
+                "request_id": request.request_id,
+                "summary": summary,
+                "metadata": dict(request.metadata),
+            },
+        )
+        ref = RuntimeEventRef(
+            event_id=request.request_id,
+            event_type=request.request_type.value,
+            cursor=state.event_cursor + 1,
+            summary=summary,
+            metadata={"source_task_id": request.source_task_id, **dict(request.metadata)},
+        )
+        state.push_event(ref)
+        return ref
+
+    @staticmethod
+    def _mapping(value: Any) -> dict[str, Any]:
+        return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _list_or_set(value: Any) -> list[Any] | set[Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, (list, set)):
+            return value
+        return [value]
+
+    @staticmethod
+    def _int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _string(value: Any) -> str | None:

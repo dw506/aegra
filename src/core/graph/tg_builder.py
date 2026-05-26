@@ -428,12 +428,18 @@ class AttackGraphTaskBuilder:
     def _map_action_to_task_type(action_type: ActionNodeType) -> TaskType:
         mapping = {
             ActionNodeType.ENUMERATE_HOST: TaskType.ASSET_CONFIRMATION,
+            ActionNodeType.SCAN_PORTS: TaskType.PORT_SCAN,
             ActionNodeType.VALIDATE_SERVICE: TaskType.SERVICE_VALIDATION,
+            ActionNodeType.FINGERPRINT_INTERNAL_SERVICE: TaskType.INTERNAL_SERVICE_FINGERPRINT,
             ActionNodeType.ENUMERATE_WEB_SURFACE: TaskType.WEB_ENUMERATION,
+            ActionNodeType.DISCOVER_WEB_PATHS: TaskType.WEB_DISCOVERY,
             ActionNodeType.VALIDATE_REACHABILITY: TaskType.REACHABILITY_VALIDATION,
+            ActionNodeType.VALIDATE_LATERAL_REACHABILITY: TaskType.LATERAL_REACHABILITY_VALIDATION,
             ActionNodeType.ESTABLISH_PIVOT_ROUTE: TaskType.REACHABILITY_VALIDATION,
             ActionNodeType.ESTABLISH_MANAGED_SESSION: TaskType.IDENTITY_CONTEXT_CONFIRMATION,
+            ActionNodeType.VALIDATE_CREDENTIAL: TaskType.CREDENTIAL_VALIDATION,
             ActionNodeType.REUSE_CREDENTIAL_ON_HOST: TaskType.IDENTITY_CONTEXT_CONFIRMATION,
+            ActionNodeType.CHECK_CREDENTIAL_REUSE: TaskType.CREDENTIAL_REUSE_VALIDATION,
             ActionNodeType.EXPLOIT_LATERAL_SERVICE: TaskType.IDENTITY_CONTEXT_CONFIRMATION,
             ActionNodeType.ENUMERATE_IDENTITY_CONTEXT: TaskType.IDENTITY_CONTEXT_CONFIRMATION,
             ActionNodeType.VALIDATE_PRIVILEGE_STATE: TaskType.PRIVILEGE_CONFIGURATION_VALIDATION,
@@ -445,15 +451,36 @@ class AttackGraphTaskBuilder:
     @classmethod
     def _normalize_candidate(cls, candidate: TaskCandidate) -> TaskCandidate:
         resource_keys = set(candidate.resource_keys)
-        host_ids = cls._derive_resource_ids(candidate, prefixes=("host",), binding_keys=("host_id", "target_host", "source_host", "via_host"))
+        host_ids = cls._derive_resource_ids(
+            candidate,
+            prefixes=("host",),
+            binding_keys=(
+                "host_id",
+                "target_host",
+                "target_host_id",
+                "source_host",
+                "source_host_id",
+                "destination_host",
+                "via_host",
+            ),
+        )
+        service_ids = cls._derive_resource_ids(candidate, prefixes=("service",), binding_keys=("service_id",))
         credential_ids = cls._derive_resource_ids(candidate, prefixes=("credential",), binding_keys=("credential_id",))
-        session_ids = cls._derive_resource_ids(candidate, prefixes=("session",), binding_keys=("session_id", "route_id"))
+        session_ids = cls._derive_resource_ids(candidate, prefixes=("session",), binding_keys=("session_id",))
+        route_ids = cls._derive_resource_ids(candidate, prefixes=("route", "pivotroute"), binding_keys=("route_id", "selected_route_id"))
+        cidrs = cls._derive_resource_ids(candidate, prefixes=("subnet", "cidr"), binding_keys=("target_cidr", "destination_cidr", "subnet_cidr", "cidr"))
         for host_id in host_ids:
             resource_keys.add(f"host:{host_id}")
+        for service_id in service_ids:
+            resource_keys.add(f"service:{service_id}")
         for credential_id in credential_ids:
             resource_keys.add(f"credential:{credential_id}")
         for session_id in session_ids:
             resource_keys.add(f"session:{session_id}")
+        for route_id in route_ids:
+            resource_keys.add(f"route:{route_id}")
+        for cidr in cidrs:
+            resource_keys.add(f"subnet:{cidr}")
         if len(host_ids) > 1:
             resource_keys.add("multi-host")
 
@@ -486,7 +513,7 @@ class AttackGraphTaskBuilder:
         for ref in candidate.target_refs:
             if ref.ref_type is None:
                 continue
-            if ref.ref_type.lower().startswith(tuple(prefix.title() for prefix in prefixes)):
+            if ref.ref_type.lower().startswith(prefixes):
                 result.add(ref.ref_id)
         for key in binding_keys:
             cls._collect_binding_ids(candidate.input_bindings.get(key), result)
@@ -890,13 +917,19 @@ class TaskGraphBuilder:
     def _should_depend_by_stage(producer: TaskType, consumer: TaskType) -> bool:
         stage_rank = {
             TaskType.ASSET_CONFIRMATION: 0,
-            TaskType.SERVICE_VALIDATION: 1,
-            TaskType.WEB_ENUMERATION: 2,
-            TaskType.VULNERABILITY_VALIDATION: 3,
-            TaskType.REACHABILITY_VALIDATION: 4,
-            TaskType.IDENTITY_CONTEXT_CONFIRMATION: 5,
-            TaskType.PRIVILEGE_CONFIGURATION_VALIDATION: 6,
-            TaskType.GOAL_CONDITION_VALIDATION: 7,
+            TaskType.PORT_SCAN: 1,
+            TaskType.SERVICE_VALIDATION: 2,
+            TaskType.INTERNAL_SERVICE_FINGERPRINT: 2,
+            TaskType.WEB_ENUMERATION: 3,
+            TaskType.WEB_DISCOVERY: 3,
+            TaskType.VULNERABILITY_VALIDATION: 4,
+            TaskType.CREDENTIAL_VALIDATION: 5,
+            TaskType.CREDENTIAL_REUSE_VALIDATION: 5,
+            TaskType.REACHABILITY_VALIDATION: 6,
+            TaskType.LATERAL_REACHABILITY_VALIDATION: 6,
+            TaskType.IDENTITY_CONTEXT_CONFIRMATION: 7,
+            TaskType.PRIVILEGE_CONFIGURATION_VALIDATION: 8,
+            TaskType.GOAL_CONDITION_VALIDATION: 9,
         }
         return stage_rank.get(producer, -1) >= 0 and stage_rank.get(producer, -1) < stage_rank.get(consumer, -1)
 

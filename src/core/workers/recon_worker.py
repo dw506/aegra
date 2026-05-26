@@ -59,7 +59,18 @@ class ReconWorker(BaseWorkerAgent):
         }
     )
     supported_task_types = frozenset(
-        {"host_discovery", "service_validation", "web_enumeration", "web_fingerprint", "identity_context_discovery"}
+        {
+            "host_discovery",
+            "service_validation",
+            "web_enumeration",
+            "web_fingerprint",
+            "identity_context_discovery",
+            TaskType.ASSET_CONFIRMATION.value,
+            TaskType.SERVICE_VALIDATION.value,
+            TaskType.WEB_ENUMERATION.value,
+            TaskType.REACHABILITY_VALIDATION.value,
+            TaskType.IDENTITY_CONTEXT_CONFIRMATION.value,
+        }
     )
 
     def __init__(
@@ -155,13 +166,13 @@ class ReconWorker(BaseWorkerAgent):
     def _execute_agent_task(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> AgentOutput:
         """Execute one recon-style task and return outcome plus raw result."""
 
-        if task_spec.task_type == "host_discovery":
+        if task_spec.task_type in {"host_discovery", TaskType.ASSET_CONFIRMATION.value}:
             raw_result = self._execute_host_discovery(task_spec, agent_input)
-        elif task_spec.task_type == "service_validation":
+        elif task_spec.task_type in {"service_validation", TaskType.SERVICE_VALIDATION.value, TaskType.REACHABILITY_VALIDATION.value}:
             raw_result = self._execute_service_validation(task_spec, agent_input)
-        elif task_spec.task_type in {"web_enumeration", "web_fingerprint"}:
+        elif task_spec.task_type in {"web_enumeration", "web_fingerprint", TaskType.WEB_ENUMERATION.value}:
             raw_result = self._execute_web_enumeration(task_spec, agent_input)
-        elif task_spec.task_type == "identity_context_discovery":
+        elif task_spec.task_type in {"identity_context_discovery", TaskType.IDENTITY_CONTEXT_CONFIRMATION.value}:
             raw_result = self._execute_identity_context_discovery(task_spec, agent_input)
         else:
             raise ValueError(f"unsupported recon task type: {task_spec.task_type}")

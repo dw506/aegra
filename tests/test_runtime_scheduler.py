@@ -160,6 +160,62 @@ def test_scheduler_accepts_normalized_runtime_policy_metadata() -> None:
     assert result.selected_task_ids == ["task-1"]
 
 
+def test_scheduler_selects_required_pivot_route_for_internal_target() -> None:
+    scheduler = RuntimeScheduler()
+    runtime_state = build_runtime_state()
+    runtime_state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    runtime_state.pivot_routes["route-db"] = PivotRouteRuntime(
+        route_id="route-db",
+        destination_host="db-1",
+        source_host="web-1",
+        via_host="web-1",
+        status=PivotRouteStatus.ACTIVE,
+        protocol="tcp",
+        allowed_ports={5432},
+        protocols={"tcp"},
+        confidence=0.9,
+    )
+    graph = build_task_graph()
+    task = graph.get_node("task-1")
+    task.input_bindings = {
+        "target_host_id": "db-1",
+        "source_host_id": "web-1",
+        "port": 5432,
+        "protocol": "tcp",
+        "require_reachable_route": True,
+    }
+    task.resource_keys = {"host:db-1"}
+    task.target_refs = [GraphRef(graph="kg", ref_id="db-1", ref_type="Host")]
+
+    result = scheduler.tick(graph, runtime_state)
+
+    assert result.selected_task_ids == ["task-1"]
+    assert task.input_bindings["route_id"] == "route-db"
+    assert task.input_bindings["selected_route"]["destination_host"] == "db-1"
+
+
+def test_scheduler_blocks_when_required_pivot_route_is_missing() -> None:
+    scheduler = RuntimeScheduler()
+    runtime_state = build_runtime_state()
+    runtime_state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
+    graph = build_task_graph()
+    task = graph.get_node("task-1")
+    task.input_bindings = {
+        "target_host_id": "db-1",
+        "source_host_id": "web-1",
+        "port": 5432,
+        "protocol": "tcp",
+        "require_reachable_route": True,
+    }
+    task.resource_keys = {"host:db-1"}
+    task.target_refs = [GraphRef(graph="kg", ref_id="db-1", ref_type="Host")]
+
+    result = scheduler.tick(graph, runtime_state)
+
+    assert result.selected_task_ids == []
+    assert runtime_state.execution.metadata["audit_log"][-1]["reason"] == "no reachable route to target"
+
+
 def test_scheduler_enforces_subnet_rate_limit() -> None:
     scheduler = RuntimeScheduler()
     runtime_state = build_runtime_state()

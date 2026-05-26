@@ -48,6 +48,12 @@ class AppSettings(BaseModel):
     debug_scheduler_io: bool = False
     tool_nmap_path: str = "nmap"
     tool_python_path: str = "python"
+    mcp_enabled: bool = False
+    mcp_first: bool = True
+    mcp_config_path: Path | None = None
+    mcp_config_json: dict[str, Any] = Field(default_factory=dict)
+    mcp_default_timeout_seconds: int = Field(default=60, ge=1)
+    allow_local_fallback: bool = True
     incalmo_enabled: bool = False
     incalmo_c2_url: str | None = None
     incalmo_poll_interval_sec: float = Field(default=1.0, gt=0.0)
@@ -66,6 +72,13 @@ class AppSettings(BaseModel):
     @field_validator("runtime_policy_path", mode="before")
     @classmethod
     def _coerce_runtime_policy_path(cls, value: str | Path | None) -> Path | None:
+        if value in {None, ""}:
+            return None
+        return Path(value).expanduser().resolve()
+
+    @field_validator("mcp_config_path", mode="before")
+    @classmethod
+    def _coerce_mcp_config_path(cls, value: str | Path | None) -> Path | None:
         if value in {None, ""}:
             return None
         return Path(value).expanduser().resolve()
@@ -220,6 +233,33 @@ class AppSettings(BaseModel):
             values["tool_nmap_path"] = environ["AEGRA_TOOL_NMAP_PATH"]
         if "AEGRA_TOOL_PYTHON_PATH" in environ:
             values["tool_python_path"] = environ["AEGRA_TOOL_PYTHON_PATH"]
+        if "AEGRA_MCP_ENABLED" in environ:
+            values["mcp_enabled"] = environ["AEGRA_MCP_ENABLED"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_MCP_FIRST" in environ:
+            values["mcp_first"] = environ["AEGRA_MCP_FIRST"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_MCP_CONFIG_PATH" in environ:
+            values["mcp_config_path"] = environ["AEGRA_MCP_CONFIG_PATH"]
+        if "AEGRA_MCP_CONFIG_JSON" in environ:
+            values["mcp_config_json"] = json.loads(environ["AEGRA_MCP_CONFIG_JSON"])
+        if "AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS" in environ:
+            values["mcp_default_timeout_seconds"] = int(environ["AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS"])
+        if "AEGRA_ALLOW_LOCAL_FALLBACK" in environ:
+            values["allow_local_fallback"] = environ["AEGRA_ALLOW_LOCAL_FALLBACK"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
         if "AEGRA_INCALMO_ENABLED" in environ:
             values["incalmo_enabled"] = environ["AEGRA_INCALMO_ENABLED"].strip().lower() in {
                 "1",

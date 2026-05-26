@@ -262,6 +262,15 @@ class AppliesToHostEdge(BaseEdge):
 
 class CanReachEdge(BaseEdge):
     type: Literal[EdgeType.CAN_REACH] = EdgeType.CAN_REACH
+    source_host: str | None = None
+    target_host: str | None = None
+    target_service: str | None = None
+    protocol: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    via: Literal["direct", "session", "pivot", "inferred"] = "direct"
+    route_id: str | None = None
+    session_id: str | None = None
+    observed_by_task_id: str | None = None
 
 
 class HasVulnerabilityEdge(BaseEdge):
@@ -275,6 +284,14 @@ class AffectsEdge(BaseEdge):
 
 class PivotsToEdge(BaseEdge):
     type: Literal[EdgeType.PIVOTS_TO] = EdgeType.PIVOTS_TO
+    source_host: str | None = None
+    via_host: str | None = None
+    destination_host: str | None = None
+    route_id: str | None = None
+    session_id: str | None = None
+    protocol: str | None = None
+    destination_zone: str | None = None
+    destination_cidr: str | None = None
 
 
 class ObservedOnEdge(BaseEdge):

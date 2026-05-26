@@ -106,6 +106,12 @@ class RuntimeControlType(str, Enum):
     CONSUME_BUDGET = "consume_budget"
     CREATE_CHECKPOINT = "create_checkpoint"
     REQUEST_REPLAN = "request_replan"
+    REGISTER_PIVOT_ROUTE = "register_pivot_route"
+    VERIFY_PIVOT_ROUTE = "verify_pivot_route"
+    OPEN_TUNNEL = "open_tunnel"
+    CLOSE_TUNNEL = "close_tunnel"
+    ATTACH_NETWORK_NAMESPACE = "attach_network_namespace"
+    DETACH_NETWORK_NAMESPACE = "detach_network_namespace"
 
 
 class CriticSignalSeverity(str, Enum):
@@ -426,6 +432,7 @@ class AgentResultAdapter:
             or (evidence[0].summary if evidence else None)
             or f"worker completed task {task_id}"
         )
+        outcome_payload = dict(outcome) if isinstance(outcome, dict) else {}
         return AgentTaskResult(
             request_id=str(agent_input.decision_ref or f"{agent_name or 'worker'}-{task_id}"),
             agent_role=cls._agent_role(agent_input),
@@ -437,7 +444,10 @@ class AgentResultAdapter:
             error_message="\n".join(agent_output.errors) or None,
             observations=observations,
             evidence=evidence,
-            outcome_payload=dict(outcome) if isinstance(outcome, dict) else {},
+            fact_write_requests=cls._runtime_models(outcome_payload.get("fact_write_requests"), FactWriteRequest),
+            projection_requests=cls._runtime_models(outcome_payload.get("projection_requests"), ProjectionRequest),
+            runtime_requests=cls._runtime_models(outcome_payload.get("runtime_requests"), RuntimeControlRequest),
+            outcome_payload=outcome_payload,
             metadata={
                 "adapted_from": "agent_output",
                 "source_agent": agent_name,
@@ -484,6 +494,18 @@ class AgentResultAdapter:
                 except Exception:
                     continue
         return refs
+
+    @staticmethod
+    def _runtime_models(value: Any, model_type: Any) -> list[Any]:
+        if not isinstance(value, list):
+            return []
+        parsed: list[Any] = []
+        for item in value:
+            if isinstance(item, model_type):
+                parsed.append(item)
+            elif isinstance(item, dict):
+                parsed.append(model_type.model_validate(item))
+        return parsed
 
     @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:

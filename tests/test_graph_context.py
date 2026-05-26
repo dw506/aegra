@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.core.agents.graph_context import GraphContextBuilder, GraphContextBuilderConfig
+from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import (
     ActivationStatus,
     ActionNode,
@@ -15,9 +16,12 @@ from src.core.models.ag import (
     StateNodeType,
     TruthStatus,
 )
+from src.core.models.kg import CanReachEdge, Host, HostsEdge, NetworkZone, Service
 from src.core.models.runtime import (
     OperationRuntime,
     OutcomeCacheEntry,
+    PivotRouteRuntime,
+    PivotRouteStatus,
     RuntimeEventRef,
     RuntimeState,
     RuntimeStatus,
@@ -153,10 +157,48 @@ def build_task_graph() -> TaskGraph:
     return graph
 
 
+def build_knowledge_graph() -> KnowledgeGraph:
+    graph = KnowledgeGraph()
+    graph.add_node(Host(id="web-1", label="web-1"))
+    graph.add_node(Host(id="db-1", label="db-1"))
+    graph.add_node(NetworkZone(id="zone-db", label="db subnet", cidr="10.20.0.0/24", zone_kind="internal"))
+    graph.add_node(Service(id="svc-db", label="postgres", port=5432, protocol="tcp"))
+    graph.add_edge(HostsEdge(id="hosts::db-1::svc-db", label="hosts", source="db-1", target="svc-db"))
+    graph.add_edge(
+        CanReachEdge(
+            id="reach::web-1::svc-db",
+            label="web reaches postgres",
+            source="web-1",
+            target="svc-db",
+            source_host="web-1",
+            target_host="db-1",
+            target_service="svc-db",
+            via="pivot",
+            route_id="route-db",
+            protocol="tcp",
+            port=5432,
+        )
+    )
+    return graph
+
+
 def test_graph_context_builder_extracts_compact_ag_and_runtime_slice() -> None:
+    runtime_state = build_runtime_state()
+    runtime_state.pivot_routes["route-db"] = PivotRouteRuntime(
+        route_id="route-db",
+        destination_host="db-1",
+        source_host="web-1",
+        via_host="web-1",
+        status=PivotRouteStatus.ACTIVE,
+        protocol="tcp",
+        allowed_ports={5432},
+        protocols={"tcp"},
+        confidence=0.9,
+    )
     context = GraphContextBuilder().build(
+        knowledge_graph=build_knowledge_graph(),
         attack_graph=build_attack_graph(),
-        runtime_state=build_runtime_state(),
+        runtime_state=runtime_state,
         task_graph=build_task_graph(),
         policy_context={
             "authorized_hosts": ["127.0.0.1"],
@@ -179,6 +221,9 @@ def test_graph_context_builder_extracts_compact_ag_and_runtime_slice() -> None:
     assert payload["tasks_by_status"]["failed"][0]["last_error"].endswith("[truncated]")
     assert payload["evidence"][0]["payload_ref"] == "artifact://nmap-1"
     assert payload["policy"]["authorized_hosts"] == ["127.0.0.1"]
+    assert payload["network_zones"][0]["cidr"] == "10.20.0.0/24"
+    assert payload["reachable_paths"][0]["route_id"] == "route-db"
+    assert payload["pivot_routes"][0]["allowed_ports"] == [5432]
     assert payload["context_stats"]["large_artifacts_included"] is False
 
     serialized = str(payload)

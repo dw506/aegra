@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.models.runtime import RuntimeState
-from src.core.models.tg import BaseTaskNode
+from src.core.models.tg import BaseTaskNode, TaskType
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.policy import PolicyDecision, RuntimePolicy, policy_from_runtime_state
@@ -168,7 +168,18 @@ class PolicyGate:
         *,
         runtime_state: RuntimeState | None,
     ) -> PolicyGateDecision:
-        if not task.approval_required and not task.gate_ids:
+        sensitive_task_types = {
+            TaskType.CREDENTIAL_REUSE_VALIDATION.value,
+            TaskType.LATERAL_REACHABILITY_VALIDATION.value,
+        }
+        sensitive_tags = {"credential_reuse", "lateral", "lateral_reachability", "sensitive"}
+        requires_approval = (
+            task.approval_required
+            or bool(task.gate_ids)
+            or task.task_type.value in sensitive_task_types
+            or bool({tag.lower() for tag in task.tags} & sensitive_tags)
+        )
+        if not requires_approval:
             return PolicyGateDecision(action=PolicyGateAction.ALLOW, gate="approval", task_id=task.id, reason="approval not required")
         approval_id = f"task:{task.id}:approved"
         if runtime_state is not None and runtime_state.budgets.approval_cache.get(approval_id):

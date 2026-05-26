@@ -55,6 +55,12 @@ class RuntimePolicy(BaseModel):
     allow_fingerprint: bool = True
     disabled_tools: list[str] = Field(default_factory=list)
     command_allowlist: list[str] = Field(default_factory=list)
+    adapter_policy: dict[str, Any] = Field(default_factory=dict)
+    tool_bindings: list[dict[str, Any]] = Field(default_factory=list)
+    mcp_tool_allowlist: list[str] = Field(default_factory=list)
+    mcp_tool_denylist: list[str] = Field(default_factory=list)
+    mcp_server_allowlist: list[str] = Field(default_factory=list)
+    mcp_server_denylist: list[str] = Field(default_factory=list)
     retry_backoff_base_sec: int = Field(default=0, ge=0)
     default_task_timeout_sec: int = Field(default=900, ge=1)
     policy_version: str = "v1"
@@ -69,6 +75,10 @@ class RuntimePolicy(BaseModel):
         "sensitive_tags",
         "disabled_tools",
         "command_allowlist",
+        "mcp_tool_allowlist",
+        "mcp_tool_denylist",
+        "mcp_server_allowlist",
+        "mcp_server_denylist",
         mode="before",
     )
     @classmethod
@@ -127,7 +137,7 @@ class RuntimePolicy(BaseModel):
             normalized[mapping_key] = int(item)
         return normalized
 
-    @field_validator("denylist", "scan_windows", mode="before")
+    @field_validator("denylist", "scan_windows", "tool_bindings", mode="before")
     @classmethod
     def _normalize_model_list(cls, value: Any) -> list[Any]:
         if value is None or value == "":
@@ -135,6 +145,15 @@ class RuntimePolicy(BaseModel):
         if not isinstance(value, list):
             raise TypeError("policy model list fields must be arrays")
         return value
+
+    @field_validator("adapter_policy", mode="before")
+    @classmethod
+    def _normalize_mapping(cls, value: Any) -> dict[str, Any]:
+        if value is None or value == "":
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("policy mapping fields must be objects")
+        return dict(value)
 
     @field_validator("workspace", "engagement", mode="before")
     @classmethod
@@ -168,6 +187,12 @@ class RuntimePolicy(BaseModel):
             "risk_policy": RiskPolicy().model_dump(mode=kwargs.get("mode", "python")),
             "allow_safe_probe": True,
             "allow_fingerprint": True,
+            "adapter_policy": {},
+            "tool_bindings": [],
+            "mcp_tool_allowlist": [],
+            "mcp_tool_denylist": [],
+            "mcp_server_allowlist": [],
+            "mcp_server_denylist": [],
         }
         for key, default in optional_defaults.items():
             if key not in self.model_fields_set and payload.get(key) == default:

@@ -308,11 +308,17 @@ class PivotRouteRuntime(BaseRuntimeModel):
 
     route_id: str = Field(min_length=1)
     destination_host: str = Field(min_length=1)
+    destination_zone: str | None = None
+    destination_cidr: str | None = None
     source_host: str | None = None
     via_host: str | None = None
     session_id: str | None = None
     status: PivotRouteStatus = PivotRouteStatus.CANDIDATE
     protocol: str | None = None
+    allowed_ports: set[int] = Field(default_factory=set)
+    protocols: set[str] = Field(default_factory=set)
+    hop_count: int = Field(default=1, ge=1)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     last_verified_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

@@ -106,6 +106,12 @@ class AccessValidationRequest(BaseModel):
         metadata: dict[str, Any] = {}
         if session_id:
             metadata["session_probe"] = {"session_id": session_id, "status": "active", "usable": True}
+        route_id = cls._string(task_spec.constraints.get("route_id") or task_spec.input_bindings.get("route_id"))
+        selected_route = task_spec.input_bindings.get("selected_route")
+        if route_id:
+            metadata["selected_route"] = {"route_id": route_id}
+        if isinstance(selected_route, dict):
+            metadata["selected_route"] = dict(metadata.get("selected_route", {})) | dict(selected_route)
         if route:
             metadata["reachability"] = {"reachable": True, "via": "session" if session_id else "direct", "path": route}
         return metadata

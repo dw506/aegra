@@ -95,6 +95,27 @@ def test_select_best_route_ignores_route_with_missing_session() -> None:
     assert best is None
 
 
+def test_select_best_route_filters_by_service_port_and_protocol() -> None:
+    state = build_state()
+    manager = RuntimePivotRouteManager()
+    manager.refresh_from_reachability(
+        state,
+        route_id="route-db",
+        destination_host="host-2",
+        reachable=True,
+        source_host="host-0",
+        via_host="host-1",
+        protocol="tcp",
+        allowed_ports={5432},
+        protocols={"tcp"},
+        confidence=0.9,
+    )
+
+    assert manager.select_best_route(state, "host-2", source_host="host-0", port=5432, protocol="tcp") is not None
+    assert manager.select_best_route(state, "host-2", source_host="host-0", port=80, protocol="tcp") is None
+    assert manager.select_best_route(state, "host-2", source_host="host-0", port=5432, protocol="udp") is None
+
+
 def test_get_missing_route_raises() -> None:
     state = build_state()
     manager = RuntimePivotRouteManager()

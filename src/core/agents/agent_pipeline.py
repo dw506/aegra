@@ -397,6 +397,9 @@ class AgentPipeline:
         session_id = self._first_text(decision.get("session_id"))
         if session_id:
             constraints["session_id"] = session_id
+        route_id = self._first_text(decision.get("route_id"))
+        if route_id:
+            constraints["route_id"] = route_id
         worker_refs = self._dedupe_refs(
             [*graph_refs, *self._refs(decision.get("target_refs")), *self._task_refs(task_node)]
         )
