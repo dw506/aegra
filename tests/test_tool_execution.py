@@ -9,6 +9,7 @@ import pytest
 from src.core.execution import (
     AdapterPolicyConfig,
     ExecutionExecutor,
+    HttpRequestExecutionAdapter,
     LocalShellAdapter,
     MCPExecutionAdapter,
     MCPToolCallResult,
@@ -138,6 +139,40 @@ def test_local_shell_adapter_returns_failure_result_on_nonzero_exit() -> None:
     assert result.exit_code == 7
 
 
+def test_local_shell_adapter_honors_acceptable_exit_codes_from_plan() -> None:
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="python",
+        adapter="local_shell",
+        command=sys.executable,
+        args={"argv": [sys.executable, "-c", "import sys; sys.exit(7)"], "acceptable_exit_codes": [7]},
+    )
+
+    result = LocalShellAdapter().execute(plan)
+
+    assert result.success is True
+    assert result.exit_code == 7
+    assert result.metadata["category"] == "success"
+
+
+def test_local_shell_adapter_reports_timeout_category() -> None:
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="python",
+        adapter="local_shell",
+        command=sys.executable,
+        args={"argv": [sys.executable, "-c", "import time; time.sleep(2)"]},
+        timeout_seconds=1,
+    )
+
+    result = LocalShellAdapter().execute(plan)
+
+    assert result.success is False
+    assert result.exit_code == "timeout"
+    assert result.metadata["category"] == "timeout"
+    assert result.metadata["timed_out"] is True
+
+
 def test_local_shell_adapter_rejects_unallowed_command_by_default() -> None:
     plan = ToolPlan(
         task_id="task-1",
@@ -151,6 +186,60 @@ def test_local_shell_adapter_rejects_unallowed_command_by_default() -> None:
     assert result.success is False
     assert result.exit_code == "policy_denied"
     assert "not allowed" in result.stderr
+
+
+def test_http_request_adapter_blocks_cross_origin_without_network() -> None:
+    adapter = HttpRequestExecutionAdapter()
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="http_request",
+        adapter="http_request",
+        target="http://example.test/admin",
+        args={"method": "HEAD", "same_origin": "http://127.0.0.1/"},
+    )
+
+    result = adapter.execute(plan)
+
+    assert result.success is False
+    assert result.metadata["category"] == "policy_denied"
+    assert result.metadata["blocked_reason"] == "cross_origin"
+
+
+def test_http_request_adapter_converts_successful_head_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.core.execution.adapters import http_request_adapter
+
+    class FakeHeaders:
+        def items(self) -> list[tuple[str, str]]:
+            return [("content-type", "text/html")]
+
+        def get(self, key: str) -> str | None:
+            return "text/html" if key.lower() == "content-type" else None
+
+    class FakeResponse:
+        status = 204
+        headers = FakeHeaders()
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(http_request_adapter, "urlopen", lambda request, timeout: FakeResponse())
+    plan = ToolPlan(
+        task_id="task-1",
+        tool="http_request",
+        adapter="http_request",
+        target="http://127.0.0.1/status",
+        args={"method": "HEAD", "same_origin": "http://127.0.0.1/"},
+    )
+
+    result = HttpRequestExecutionAdapter().execute(plan)
+
+    assert result.success is True
+    assert result.exit_code == 204
+    assert result.metadata["reachable"] is True
+    assert result.metadata["content_type"] == "text/html"
 
 
 def test_execution_executor_selects_matching_adapter() -> None:

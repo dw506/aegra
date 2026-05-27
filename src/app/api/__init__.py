@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.app.api.graph_routes import register_graph_routes
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.agent_protocol import GraphRef, GraphScope
@@ -23,12 +24,14 @@ from src.core.workers.vulnerability_validators import (
 
 try:  # pragma: no cover - exercised only when FastAPI is installed
     from fastapi import FastAPI, HTTPException, Query, Response
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - default path in this workspace
     FastAPI = None
     HTTPException = RuntimeError
     Query = None
     Response = None
+    CORSMiddleware = None
     StaticFiles = None
 
 
@@ -290,6 +293,14 @@ def create_app(
         title=resolved_settings.control_api_title,
         version=resolved_settings.control_api_version,
     )
+    if CORSMiddleware is not None and resolved_settings.control_api_cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(resolved_settings.control_api_cors_origins),
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     static_dir = Path(__file__).resolve().parents[1] / "static"
     if StaticFiles is not None and static_dir.exists():
         app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
@@ -589,6 +600,8 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    register_graph_routes(app, resolved_orchestrator, resolved_settings)
 
     return app
 

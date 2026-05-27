@@ -1,0 +1,26 @@
+{
+  "servers": {
+    "pentest-tools": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["-m", "src.integrations.mcp_lab.server"],
+      "cwd": "D:/Aegra",
+      "env": {
+        "AEGRA_LAB_MODE": "1"
+      }
+    },
+    "pentest-mcp": {
+      "transport": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "MCP_TRANSPORT=stdio",
+        "ramgameer/pentest-mcp:latest",
+        "./start_services.sh"
+      ]
+    }
+  }
+}

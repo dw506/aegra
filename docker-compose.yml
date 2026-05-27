@@ -1,0 +1,71 @@
+services:
+  aegra:
+    build: .
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      AEGRA_RUNTIME_STORE_BACKEND: file
+      AEGRA_RUNTIME_STORE_DIR: /app/var/runtime
+      AEGRA_AUDIT_DIR: /app/var/audit
+      AEGRA_ENABLE_PLANNER_LLM_ADVISOR: "1"
+      AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR: "1"
+      AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR: "1"
+      AEGRA_ENABLE_CRITIC_LLM_ADVISOR: "1"
+      AEGRA_MCP_ENABLED: "1"
+      AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
+      AEGRA_LAB_MODE: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - target-web-1
+      - target-web-2
+      - target-web-3
+      - internal-service
+    networks:
+      - lab_net
+      - internal_net
+    command: ["uvicorn", "src.app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  dashboard:
+    build:
+      context: ./web/dashboard
+      dockerfile: Dockerfile
+    container_name: aegra_dashboard
+    environment:
+      VITE_GRAPH_API_BASE: "http://127.0.0.1:8000"
+      VITE_GRAPH_WS_BASE: "ws://127.0.0.1:8000"
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - aegra
+    networks:
+      - lab_net
+
+  target-web-1:
+    image: nginx:1.27-alpine
+    networks:
+      - lab_net
+
+  target-web-2:
+    image: httpd:2.4-alpine
+    networks:
+      - lab_net
+
+  target-web-3:
+    image: nginx:1.27-alpine
+    networks:
+      - lab_net
+
+  internal-service:
+    image: nginx:1.27-alpine
+    networks:
+      - internal_net
+
+networks:
+  lab_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true

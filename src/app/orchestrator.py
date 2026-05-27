@@ -11,7 +11,9 @@ from src.app.llm_decision_observer import LLMDecisionObserver
 from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentKind, GraphRef as AgentGraphRef, GraphScope
 from src.core.agents.graph_context import GraphContextBuilder
+from src.core.agents.packy_llm import PackyLLMClient
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
+from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
@@ -32,6 +34,9 @@ from src.core.runtime.llm_history import (
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
+from src.core.visualization.graph_publisher import graph_delta_publisher
+from src.core.workers.llm_worker import LLMWorkerAgent
+from src.core.workers.llm_worker_advisor import LLMWorkerAdvisor
 
 
 class TargetHost(BaseModel):
@@ -481,6 +486,7 @@ class AppOrchestrator:
             pipeline=pipeline,
             operation_id=operation_id,
             graph_refs=graph_refs,
+            kg=kg,
             task_graph=task_graph,
             runtime_state=state,
             scheduler_payload=scheduler_payload,
@@ -526,6 +532,8 @@ class AppOrchestrator:
                 ag = AttackGraph.from_dict(applied.ag_graph)
             if applied.tg_graph is not None:
                 task_graph = TaskGraph.from_dict(applied.tg_graph)
+            for delta in applied.visual_graph_deltas:
+                graph_delta_publisher.publish_nowait(delta)
             apply_results.append(applied)
             recent_outcomes.append(self._recent_outcome_entry(task_result))
         self._checkpoint_phase(
@@ -1087,6 +1095,7 @@ class AppOrchestrator:
         pipeline: AgentPipeline,
         operation_id: str,
         graph_refs: list[AgentGraphRef],
+        kg: KnowledgeGraph,
         task_graph: TaskGraph,
         runtime_state: RuntimeState,
         scheduler_payload: dict[str, Any] | None,
@@ -1125,6 +1134,7 @@ class AppOrchestrator:
             )
         payload = {
             **self._mapping(scheduler_payload),
+            "kg_graph": kg.to_dict(),
             "tg_graph": task_graph.to_dict(),
             "runtime_state": runtime_state.model_dump(mode="json"),
         }
@@ -1489,6 +1499,19 @@ class AppOrchestrator:
             enabled_advisors.append("enable_supervisor_llm_advisor")
         if enabled_advisors and llm_client_config is None:
             raise ValueError(f"{', '.join(enabled_advisors)} require llm_api_key in AppSettings")
+        mcp_client = (
+            ConfiguredMCPClient.from_sources(
+                config_path=settings.mcp_config_path,
+                config_json=settings.mcp_config_json,
+            )
+            if settings.mcp_enabled
+            else None
+        )
+        llm_worker_advisor = (
+            LLMWorkerAdvisor(client=PackyLLMClient(llm_client_config))
+            if llm_client_config is not None
+            else None
+        )
         return build_optional_agent_pipeline(
             options=AgentPipelineAssemblyOptions(
                 enable_packy_planner_advisor=AppOrchestrator._planner_rank_llm_enabled(settings),
@@ -1497,6 +1520,11 @@ class AppOrchestrator:
                 enable_packy_supervisor_advisor=settings.enable_supervisor_llm_advisor,
             ),
             llm_client_config=llm_client_config,
+            llm_worker_agent=LLMWorkerAgent(
+                advisor=llm_worker_advisor,
+                mcp_client=mcp_client,
+                default_timeout_seconds=settings.mcp_default_timeout_seconds,
+            ),
         )
 
     @staticmethod

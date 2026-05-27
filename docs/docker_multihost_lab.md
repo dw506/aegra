@@ -1,0 +1,105 @@
+# Docker Multihost Lab
+
+This lab runs one Aegra control-plane container, three target web-service
+containers, and one simulated internal-only service. It is intended for
+repeatable local end-to-end smoke testing of the orchestrator flow.
+
+## Layout
+
+- `aegra`: FastAPI control API at `http://localhost:8000`.
+- `target-web-1`: nginx target, reachable inside Docker as `http://target-web-1:80/`.
+- `target-web-2`: httpd target, reachable inside Docker as `http://target-web-2:80/`.
+- `target-web-3`: nginx target, reachable inside Docker as `http://target-web-3:80/`.
+- `internal-service`: nginx service on the internal-only network, reachable from Aegra as `http://internal-service:80/` and not published to the host.
+- `lab_net`: Docker bridge network shared by Aegra and the three target hosts.
+- `internal_net`: Docker bridge network marked `internal: true`, shared only by Aegra and `internal-service`.
+
+The Aegra container enables the lab MCP server through:
+
+```text
+AEGRA_MCP_ENABLED=1
+AEGRA_MCP_CONFIG_PATH=/app/configs/mcp.lab.docker.json
+AEGRA_LAB_MODE=1
+```
+
+## Build And Start
+
+```powershell
+docker compose build
+docker compose up -d
+```
+
+Verify the control API:
+
+```powershell
+curl --noproxy "*" http://127.0.0.1:8000/health
+curl --noproxy "*" http://127.0.0.1:8000/ready
+```
+
+## Run Local Regression Tests
+
+From the host workspace:
+
+```powershell
+python -m pytest tests/test_api_operation_cycle.py tests/test_mcp_lab.py tests/test_tool_execution.py tests/test_execution_end_to_end_smoke.py -q
+```
+
+## Run Docker Multihost Smoke Tests
+
+Run the orchestrator smoke test against the nginx target:
+
+```powershell
+docker compose run --rm `
+  -e AEGRA_RUN_VULHUB_ORCHESTRATOR_SMOKE=1 `
+  -e AEGRA_VULHUB_BASE_URL=http://target-web-1:80/ `
+  aegra python -m pytest tests/test_vulhub_orchestrator_smoke.py::test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain -q
+```
+
+Run the same flow against the httpd target:
+
+```powershell
+docker compose run --rm `
+  -e AEGRA_RUN_VULHUB_ORCHESTRATOR_SMOKE=1 `
+  -e AEGRA_VULHUB_BASE_URL=http://target-web-2:80/ `
+  aegra python -m pytest tests/test_vulhub_orchestrator_smoke.py::test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain -q
+```
+
+Run the same flow against the third target:
+
+```powershell
+docker compose run --rm `
+  -e AEGRA_RUN_VULHUB_ORCHESTRATOR_SMOKE=1 `
+  -e AEGRA_VULHUB_BASE_URL=http://target-web-3:80/ `
+  aegra python -m pytest tests/test_vulhub_orchestrator_smoke.py::test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain -q
+```
+
+Run the same flow against the simulated internal service:
+
+```powershell
+docker compose run --rm `
+  -e AEGRA_RUN_VULHUB_ORCHESTRATOR_SMOKE=1 `
+  -e AEGRA_VULHUB_BASE_URL=http://internal-service:80/ `
+  aegra python -m pytest tests/test_vulhub_orchestrator_smoke.py::test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain -q
+```
+
+Or run the full Docker lab smoke sequence:
+
+```powershell
+.\scripts\docker_lab_smoke.ps1
+```
+
+Pass `-KeepRunning` if you want the containers to remain up after the smoke run:
+
+```powershell
+.\scripts\docker_lab_smoke.ps1 -KeepRunning
+```
+
+Successful smoke tests prove that planning, execution, feedback, runtime audit,
+and KG evidence deltas work against three Docker-hosted targets and one
+internal-only Docker service.
+
+## Stop The Lab
+
+```powershell
+docker compose down
+```

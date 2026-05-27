@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput
+from src.core.execution.adapters.http_request_adapter import HttpRequestExecutionAdapter
+from src.core.execution.executor import ExecutionExecutor
+from src.core.execution.tool_plan import ToolPlan
+from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.tg import TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerCapability, WorkerTaskSpec
 
@@ -18,8 +22,9 @@ class WebDiscoveryWorker(BaseWorkerAgent):
     supported_task_types = frozenset({TaskType.WEB_DISCOVERY.value, "web_discovery", "directory_discovery", "api_discovery"})
     safe_methods = frozenset({"GET", "HEAD"})
 
-    def __init__(self, name: str = "web_discovery_worker") -> None:
+    def __init__(self, name: str = "web_discovery_worker", *, executor: ExecutionExecutor | None = None) -> None:
         super().__init__(name=name)
+        self._executor = executor or ExecutionExecutor([HttpRequestExecutionAdapter()])
 
     def supports_task(self, task_spec: WorkerTaskSpec) -> bool:
         return task_spec.task_type in self.supported_task_types
@@ -66,22 +71,43 @@ class WebDiscoveryWorker(BaseWorkerAgent):
             if parsed.scheme != parsed_base.scheme or parsed.netloc != parsed_base.netloc:
                 endpoints.append({"url": url, "blocked": True, "blocked_reason": "cross_origin"})
                 continue
-            try:
-                request = Request(url, method=method)
-                with urlopen(request, timeout=timeout) as response:  # noqa: S310 - URL is bounded to scoped same-origin input.
-                    endpoints.append(
-                        {
-                            "url": url,
-                            "path": parsed.path or "/",
-                            "status_code": response.status,
-                            "content_type": response.headers.get("content-type"),
-                            "auth_required": response.status in {401, 403},
-                            "reachable": 200 <= response.status < 500,
-                        }
-                    )
-            except Exception as exc:
-                endpoints.append({"url": url, "path": parsed.path or "/", "reachable": False, "failure_reason": str(exc)})
+            result = self._executor.execute(
+                ToolPlan(
+                    task_id=task_spec.task_id,
+                    tool="http_request",
+                    adapter="http_request",
+                    target=url,
+                    args={"method": method, "timeout_seconds": timeout, "same_origin": target_url},
+                    timeout_seconds=max(1, int(timeout)),
+                    metadata={"task_type": task_spec.task_type},
+                )
+            )
+            endpoints.append(self._endpoint_from_execution(url=url, path=parsed.path or "/", result=result))
         return endpoints
+
+    @staticmethod
+    def _endpoint_from_execution(*, url: str, path: str, result: ToolExecutionResult) -> dict[str, Any]:
+        payload = dict(result.metadata)
+        if result.stdout.strip():
+            try:
+                decoded = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                decoded = {}
+            if isinstance(decoded, dict):
+                payload.update(decoded)
+        if payload.get("blocked_reason"):
+            return {"url": url, "path": path, "blocked": True, "blocked_reason": payload.get("blocked_reason")}
+        endpoint = {
+            "url": url,
+            "path": path,
+            "status_code": payload.get("status_code"),
+            "content_type": payload.get("content_type"),
+            "auth_required": bool(payload.get("auth_required", False)),
+            "reachable": bool(payload.get("reachable", result.success)),
+        }
+        if not endpoint["reachable"]:
+            endpoint["failure_reason"] = str(payload.get("error_message") or result.stderr or "request failed")
+        return endpoint
 
     def _result(
         self,

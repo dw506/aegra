@@ -2,21 +2,8 @@
 
 from __future__ import annotations
 
-from src.core.workers.access_validation_worker import AccessValidationWorker
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
-from src.core.workers.credential_reuse_worker import CredentialReuseWorker
-from src.core.workers.credential_validation_worker import CredentialValidationWorker
-from src.core.workers.fingerprint_worker import FingerprintWorker
-from src.core.workers.goal_validation_worker import GoalValidationWorker
-from src.core.workers.internal_service_fingerprint_worker import InternalServiceFingerprintWorker
-from src.core.workers.lateral_reachability_worker import LateralReachabilityWorker
-from src.core.workers.port_scan_worker import PortScanWorker
-from src.core.workers.pivot_validation_worker import PivotValidationWorker
-from src.core.workers.privilege_validation_worker import PrivilegeValidationWorker
-from src.core.workers.recon_worker import ReconWorker
-from src.core.workers.vulnerability_validation_worker import GenericVulnerabilityValidationWorker
-from src.core.workers.web_discovery_worker import WebDiscoveryWorker
-from src.core.workers.web_enum_worker import WebEnumerationWorker
+from src.core.workers.llm_worker import LLMWorkerAgent
 
 
 class WorkerNotFoundError(LookupError):
@@ -38,24 +25,7 @@ class WorkerRegistry:
 
     @classmethod
     def default(cls) -> "WorkerRegistry":
-        return cls(
-            [
-                PortScanWorker(),
-                InternalServiceFingerprintWorker(),
-                WebEnumerationWorker(),
-                WebDiscoveryWorker(),
-                CredentialValidationWorker(),
-                CredentialReuseWorker(),
-                LateralReachabilityWorker(),
-                AccessValidationWorker(),
-                PivotValidationWorker(),
-                GoalValidationWorker(),
-                PrivilegeValidationWorker(),
-                ReconWorker(),
-                FingerprintWorker(),
-                GenericVulnerabilityValidationWorker(),
-            ]
-        )
+        return cls([LLMWorkerAgent()])
 
     def register(self, worker: BaseWorkerAgent) -> BaseWorkerAgent:
         if not isinstance(worker, BaseWorkerAgent):

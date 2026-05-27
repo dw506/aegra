@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 
 from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
+from src.core.execution.tool_plan import ToolPlan
+from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.tg import TaskType
 from src.core.workers.credential_reuse_worker import CredentialReuseWorker
 from src.core.workers.credential_validation_worker import CredentialValidationWorker
@@ -11,6 +13,22 @@ from src.core.workers.lateral_reachability_worker import LateralReachabilityWork
 from src.core.workers.port_scan_worker import PortScanWorker
 from src.core.workers.web_discovery_worker import WebDiscoveryWorker
 from src.core.workers.base import WorkerTaskSpec
+
+
+class FakeHttpExecutor:
+    def __init__(self) -> None:
+        self.plans: list[ToolPlan] = []
+
+    def execute(self, plan: ToolPlan) -> ToolExecutionResult:
+        self.plans.append(plan)
+        return ToolExecutionResult(
+            adapter="http_request",
+            tool="http_request",
+            success=True,
+            exit_code=200,
+            stdout='{"status_code": 200, "content_type": "application/json", "reachable": true}',
+            metadata={"status_code": 200, "content_type": "application/json", "reachable": True},
+        )
 
 
 def _input(raw_payload: dict | None = None, refs: list[GraphRef] | None = None) -> AgentInput:
@@ -59,7 +77,8 @@ def test_port_scan_worker_emits_structured_result_from_custom_probe() -> None:
 
 
 def test_web_discovery_worker_accepts_preparsed_same_origin_results() -> None:
-    worker = WebDiscoveryWorker()
+    executor = FakeHttpExecutor()
+    worker = WebDiscoveryWorker(executor=executor)
     spec = WorkerTaskSpec(
         task_id="task-1",
         task_type=TaskType.WEB_DISCOVERY.value,
@@ -75,6 +94,25 @@ def test_web_discovery_worker_accepts_preparsed_same_origin_results() -> None:
     assert output.outcomes[0]["success"] is True
     assert output.outcomes[0]["payload"]["endpoint_count"] == 1
     assert output.evidence[0]["extra"]["parsed"]["entities"][0]["type"] == "WebEndpoint"
+    assert executor.plans == []
+
+
+def test_web_discovery_worker_probes_paths_through_execution_executor() -> None:
+    executor = FakeHttpExecutor()
+    worker = WebDiscoveryWorker(executor=executor)
+    spec = WorkerTaskSpec(
+        task_id="task-1",
+        task_type=TaskType.WEB_DISCOVERY.value,
+        input_bindings={"target_url": "http://127.0.0.1:8080/", "paths": ["/api/status"]},
+        target_refs=[_service_ref()],
+    )
+
+    output = worker.execute_task(spec, _input(refs=spec.target_refs))
+
+    assert executor.plans
+    assert executor.plans[0].tool == "http_request"
+    assert executor.plans[0].target == "http://127.0.0.1:8080/api/status"
+    assert output.outcomes[0]["payload"]["endpoints"][0]["status_code"] == 200
 
 
 def test_credential_validation_worker_uses_access_validation_boundary() -> None:

@@ -157,6 +157,12 @@ def test_packy_llm_config_from_env_prefers_aegra_variables(monkeypatch: pytest.M
     assert config.output_cost_per_1m_tokens == 10.0
 
 
+def test_packy_llm_config_normalizes_packy_root_url() -> None:
+    config = PackyLLMConfig(api_key="test-key", base_url="https://www.packyapi.com", model="gpt-5.2")
+
+    assert config.base_url == "https://www.packyapi.com/v1"
+
+
 def test_packy_llm_config_from_env_falls_back_to_openai_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AEGRA_LLM_API_KEY", raising=False)
     monkeypatch.delenv("AEGRA_LLM_BASE_URL", raising=False)

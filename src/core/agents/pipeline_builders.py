@@ -25,6 +25,7 @@ from src.core.agents.planner import GraphLLMPlannerAdvisorProtocol, PlannerAgent
 from src.core.agents.scheduler_agent import SchedulerAgent
 from src.core.agents.supervisor import SupervisorAgent, SupervisorLLMAdvisor
 from src.core.agents.task_builder import TaskBuilderAgent
+from src.core.workers.llm_worker import LLMWorkerAgent
 
 
 class AgentPipelineAssemblyOptions(BaseModel):
@@ -38,6 +39,7 @@ class AgentPipelineAssemblyOptions(BaseModel):
     include_scheduler: bool = True
     include_critic: bool = True
     include_supervisor: bool = False
+    include_llm_worker: bool = True
     extra_agents: list[BaseAgent] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
@@ -50,6 +52,7 @@ def build_optional_agent_pipeline(
     graph_llm_planner_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
     critic_llm_advisor: CriticLLMAdvisor | None = None,
     supervisor_llm_advisor: SupervisorLLMAdvisor | None = None,
+    llm_worker_agent: LLMWorkerAgent | None = None,
     llm_client_config: PackyLLMConfig | None = None,
     event_sink: Callable[[list[dict[str, Any]]], None] | None = None,
     state_delta_sink: Callable[[list[dict[str, Any]]], None] | None = None,
@@ -110,6 +113,8 @@ def build_optional_agent_pipeline(
         or resolved_supervisor_advisor is not None
     ):
         agents.append(SupervisorAgent(llm_advisor=resolved_supervisor_advisor))
+    if resolved_options.include_llm_worker:
+        agents.append(llm_worker_agent or LLMWorkerAgent())
     agents.extend(resolved_options.extra_agents)
 
     return AgentPipeline(

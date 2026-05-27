@@ -410,6 +410,10 @@ class AgentPipeline:
                 "task_id": task_id,
                 "task_type": self._task_type(decision_payload, task_node),
                 "input_bindings": dict(getattr(task_node, "input_bindings", {}) or {}),
+                "target_context": self._target_context(
+                    task_node=task_node,
+                    kg_graph=self._mapping(scheduler_payload.get("kg_graph")),
+                ),
                 "resource_keys": list(
                     decision.get("required_resource_keys") or getattr(task_node, "resource_keys", []) or []
                 ),
@@ -453,6 +457,43 @@ class AgentPipeline:
             if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
                 return agent
         raise AgentNotFoundError(f"no worker registered for task_type '{spec.task_type}'")
+
+    def _target_context(self, *, task_node: BaseTaskNode | None, kg_graph: dict[str, Any]) -> list[dict[str, Any]]:
+        if task_node is None or not kg_graph:
+            return []
+        node_by_id = {
+            str(node.get("id")): dict(node)
+            for node in kg_graph.get("nodes", [])
+            if isinstance(node, dict) and node.get("id") is not None
+        }
+        refs = [
+            *list(getattr(task_node, "target_refs", []) or []),
+            *list(getattr(task_node, "source_refs", []) or []),
+        ]
+        seen: set[str] = set()
+        context: list[dict[str, Any]] = []
+        for ref in refs:
+            ref_id = str(getattr(ref, "ref_id", ""))
+            if not ref_id or ref_id in seen or ref_id not in node_by_id:
+                continue
+            seen.add(ref_id)
+            node = node_by_id[ref_id]
+            properties = self._mapping(node.get("properties"))
+            context.append(
+                {
+                    "ref_id": ref_id,
+                    "ref_type": getattr(ref, "ref_type", None),
+                    "label": node.get("label"),
+                    "type": node.get("type"),
+                    "hostname": node.get("hostname"),
+                    "address": node.get("address"),
+                    "url": node.get("url") or properties.get("url") or properties.get("target"),
+                    "port": node.get("port") or properties.get("port"),
+                    "scheme": properties.get("scheme"),
+                    "properties": properties,
+                }
+            )
+        return context
 
     def _kg_batch(self, state_writer_step: PipelineStepResult) -> KGEventBatch:
         events: list[KGDeltaEvent] = []

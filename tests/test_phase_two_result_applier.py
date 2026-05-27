@@ -126,6 +126,8 @@ def test_result_applier_syncs_successful_runtime_task_to_task_graph() -> None:
     assert state.execution.tasks["task-1"].status == TaskRuntimeStatus.SUCCEEDED
     assert task_graph.get_node("task-1").status == TaskStatus.SUCCEEDED
     assert task_graph.get_node("task-2").status == TaskStatus.READY
+    assert any(delta.graph == "tg" for delta in applied.visual_graph_deltas)
+    assert any(delta.graph == "runtime" for delta in applied.visual_graph_deltas)
 
 
 def test_result_applier_merges_worker_task_candidates_into_task_graph() -> None:

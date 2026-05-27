@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 
 from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef as ProtocolGraphRef, GraphScope
+from src.core.execution.tool_plan import ToolPlan
+from src.core.execution.tool_result import ToolExecutionResult as ExecutionToolResult
 from src.core.models.ag import GraphRef
 from src.core.models.runtime import (
     CredentialKind,
@@ -29,6 +31,16 @@ from src.core.workers.services.privilege_validation_service import PrivilegeVali
 from src.core.workers.probe_adapters import CustomProbeAdapter, NmapAdapter
 from src.core.workers.recon_worker import ReconWorker
 from src.core.workers.tool_runner import ToolExecutionResult
+
+
+class FakeExecutionExecutor:
+    def __init__(self, result: ExecutionToolResult) -> None:
+        self.result = result
+        self.plans: list[ToolPlan] = []
+
+    def execute(self, plan: ToolPlan) -> ExecutionToolResult:
+        self.plans.append(plan)
+        return self.result
 
 
 def build_task(task_type: TaskType) -> TaskNode:
@@ -67,6 +79,33 @@ def test_recon_worker_runs_real_tool_command_and_parses_json() -> None:
     assert result.outcome_payload["tool"]["category"] == "success"
     assert result.outcome_payload["parsed"]["service"]["banner"] == "ssh"
     assert {item.kind.value for item in result.fact_write_requests} >= {"entity_upsert", "relation_upsert"}
+
+
+def test_recon_worker_runs_probe_through_execution_executor() -> None:
+    executor = FakeExecutionExecutor(
+        ExecutionToolResult(
+            adapter="local_shell",
+            tool="custom",
+            success=True,
+            exit_code=0,
+            stdout='{"summary":"via execution","reachable":true,"success":true}',
+            metadata={"category": "success", "command": [sys.executable, "-c", "print('ok')"], "attempts": 1},
+        )
+    )
+    worker = ReconWorker(executor=executor)
+    request = worker.build_request(
+        task=build_task(TaskType.SERVICE_VALIDATION),
+        operation_id="op-1",
+        metadata={"tool_command": [sys.executable, "-c", "print('ok')"]},
+    )
+
+    result = worker.execute_task(request)
+
+    assert result.status.value == "succeeded"
+    assert executor.plans
+    assert executor.plans[0].tool == "custom"
+    assert executor.plans[0].args["argv"] == [sys.executable, "-c", "print('ok')"]
+    assert result.outcome_payload["executor"] == "execution_executor"
 
 
 def test_recon_worker_blocks_when_no_real_probe_tool_is_available() -> None:

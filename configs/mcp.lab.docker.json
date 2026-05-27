@@ -1,0 +1,17 @@
+{
+  "servers": {
+    "pentest-tools": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["-m", "src.integrations.mcp_lab.server"],
+      "cwd": "/app",
+      "env": {
+        "AEGRA_LAB_MODE": "1"
+      }
+    },
+    "external-tools": {
+      "transport": "http",
+      "url": "http://host.docker.internal:8765/mcp"
+    }
+  }
+}

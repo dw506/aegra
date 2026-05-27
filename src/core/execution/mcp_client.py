@@ -26,6 +26,9 @@ class MCPClient(Protocol):
     def is_available(self, server_id: str | None = None) -> bool:
         """Return True when the selected MCP server can accept calls."""
 
+    def list_tools(self) -> dict[str, Any]:
+        """Return a catalog of configured MCP tools when available."""
+
     def call_tool(
         self,
         *,
@@ -42,6 +45,9 @@ class UnavailableMCPClient:
 
     def is_available(self, server_id: str | None = None) -> bool:
         return False
+
+    def list_tools(self) -> dict[str, Any]:
+        return {"available": False, "error": "MCP is not configured"}
 
     def call_tool(
         self,

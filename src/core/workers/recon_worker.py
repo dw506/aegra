@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
+from src.core.execution.adapters.local_shell_adapter import LocalShellAdapter
+from src.core.execution.executor import ExecutionExecutor
+from src.core.execution.tool_plan import ToolPlan
+from src.core.execution.tool_result import ToolExecutionResult as ExecutionToolResult
 from src.core.models.ag import GraphRef as KGFactRef
 from src.core.models.events import (
     AgentExecutionContext,
@@ -41,7 +46,55 @@ from src.core.workers.probe_adapters import (
     SSLScanAdapter,
     WhatWebFingerprintAdapter,
 )
-from src.core.workers.tool_runner import ToolExecutionResult, ToolExecutionSpec, ToolRunner
+
+
+class _LegacyProbeExecutionResult:
+    """Compatibility shape consumed by existing probe parsers."""
+
+    def __init__(
+        self,
+        *,
+        command: list[str],
+        attempts: int,
+        success: bool,
+        category: str,
+        exit_code: int | None,
+        stdout: str,
+        stderr: str,
+        duration_sec: float,
+        timed_out: bool,
+        stdout_truncated: bool,
+        stderr_truncated: bool,
+        error_message: str | None,
+    ) -> None:
+        self.command = command
+        self.attempts = attempts
+        self.success = success
+        self.category = category
+        self.exit_code = exit_code
+        self.stdout = stdout
+        self.stderr = stderr
+        self.duration_sec = duration_sec
+        self.timed_out = timed_out
+        self.stdout_truncated = stdout_truncated
+        self.stderr_truncated = stderr_truncated
+        self.error_message = error_message
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "command": self.command,
+            "attempts": self.attempts,
+            "success": self.success,
+            "category": self.category,
+            "exit_code": self.exit_code,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "duration_sec": self.duration_sec,
+            "timed_out": self.timed_out,
+            "stdout_truncated": self.stdout_truncated,
+            "stderr_truncated": self.stderr_truncated,
+            "error_message": self.error_message,
+        }
 
 
 class ReconWorker(BaseWorkerAgent):
@@ -77,11 +130,13 @@ class ReconWorker(BaseWorkerAgent):
         self,
         name: str = "recon_worker",
         *,
-        tool_runner: ToolRunner | None = None,
+        executor: ExecutionExecutor | None = None,
+        tool_runner: Any | None = None,
         probe_adapters: list[ProbeAdapter] | None = None,
     ) -> None:
         super().__init__(name=name)
-        self._tool_runner = tool_runner or ToolRunner()
+        _ = tool_runner
+        self._executor = executor or ExecutionExecutor([LocalShellAdapter()])
         adapters = probe_adapters or [
             NmapAdapter(),
             MasscanAdapter(),
@@ -262,7 +317,7 @@ class ReconWorker(BaseWorkerAgent):
             summary=str(normalized["summary"]),
             payload_ref=str(normalized["payload_ref"]),
             refs=list(request.target_refs),
-            metadata={"tool": normalized["tool"]},
+            metadata={"executor": normalized["executor"], "tool": normalized["tool"]},
         )
         fact_write_requests = self._fact_writes_from_parsed(
             task_id=request.context.task_id,
@@ -320,6 +375,7 @@ class ReconWorker(BaseWorkerAgent):
             checkpoint_hints=checkpoint_hints,
             outcome_payload={
                 "observed": bool(normalized["success"]),
+                "executor": normalized["executor"],
                 "tool": normalized["tool"],
                 "parsed": normalized["parsed"],
             },
@@ -327,7 +383,7 @@ class ReconWorker(BaseWorkerAgent):
         )
 
     def _execute_host_discovery(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> dict[str, Any]:
-        """Execute host discovery via ToolRunner and normalize the result."""
+        """Execute host discovery through the execution layer and normalize the result."""
 
         canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
         host_hint = (
@@ -361,7 +417,7 @@ class ReconWorker(BaseWorkerAgent):
         )
 
     def _execute_service_validation(self, task_spec: WorkerTaskSpec, agent_input: AgentInput) -> dict[str, Any]:
-        """Execute service validation via ToolRunner and normalize the result."""
+        """Execute service validation through the execution layer and normalize the result."""
 
         canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
         canonical_service_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Service")
@@ -400,7 +456,7 @@ class ReconWorker(BaseWorkerAgent):
         task_spec: WorkerTaskSpec,
         agent_input: AgentInput,
     ) -> dict[str, Any]:
-        """Execute identity/context discovery via ToolRunner and normalize the result."""
+        """Execute identity/context discovery through the execution layer and normalize the result."""
 
         identity_hint = (
             task_spec.input_bindings.get("identity")
@@ -488,33 +544,43 @@ class ReconWorker(BaseWorkerAgent):
             except ProbeAdapterUnavailable as exc:
                 attempts.append(f"{adapter.adapter_name}:{exc}")
                 continue
-            spec = ToolExecutionSpec(
-                command=command,
-                timeout_sec=int(metadata.get("tool_timeout_sec", 30)),
-                retries=int(metadata.get("tool_retries", 0)),
-                cwd=metadata.get("tool_cwd"),
-                env={str(key): str(value) for key, value in dict(metadata.get("tool_env", {})).items()},
-                env_allowlist={str(item) for item in metadata.get("tool_env_allowlist", [])}
-                if isinstance(metadata.get("tool_env_allowlist", []), list)
-                else set(),
-                command_allowlist={str(item) for item in metadata.get("command_allowlist", [])}
-                if isinstance(metadata.get("command_allowlist", []), list)
-                else set(),
-                acceptable_exit_codes=adapter.acceptable_exit_codes(mode=mode, metadata=metadata),
-                stdout_max_bytes=int(metadata.get("stdout_max_bytes", metadata.get("tool_stdout_max_bytes", 262144))),
-                stderr_max_bytes=int(metadata.get("stderr_max_bytes", metadata.get("tool_stderr_max_bytes", 65536))),
-                rate_limit_per_sec=float(metadata.get("tool_rate_limit_per_sec", 0.0)),
-                min_interval_sec=float(metadata.get("tool_min_interval_sec", 0.0)),
-                rate_limit_key=str(metadata.get("tool_rate_limit_key", adapter.adapter_name)),
-                policy_metadata={
-                    "kind": adapter.adapter_name,
-                    "name": adapter.adapter_name,
-                    "operation": mode,
-                    "tags": metadata.get("tool_tags", ["safe_probe", "fingerprint"]),
+            plan = ToolPlan(
+                task_id=task_id,
+                tool=adapter.adapter_name,
+                adapter=self._execution_adapter(metadata),
+                command=shlex.join(command),
+                target=target_hint,
+                args={
+                    "argv": command,
+                    "cwd": metadata.get("tool_cwd"),
+                    "env": {str(key): str(value) for key, value in dict(metadata.get("tool_env", {})).items()},
+                    "env_allowlist": list(metadata.get("tool_env_allowlist", []))
+                    if isinstance(metadata.get("tool_env_allowlist", []), list)
+                    else [],
+                    "command_allowlist": list(metadata.get("command_allowlist", []))
+                    if isinstance(metadata.get("command_allowlist", []), list)
+                    else [],
+                    "acceptable_exit_codes": sorted(adapter.acceptable_exit_codes(mode=mode, metadata=metadata)),
+                    "stdout_max_bytes": int(metadata.get("stdout_max_bytes", metadata.get("tool_stdout_max_bytes", 262144))),
+                    "stderr_max_bytes": int(metadata.get("stderr_max_bytes", metadata.get("tool_stderr_max_bytes", 65536))),
                 },
-                isolation=dict(metadata.get("tool_isolation", {})) if isinstance(metadata.get("tool_isolation"), dict) else {},
+                timeout_seconds=int(metadata.get("tool_timeout_sec", 30)),
+                metadata={
+                    "task_type": mode,
+                    "probe_adapter": adapter.adapter_name,
+                    "policy_metadata": {
+                        "kind": adapter.adapter_name,
+                        "name": adapter.adapter_name,
+                        "operation": mode,
+                        "tags": metadata.get("tool_tags", ["safe_probe", "fingerprint"]),
+                    },
+                    "tool_isolation": dict(metadata.get("tool_isolation", {}))
+                    if isinstance(metadata.get("tool_isolation"), dict)
+                    else {},
+                },
             )
-            tool_result = self._tool_runner.run(spec)
+            execution_result = self._executor.execute(plan)
+            tool_result = self._legacy_tool_result(execution_result)
             parsed = adapter.parse_output(
                 execution_result=tool_result,
                 target_hint=target_hint,
@@ -538,10 +604,18 @@ class ReconWorker(BaseWorkerAgent):
         )
         return {
             "adapter": None,
-            "tool_result": ToolExecutionResult(
+            "tool_result": _LegacyProbeExecutionResult(
                 command=[],
+                attempts=1,
                 success=False,
                 category="command_not_found",
+                exit_code=None,
+                stdout="",
+                stderr="",
+                duration_sec=0.0,
+                timed_out=False,
+                stdout_truncated=False,
+                stderr_truncated=False,
                 error_message="; ".join(attempts) or "no probe adapter available",
             ),
             "parsed": parsed,
@@ -571,7 +645,7 @@ class ReconWorker(BaseWorkerAgent):
             payload_ref=str(normalized["payload_ref"]),
             refs=refs,
             extra={
-                "executor": "tool_runner",
+                "executor": "execution_executor",
                 "operation_id": operation_id,
                 "tool": normalized["tool"],
                 "parsed": normalized["parsed"],
@@ -585,7 +659,7 @@ class ReconWorker(BaseWorkerAgent):
         return base | {
             "success": bool(normalized["success"]),
             "confidence": float(normalized["confidence"]),
-            "executor": "tool_runner",
+            "executor": "execution_executor",
             "tool": normalized["tool"],
             "parsed": normalized["parsed"],
         }
@@ -615,6 +689,7 @@ class ReconWorker(BaseWorkerAgent):
             "summary": summary,
             "confidence": float(parsed_model.confidence or metadata.get("confidence", 0.8)),
             "payload_ref": payload_ref,
+            "executor": "execution_executor",
             "tool": tool_result.to_payload() | {
                 "adapter": (adapter.adapter_name if adapter is not None else "unavailable")
             },
@@ -654,6 +729,37 @@ class ReconWorker(BaseWorkerAgent):
                 if (adapter := self._probe_adapters.get(name)) is not None
             ]
         return [self._probe_adapters["custom"]]
+
+    @staticmethod
+    def _execution_adapter(metadata: dict[str, Any]) -> str | None:
+        value = metadata.get("execution_adapter") or metadata.get("adapter")
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _legacy_tool_result(result: ExecutionToolResult) -> _LegacyProbeExecutionResult:
+        metadata = dict(result.metadata)
+        category = str(metadata.get("category") or ("success" if result.success else "nonzero_exit"))
+        error_message = metadata.get("error_message")
+        if error_message is not None:
+            error_message = str(error_message)
+        exit_code = result.exit_code if isinstance(result.exit_code, int) else None
+        return _LegacyProbeExecutionResult(
+            command=[str(item) for item in metadata.get("command", [])] if isinstance(metadata.get("command"), list) else [],
+            attempts=int(metadata.get("attempts", 1)),
+            success=result.success,
+            category=category,
+            exit_code=exit_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            duration_sec=float(metadata.get("duration_sec", 0.0)),
+            timed_out=bool(metadata.get("timed_out", category == "timeout")),
+            stdout_truncated=bool(metadata.get("stdout_truncated", False)),
+            stderr_truncated=bool(metadata.get("stderr_truncated", False)),
+            error_message=error_message,
+        )
 
     @staticmethod
     def _web_followup_task_candidates(

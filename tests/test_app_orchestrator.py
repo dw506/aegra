@@ -291,12 +291,14 @@ def test_orchestrator_builds_default_pipeline_without_planner_llm_when_no_key(tm
         planner_llm_advisor=None,
         critic_llm_advisor=None,
         supervisor_llm_advisor=None,
+        llm_worker_agent=None,
         llm_client_config=None,
         event_sink=None,
         state_delta_sink=None,
     ):
         captured["options"] = options
         captured["planner_llm_advisor"] = planner_llm_advisor
+        captured["llm_worker_agent"] = llm_worker_agent
         captured["llm_client_config"] = llm_client_config
         captured["event_sink"] = event_sink
         captured["state_delta_sink"] = state_delta_sink
@@ -314,6 +316,7 @@ def test_orchestrator_builds_default_pipeline_without_planner_llm_when_no_key(tm
     assert options.enable_packy_planner_advisor is False
     assert options.enable_graph_llm_planner_advisor is False
     assert options.enable_packy_critic_advisor is False
+    assert captured["llm_worker_agent"].name == "llm_worker_agent"
     assert isinstance(orchestrator.pipeline, AgentPipeline)
 
 
@@ -326,12 +329,14 @@ def test_orchestrator_builds_default_pipeline_with_planner_llm_when_key_exists(t
         planner_llm_advisor=None,
         critic_llm_advisor=None,
         supervisor_llm_advisor=None,
+        llm_worker_agent=None,
         llm_client_config=None,
         event_sink=None,
         state_delta_sink=None,
     ):
         captured["options"] = options
         captured["planner_llm_advisor"] = planner_llm_advisor
+        captured["llm_worker_agent"] = llm_worker_agent
         captured["llm_client_config"] = llm_client_config
         captured["event_sink"] = event_sink
         captured["state_delta_sink"] = state_delta_sink
@@ -358,6 +363,7 @@ def test_orchestrator_builds_default_pipeline_with_planner_llm_when_key_exists(t
     assert options.enable_packy_critic_advisor is True
     assert options.enable_packy_supervisor_advisor is True
     assert captured["planner_llm_advisor"] is None
+    assert captured["llm_worker_agent"].name == "llm_worker_agent"
     assert captured["event_sink"] is None
     assert captured["state_delta_sink"] is None
     assert captured["llm_client_config"] == PackyLLMConfig(

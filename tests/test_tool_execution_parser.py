@@ -82,6 +82,36 @@ def test_tool_execution_failure_preserves_stderr_and_exit_code() -> None:
     assert payload["stderr_excerpt"] == "not allowed"
 
 
+def test_tool_execution_parser_preserves_structured_mcp_parsed_payload() -> None:
+    parsed = ToolExecutionParser().parse(
+        {
+            "tool_execution": {
+                "adapter": "mcp_direct",
+                "tool": "nmap_scan",
+                "success": True,
+                "exit_code": 0,
+                "stdout": "80/tcp open http",
+            },
+            "parsed": {
+                "entities": [{"type": "service", "port": 80, "service": "http"}],
+                "relations": [{"type": "HOSTS", "source": "10.0.0.5", "target": "10.0.0.5:80"}],
+                "findings": [{"kind": "open_service", "port": 80}],
+                "runtime_hints": {"services": 1},
+                "writeback_hints": {"observation_category": "service_discovery"},
+            },
+        },
+        _outcome(),
+    )
+
+    payload = parsed.observations[0]["payload"]
+    assert payload["parsed_entities"][0]["service"] == "http"
+    assert payload["parsed_relations"][0]["type"] == "HOSTS"
+    assert payload["runtime_hints"]["services"] == 1
+    assert payload["writeback_hints"]["observation_category"] == "service_discovery"
+    assert parsed.findings[0]["kind"] == "open_service"
+    assert parsed.metadata["parsed"]["entities"][0]["port"] == 80
+
+
 def test_tool_execution_parser_truncates_stdout_excerpt() -> None:
     parsed = ToolExecutionParser().parse(
         {

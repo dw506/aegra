@@ -70,6 +70,8 @@ from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
+from src.core.visualization.graph_event import VisualGraphDelta
+from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
 
 class PhaseTwoApplyResult(BaseModel):
@@ -88,6 +90,7 @@ class PhaseTwoApplyResult(BaseModel):
     kg_event_batch: KGEventBatch | None = None
     state_writer_result: AgentExecutionResult | None = None
     graph_projection_result: AgentExecutionResult | None = None
+    visual_graph_deltas: list[VisualGraphDelta] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
 
 
@@ -261,7 +264,40 @@ class PhaseTwoResultApplier:
                 f"generated {len(worker_generated_tg.candidates)} TG candidate task(s) from worker result"
             )
 
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=kg_store,
+                ag_graph=apply_result.ag_graph,
+                tg_graph=apply_result.tg_graph,
+                include_kg=bool(apply_result.kg_apply_result),
+                include_runtime=bool(runtime_event_refs or canonical_result.tg_node_id or canonical_result.task_id),
+            )
+        )
         return apply_result
+
+    @staticmethod
+    def _visual_graph_deltas(
+        *,
+        operation_id: str,
+        state: RuntimeState,
+        kg_store: KnowledgeGraph | None,
+        ag_graph: dict[str, Any] | None,
+        tg_graph: dict[str, Any] | None,
+        include_kg: bool,
+        include_runtime: bool,
+    ) -> list[VisualGraphDelta]:
+        deltas: list[VisualGraphDelta] = []
+        if include_kg and kg_store is not None:
+            deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="kg", payload=kg_store.to_dict()))
+        if ag_graph is not None:
+            deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="ag", payload=ag_graph))
+        if tg_graph is not None:
+            deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="tg", payload=tg_graph))
+        if include_runtime:
+            deltas.append(runtime_to_delta(operation_id=operation_id, runtime_state=state))
+        return deltas
 
     @staticmethod
     def _order_kg_state_deltas(state_deltas: list[dict[str, Any]]) -> list[dict[str, Any]]:

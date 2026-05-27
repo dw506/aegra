@@ -22,6 +22,12 @@ class AppSettings(BaseModel):
     runtime_store_dir: Path = Field(default_factory=lambda: Path("var/runtime"))
     control_api_title: str = "Aegra Control API"
     control_api_version: str = "0.1.0"
+    control_api_cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ]
+    )
     max_concurrent_workers: int = Field(default=4, ge=1)
     default_operation_budget: int = Field(default=100, ge=1)
     default_scan_timeout_sec: int = Field(default=300, ge=1)
@@ -124,6 +130,13 @@ class AppSettings(BaseModel):
             values["control_api_title"] = environ["AEGRA_CONTROL_API_TITLE"]
         if "AEGRA_CONTROL_API_VERSION" in environ:
             values["control_api_version"] = environ["AEGRA_CONTROL_API_VERSION"]
+        if "AEGRA_CONTROL_API_CORS_ORIGINS" in environ:
+            raw_origins = environ["AEGRA_CONTROL_API_CORS_ORIGINS"].strip()
+            values["control_api_cors_origins"] = (
+                json.loads(raw_origins)
+                if raw_origins.startswith("[")
+                else [item.strip() for item in raw_origins.split(",") if item.strip()]
+            )
         if "AEGRA_MAX_CONCURRENT_WORKERS" in environ:
             values["max_concurrent_workers"] = int(environ["AEGRA_MAX_CONCURRENT_WORKERS"])
         if "AEGRA_DEFAULT_OPERATION_BUDGET" in environ:

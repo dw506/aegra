@@ -14,7 +14,7 @@ from threading import Lock
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 DEFAULT_PACKY_BASE_URL = "https://www.packyapi.com/v1"
@@ -36,6 +36,16 @@ class PackyLLMConfig(BaseModel):
     timeout_sec: float = Field(default=30.0, gt=0.0, le=300.0)
     input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: str | None) -> str:
+        """Accept Packy root URLs while keeping chat-completions calls on /v1."""
+
+        base_url = str(value or DEFAULT_PACKY_BASE_URL).strip().rstrip("/")
+        if base_url in {"https://www.packyapi.com", "http://www.packyapi.com"}:
+            return f"{base_url}/v1"
+        return base_url
 
     @classmethod
     def from_env(cls) -> "PackyLLMConfig":

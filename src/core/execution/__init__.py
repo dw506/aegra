@@ -1,6 +1,7 @@
 """Execution planning and adapter dispatch."""
 
 from src.core.execution.adapters.base import ExecutionAdapter
+from src.core.execution.adapters.http_request_adapter import HttpRequestExecutionAdapter
 from src.core.execution.adapters.incalmo_c2_adapter import IncalmoC2Adapter
 from src.core.execution.adapters.local_shell_adapter import LocalShellAdapter
 from src.core.execution.adapters.mcp_adapter import MCPExecutionAdapter
@@ -8,6 +9,7 @@ from src.core.execution.adapters.netns_shell_adapter import NetnsShellAdapter
 from src.core.execution.adapters.proxy_shell_adapter import ProxyShellAdapter
 from src.core.execution.adapters.tunnel_adapter import TunnelAdapter
 from src.core.execution.adapter_resolver import AdapterPolicyConfig, AdapterResolution, ToolAdapterResolver, ToolBinding
+from src.core.execution.configured_mcp_client import ConfiguredMCPClient, MCPRuntimeConfig, MCPServerConfig
 from src.core.execution.executor import ExecutionExecutor, LegacyToolAdapter, ToolExecutor
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.execution.pivot_context import PivotExecutionContext, PivotExecutionContextResolver
@@ -19,12 +21,16 @@ __all__ = [
     "ExecutionExecutor",
     "AdapterPolicyConfig",
     "AdapterResolution",
+    "ConfiguredMCPClient",
     "ExecutionAdapter",
+    "HttpRequestExecutionAdapter",
     "IncalmoC2Adapter",
     "LocalShellAdapter",
     "LegacyToolAdapter",
     "MCPClient",
     "MCPExecutionAdapter",
+    "MCPRuntimeConfig",
+    "MCPServerConfig",
     "MCPToolCallResult",
     "NetnsShellAdapter",
     "PivotExecutionContext",
