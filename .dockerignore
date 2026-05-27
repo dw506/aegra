@@ -5,3 +5,6 @@
 __pycache__
 *.pyc
 var
+lab/outputs
+node_modules
+web/dashboard/node_modules

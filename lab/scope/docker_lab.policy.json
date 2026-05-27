@@ -1,0 +1,97 @@
+{
+  "policy_version": "v1",
+  "authorized_hosts": [
+    "10.20.0.0/24",
+    "10.30.0.0/24",
+    "dvwa",
+    "juice-shop",
+    "vulhub-s2-045",
+    "pivot-ssh",
+    "internal-web",
+    "internal-db"
+  ],
+  "cidr_whitelist": [
+    "10.20.0.0/24",
+    "10.30.0.0/24"
+  ],
+  "blocked_hosts": [
+    "0.0.0.0/0",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "10.0.0.0/8"
+  ],
+  "allow_safe_probe": true,
+  "allow_fingerprint": true,
+  "sensitive_task_types": [
+    "vulnerability_validation",
+    "establish_pivot"
+  ],
+  "sensitive_tags": [
+    "active_exploit"
+  ],
+  "risk_policy": {
+    "max_risk_level": "medium",
+    "block_active_exploit": false,
+    "block_destructive": true,
+    "block_command_execution": false,
+    "block_file_write": true,
+    "block_reverse_callback": true,
+    "require_approval_for_active_exploit": true
+  },
+  "command_allowlist": [
+    "curl",
+    "nmap",
+    "ssh",
+    "sshpass",
+    "proxychains4",
+    "python",
+    "python3"
+  ],
+  "mcp_server_allowlist": [
+    "pentest-tools"
+  ],
+  "mcp_tool_allowlist": [
+    "run_command",
+    "nmap_scan",
+    "http_probe",
+    "web_fingerprint",
+    "web_discover",
+    "dns_lookup",
+    "tcp_connect_probe",
+    "nuclei_scan",
+    "whatweb_fingerprint",
+    "ffuf_discover"
+  ],
+  "max_concurrent_per_host": {
+    "10.20.0.0/24": 2,
+    "10.30.0.0/24": 1
+  },
+  "rate_limit_per_subnet_per_min": {
+    "10.20.0.0/24": 60,
+    "10.30.0.0/24": 30
+  },
+  "adapter_policy": {
+    "pivot": {
+      "default_route": {
+        "route_id": "route::aegra-agent::pivot-ssh::internal-net::ssh",
+        "source_host": "10.20.0.10",
+        "via_host": "10.20.0.30",
+        "destination_cidr": "10.30.0.0/24",
+        "protocol": "ssh",
+        "transport": {
+          "adapter": "proxy_shell",
+          "proxy_url": "socks5://127.0.0.1:1080"
+        }
+      }
+    },
+    "credentials": {
+      "pivot_ssh": {
+        "host": "10.20.0.30",
+        "user": "pivot",
+        "password": "pivotpass",
+        "transport": "ssh_dynamic_socks",
+        "local_socks_url": "socks5://127.0.0.1:1080"
+      }
+    }
+  }
+}

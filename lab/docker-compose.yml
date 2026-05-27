@@ -1,0 +1,108 @@
+name: aegra-multihost-lab
+
+services:
+  aegra_agent:
+    build:
+      context: ..
+      dockerfile: lab/Dockerfile.aegra
+    container_name: aegra_lab_agent
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app
+      AEGRA_LAB_MODE: "1"
+      AEGRA_MCP_ENABLED: "1"
+      AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
+      AEGRA_RUNTIME_STORE_BACKEND: file
+      AEGRA_RUNTIME_STORE_DIR: /app/lab/outputs/runtime
+      AEGRA_AUDIT_DIR: /app/lab/outputs/audit
+      AEGRA_RUNTIME_POLICY_PATH: /app/lab/scope/docker_lab.policy.json
+      AEGRA_LAB_PIVOT_HOST: 10.20.0.30
+      AEGRA_LAB_PIVOT_USER: pivot
+      AEGRA_LAB_PIVOT_PASSWORD: pivotpass
+      AEGRA_LAB_PIVOT_SOCKS: socks5://127.0.0.1:1080
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - ./outputs:/app/lab/outputs
+    depends_on:
+      dvwa:
+        condition: service_started
+      juice-shop:
+        condition: service_started
+      vulhub-s2-045:
+        condition: service_started
+      pivot-ssh:
+        condition: service_started
+      internal-web:
+        condition: service_started
+      internal-db:
+        condition: service_started
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.10
+    command: ["uvicorn", "src.app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: aegra_lab_dvwa
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.20
+
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: aegra_lab_juice_shop
+    environment:
+      NODE_ENV: unsafe
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.21
+
+  vulhub-s2-045:
+    image: vulhub/struts2:2.3.30
+    container_name: aegra_lab_vulhub_s2_045
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.22
+
+  pivot-ssh:
+    build:
+      context: ./pivot
+      dockerfile: Dockerfile
+    container_name: aegra_lab_pivot_ssh
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.30
+      internal_net:
+        ipv4_address: 10.30.0.30
+
+  internal-web:
+    image: nginx:1.27-alpine
+    container_name: aegra_lab_internal_web
+    networks:
+      internal_net:
+        ipv4_address: 10.30.0.40
+
+  internal-db:
+    image: postgres:16-alpine
+    container_name: aegra_lab_internal_db
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: labpass
+      POSTGRES_DB: labdb
+    networks:
+      internal_net:
+        ipv4_address: 10.30.0.50
+
+networks:
+  dmz_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.20.0.0/24
+  internal_net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.30.0.0/24
