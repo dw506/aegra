@@ -28,6 +28,17 @@ def test_lab_tool_specs_include_v1_tools() -> None:
         "nuclei_scan",
         "whatweb_fingerprint",
         "ffuf_discover",
+        "vuln_profile_match",
+        "validation_precheck",
+        "safe_vuln_validate",
+        "credential_check",
+        "session_probe",
+        "session_open_lab",
+        "identity_context_probe",
+        "privilege_context_probe",
+        "pivot_route_probe",
+        "internal_service_discover",
+        "chain_goal_check",
     }
 
 
@@ -211,6 +222,45 @@ def test_lab_tcp_connect_probe_reports_unreachable(monkeypatch) -> None:
     assert payload["success"] is False
     assert payload["exit_code"] == "unreachable"
     assert payload["parsed"]["runtime_hints"]["reachable"] is False
+
+
+def test_lab_safe_vuln_validate_rejects_unsafe_mode(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+
+    payload = call_lab_tool(
+        "safe_vuln_validate",
+        {"target_url": "http://127.0.0.1", "profile_id": "lab-http-accessible", "safe_mode": False},
+    )
+
+    assert payload["success"] is False
+    assert payload["exit_code"] == "unsafe_mode_rejected"
+    assert payload["parsed"]["runtime_hints"]["blocked_by"] == "unsafe_mode_rejected"
+
+
+def test_lab_session_open_returns_runtime_hints(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+
+    payload = call_lab_tool(
+        "session_open_lab",
+        {"session_id": "sess-1", "bound_target": "host-1", "bound_identity": "alice", "reuse_policy": "shared"},
+    )
+
+    assert payload["success"] is True
+    assert payload["parsed"]["runtime_hints"]["open_session"] is True
+    assert payload["parsed"]["runtime_hints"]["session_id"] == "sess-1"
+
+
+def test_lab_pivot_route_probe_returns_route_hints(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+
+    payload = call_lab_tool(
+        "pivot_route_probe",
+        {"route_id": "route-1", "destination_host": "127.0.0.1", "destination_port": 1, "timeout_seconds": 1},
+    )
+
+    assert payload["success"] is False
+    assert payload["parsed"]["runtime_hints"]["register_pivot_route"] is True
+    assert payload["parsed"]["runtime_hints"]["route_id"] == "route-1"
 
 
 def test_optional_external_tool_returns_structured_unavailable(monkeypatch) -> None:

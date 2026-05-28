@@ -373,8 +373,11 @@ def test_orchestrator_builds_default_pipeline_with_planner_llm_when_key_exists(t
     assert isinstance(options, AgentPipelineAssemblyOptions)
     assert options.enable_packy_planner_advisor is True
     assert options.enable_graph_llm_planner_advisor is True
-    assert options.enable_packy_critic_advisor is True
-    assert options.enable_packy_supervisor_advisor is True
+    assert options.enable_packy_critic_advisor is False
+    assert options.enable_packy_supervisor_advisor is False
+    assert options.include_scheduler is False
+    assert options.include_critic is False
+    assert options.include_supervisor is False
     assert captured["planner_llm_advisor"] is None
     assert captured["llm_worker_agent"].name == "llm_worker_agent"
     assert captured["event_sink"] is None
@@ -489,7 +492,7 @@ def test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback(
     state = orchestrator.get_operation_state("op-loop")
     assert state.execution.metadata["last_control_cycle"]["cycle_index"] == 1
     assert state.execution.metadata["control_cycle_history"][0]["applied_results"][0]["task_id"] == result.applied_task_ids[0]
-    assert any(entry["event_type"] == "tool_invocation" for entry in state.execution.metadata["audit_log"])
+    assert any(entry["event_type"] == "stage_result_applied" for entry in state.execution.metadata["audit_log"])
     assert [item["phase"] for item in state.execution.metadata["phase_checkpoints"]] == [
         "cycle_started",
         "planning_completed",
@@ -527,10 +530,10 @@ def test_orchestrator_run_until_quiescent_stops_when_no_more_tasks(tmp_path) -> 
         "op-loop",
         graph_refs=build_graph_refs(),
         planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
-        max_cycles=3,
+        max_cycles=6,
     )
 
-    assert len(results) == 2
+    assert len(results) == 6
     assert results[-1].stopped is True
     assert results[-1].stop_reason == "no schedulable work and no replan request"
 
@@ -773,7 +776,7 @@ def test_orchestrator_cycle_summary_records_llm_advisor_status(tmp_path) -> None
     }
 
 
-def test_orchestrator_persists_apply_checkpoint_before_feedback_crash(tmp_path) -> None:
+def test_orchestrator_disables_feedback_phase_after_apply(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
         agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
@@ -789,28 +792,27 @@ def test_orchestrator_persists_apply_checkpoint_before_feedback_crash(tmp_path) 
 
     orchestrator._run_feedback_phase = fail_feedback  # type: ignore[method-assign]
 
-    try:
-        orchestrator.run_operation_cycle(
-            "op-crash",
-            graph_refs=build_graph_refs(),
-            planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
-        )
-    except RuntimeError as exc:
-        assert str(exc) == "feedback crashed"
-    else:
-        raise AssertionError("run_operation_cycle should propagate feedback failure")
+    result = orchestrator.run_operation_cycle(
+        "op-crash",
+        graph_refs=build_graph_refs(),
+        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+    )
 
     persisted = orchestrator.runtime_store.export_state_snapshot("op-crash")
     recovery_snapshot = orchestrator.runtime_store.export_recovery_snapshot("op-crash")
     phases = [item["phase"] for item in persisted["execution"]["metadata"]["phase_checkpoints"]]
 
+    assert result.feedback.cycle_name == "feedback_disabled"
+    assert result.feedback.steps == []
     assert phases == [
         "cycle_started",
         "planning_completed",
         "execution_completed",
         "apply_completed",
+        "feedback_completed",
+        "cycle_completed",
     ]
-    assert persisted["execution"]["metadata"]["last_phase_checkpoint"]["phase"] == "apply_completed"
-    assert recovery_snapshot["last_phase_checkpoint"]["phase"] == "apply_completed"
-    assert recovery_snapshot["recovery_metadata"]["last_phase"] == "apply_completed"
-    assert recovery_snapshot["recovery_metadata"]["unclean_shutdown"] is True
+    assert persisted["execution"]["metadata"]["last_phase_checkpoint"]["phase"] == "cycle_completed"
+    assert recovery_snapshot["last_phase_checkpoint"]["phase"] == "cycle_completed"
+    assert recovery_snapshot["recovery_metadata"]["last_phase"] == "cycle_completed"
+    assert recovery_snapshot["recovery_metadata"]["unclean_shutdown"] is False

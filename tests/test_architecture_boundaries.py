@@ -3,6 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from src.app.orchestrator import AppOrchestrator
+from src.app.settings import AppSettings
+from src.core.agents.agent_protocol import AgentKind
 from src.core.workers.base import BaseWorkerAgent
 from src.core.workers.llm_worker import LLMWorkerAgent
 from src.core.workers.registry import WorkerRegistry
@@ -66,6 +69,29 @@ def test_worker_registry_default_excludes_legacy_workers() -> None:
 
     assert {type(worker) for worker in workers} == {LLMWorkerAgent}
     assert all(isinstance(worker, BaseWorkerAgent) for worker in workers)
+
+
+def test_default_main_pipeline_excludes_scheduler_critic_and_supervisor() -> None:
+    pipeline = AppOrchestrator._build_default_pipeline(AppSettings())
+
+    assert pipeline.registry.list_by_kind(AgentKind.SCHEDULER) == []
+    assert pipeline.registry.list_by_kind(AgentKind.CRITIC) == []
+    assert pipeline.registry.list_by_kind(AgentKind.SUPERVISOR) == []
+    assert [agent.name for agent in pipeline.registry.list_by_kind(AgentKind.WORKER)] == ["llm_worker_agent"]
+
+
+def test_orchestrator_main_chain_uses_scheduling_function_and_disables_feedback() -> None:
+    source = Path("src/app/orchestrator.py").read_text(encoding="utf-8")
+    run_cycle_source = source.split("    def run_until_quiescent", maxsplit=1)[0]
+    execution_phase_source = source.split("    def _run_execution_phase", maxsplit=1)[1].split(
+        "    def _run_feedback_phase",
+        maxsplit=1,
+    )[0]
+
+    assert "schedule_ready_tasks(" in execution_phase_source
+    assert "run_execution_cycle(" not in run_cycle_source
+    assert "_run_feedback_phase(" not in run_cycle_source
+    assert 'cycle_name="feedback_disabled"' in run_cycle_source
 
 
 def _imports_under(root: Path) -> list[tuple[Path, str]]:

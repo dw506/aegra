@@ -19,8 +19,9 @@ from src.core.agents.agent_protocol import (
 )
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.registry import AgentNotFoundError, AgentRegistry
-from src.core.models.events import AgentResultAdapter, AgentTaskResult
+from src.core.models.events import AgentTaskResult
 from src.core.models.tg import BaseTaskNode, TaskGraph
+from src.core.runtime.worker_result_adapter import WorkerResultAdapter
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
 
 
@@ -200,6 +201,58 @@ class AgentPipeline:
             self._forward(step)
         return self._cycle("execution", operation_id, steps)
 
+    def run_worker_execution_cycle(
+        self,
+        *,
+        operation_id: str,
+        graph_refs: Sequence[GraphRef],
+        scheduler_payload: dict[str, Any],
+        scheduler_output: AgentOutput,
+        worker_agent: str | None = None,
+        context: AgentContext | dict[str, Any] | None = None,
+    ) -> PipelineCycleResult:
+        """Run worker steps from deterministic scheduler output."""
+
+        steps: list[PipelineStepResult] = []
+        started_at = datetime.now(timezone.utc)
+        scheduler_step = PipelineStepResult(
+            step_name="scheduler",
+            agent_name="schedule_ready_tasks",
+            agent_kind=AgentKind.SCHEDULER,
+            success=not scheduler_output.errors,
+            agent_input=self._build_input(operation_id, graph_refs, scheduler_payload, context=context),
+            agent_output=scheduler_output,
+            started_at=started_at,
+            finished_at=started_at,
+            duration_ms=0,
+        )
+        steps.append(scheduler_step)
+        self._forward(scheduler_step)
+        task_graph = self._resolve_task_graph(scheduler_payload)
+        for index, decision in enumerate(self._accepted(scheduler_output.decisions), start=1):
+            worker_input = self._build_worker_input(
+                operation_id=operation_id,
+                graph_refs=graph_refs,
+                decision=decision,
+                task_graph=task_graph,
+                scheduler_payload=scheduler_payload,
+                context=context,
+            )
+            worker = self._select_worker(
+                worker_input,
+                explicit_name=worker_agent,
+                preferred_name=self._first_text(
+                    decision.get("worker_id"),
+                    self._mapping(scheduler_payload.get("worker_overrides")).get(
+                        str(worker_input.raw_payload.get("task_type"))
+                    ),
+                ),
+            )
+            step = self._dispatch(f"worker[{index}]", worker_input, agent_name=worker.name)
+            steps.append(step)
+            self._forward(step)
+        return self._cycle("execution", operation_id, steps)
+
     def worker_task_results(
         self,
         execution: PipelineCycleResult | Sequence[PipelineStepResult],
@@ -212,7 +265,7 @@ class AgentPipeline:
             if step.agent_kind != AgentKind.WORKER:
                 continue
             results.append(
-                AgentResultAdapter.to_task_result(
+                WorkerResultAdapter.to_task_result(
                     step.agent_output,
                     agent_input=step.agent_input,
                     agent_name=step.agent_name,

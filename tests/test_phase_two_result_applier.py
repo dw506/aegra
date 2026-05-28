@@ -177,6 +177,93 @@ def test_result_applier_merges_worker_task_candidates_into_task_graph() -> None:
     assert applied.tg_graph is not None
 
 
+def test_result_applier_applies_parsed_runtime_hints_to_runtime_managers() -> None:
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    result = AgentTaskResult(
+        request_id="request-runtime-hints",
+        agent_role=AgentRole.ACCESS_WORKER,
+        operation_id="op-1",
+        task_id="task-1",
+        tg_node_id="task-1",
+        status=AgentResultStatus.SUCCEEDED,
+        summary="tool returned runtime hints",
+        observations=[
+            ObservationRecord(
+                category="tool_execution",
+                summary="parsed mcp output",
+                payload={
+                    "parsed": {
+                        "runtime_hints": {
+                            "credential_id": "cred-1",
+                            "credential_status": "valid",
+                            "principal": "alice",
+                            "bind_target": "host-1:80/tcp",
+                            "open_session": True,
+                            "session_id": "sess-1",
+                            "bound_target": "host-1",
+                            "bound_identity": "alice",
+                            "reuse_policy": "shared",
+                            "register_pivot_route": True,
+                            "route_id": "route-1",
+                            "destination_host": "internal-1",
+                            "allowed_ports": [80],
+                            "protocol": "tcp",
+                            "reachable": True,
+                        }
+                    }
+                },
+            )
+        ],
+    )
+
+    applier.apply(result, state, kg_ref=ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"))
+
+    assert state.credentials["cred-1"].status == CredentialStatus.VALID
+    assert "host-1:80/tcp" in state.credentials["cred-1"].bound_targets
+    assert state.sessions["sess-1"].bound_identity == "alice"
+    assert state.sessions["sess-1"].bound_target == "host-1"
+    assert state.session_leases["lease::sess-1::task-1"].session_id == "sess-1"
+    assert state.pivot_routes["route-1"].status == PivotRouteStatus.ACTIVE
+    assert state.pivot_routes["route-1"].allowed_ports == {80}
+
+
+def test_result_applier_generates_attack_chain_followup_candidates() -> None:
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    task_graph = TaskGraph()
+    task_graph.add_node(build_task(TaskType.CREDENTIAL_VALIDATION))
+    result = AgentTaskResult(
+        request_id="request-chain-rules",
+        agent_role=AgentRole.ACCESS_WORKER,
+        operation_id="op-1",
+        task_id="task-1",
+        tg_node_id="task-1",
+        status=AgentResultStatus.SUCCEEDED,
+        summary="credential validated",
+        outcome_payload={
+            "outcome_type": "credential_validation",
+            "credential_validation": {
+                "credential_id": "cred-1",
+                "status": "valid",
+                "target_id": "host-1:80/tcp",
+            },
+        },
+    )
+
+    applied = applier.apply(
+        result,
+        state,
+        kg_ref=ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
+        task_graph=task_graph,
+    )
+
+    assert applied.tg_graph is not None
+    task_types = {item["task_type"] for item in applied.tg_task_candidates}
+    assert TaskType.PRIVILEGE_CONFIGURATION_VALIDATION.value in task_types
+    assert TaskType.LATERAL_REACHABILITY_VALIDATION.value in task_types
+
+
 def build_kg_for_projection() -> KnowledgeGraph:
     kg = KnowledgeGraph()
     kg.add_node(

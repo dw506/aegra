@@ -16,11 +16,30 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
+from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
+
 
 DEFAULT_DISCOVERY_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/admin", "/login"]
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_OUTPUT_CHARS = 20000
 DEFAULT_FFUF_WORDS = ["admin", "login", "robots.txt", "sitemap.xml", "api", "debug", "health"]
+SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
+    "lab-http-accessible": VulnerabilityProfile(
+        vulnerability_id="lab-http-accessible",
+        affected_products=["generic-http"],
+        required_service="http",
+        required_paths=["/"],
+        safe_validation_methods=["http_probe"],
+    ),
+    "lab-default-cred": VulnerabilityProfile(
+        vulnerability_id="lab-default-cred",
+        affected_products=["generic-http-basic"],
+        required_service="http",
+        required_paths=["/"],
+        safe_validation_methods=["http_basic_auth_check"],
+        requires_auth=True,
+    ),
+}
 
 
 LAB_TOOL_SPECS: list[dict[str, Any]] = [
@@ -164,6 +183,159 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "vuln_profile_match",
+        "description": "Match known bounded vulnerability validation profiles to observed lab service metadata.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service": {"type": "string"},
+                "product": {"type": "string"},
+                "version": {"type": "string"},
+                "target_url": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "validation_precheck",
+        "description": "Check non-destructive preconditions for a safe validation profile against a lab target.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target_url", "profile_id"],
+            "properties": {
+                "target_url": {"type": "string"},
+                "profile_id": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "safe_vuln_validate",
+        "description": "Run one bounded non-destructive vulnerability validation profile against an authorized lab target.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target_url", "profile_id"],
+            "properties": {
+                "target_url": {"type": "string"},
+                "profile_id": {"type": "string"},
+                "username": {"type": "string"},
+                "password": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+                "safe_mode": {"type": "boolean", "default": True},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "credential_check",
+        "description": "Validate one provided credential against one lab auth service; no brute forcing.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["auth_method", "target_url", "credential_id", "username", "password"],
+            "properties": {
+                "auth_method": {"type": "string"},
+                "target_url": {"type": "string"},
+                "credential_id": {"type": "string"},
+                "target_service_id": {"type": "string"},
+                "username": {"type": "string"},
+                "password": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "session_probe",
+        "description": "Check whether a lab session handle has enough metadata to be reused.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {"type": "string"},
+                "bound_target": {"type": "string"},
+                "bound_identity": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "session_open_lab",
+        "description": "Register a bounded lab session handle for runtime coordination.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {"type": "string"},
+                "bound_target": {"type": "string"},
+                "bound_identity": {"type": "string"},
+                "lease_seconds": {"type": "integer", "minimum": 1},
+                "reuse_policy": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "identity_context_probe",
+        "description": "Return declared lab identity context facts for a session or host.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True},
+    },
+    {
+        "name": "privilege_context_probe",
+        "description": "Return declared lab privilege context facts without running escalation payloads.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True},
+    },
+    {
+        "name": "pivot_route_probe",
+        "description": "Verify a candidate lab pivot route with bounded TCP or HTTP reachability checks.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["destination_host", "destination_port"],
+            "properties": {
+                "route_id": {"type": "string"},
+                "source_host": {"type": "string"},
+                "via_host": {"type": "string"},
+                "session_id": {"type": "string"},
+                "destination_host": {"type": "string"},
+                "destination_port": {"type": "integer"},
+                "protocol": {"type": "string", "default": "tcp"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "internal_service_discover",
+        "description": "Probe one internal lab service using bounded TCP or HTTP checks.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["host", "port"],
+            "properties": {
+                "host": {"type": "string"},
+                "port": {"type": "integer"},
+                "protocol": {"type": "string", "default": "tcp"},
+                "path": {"type": "string", "default": "/"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "chain_goal_check",
+        "description": "Alias for bounded goal condition checks used at the end of an attack-chain validation.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+                "url": {"type": "string"},
+                "expected_status": {"type": "integer"},
+                "body_contains": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
         "name": "goal_check",
         "description": "Check a bounded goal condition such as HTTP status or body substring.",
         "inputSchema": {
@@ -270,6 +442,28 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _tcp_connect_probe(arguments)
         if name == "http_basic_auth_check":
             return _http_basic_auth_check(arguments)
+        if name == "vuln_profile_match":
+            return _vuln_profile_match(arguments)
+        if name == "validation_precheck":
+            return _validation_precheck(arguments)
+        if name == "safe_vuln_validate":
+            return _safe_vuln_validate(arguments)
+        if name == "credential_check":
+            return _credential_check(arguments)
+        if name == "session_probe":
+            return _session_probe(arguments)
+        if name == "session_open_lab":
+            return _session_open_lab(arguments)
+        if name == "identity_context_probe":
+            return _identity_context_probe(arguments)
+        if name == "privilege_context_probe":
+            return _privilege_context_probe(arguments)
+        if name == "pivot_route_probe":
+            return _pivot_route_probe(arguments)
+        if name == "internal_service_discover":
+            return _internal_service_discover(arguments)
+        if name == "chain_goal_check":
+            return _goal_check(arguments)
         if name == "goal_check":
             return _goal_check(arguments)
         if name == "artifact_store":
@@ -506,6 +700,17 @@ def _http_basic_auth_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "status": response["status"],
     }
     parsed["findings"].append(finding)
+    credential_id = _string(arguments.get("credential_id"))
+    target_service_id = _string(arguments.get("target_service_id")) or url
+    if credential_id is not None:
+        parsed["runtime_hints"] = {
+            "credential_id": credential_id,
+            "credential_status": "valid" if authenticated else "invalid",
+            "bind_target": target_service_id if authenticated else None,
+            "target_service_id": target_service_id,
+            "principal": username,
+            "reason": None if authenticated else f"http_status_{response['status']}",
+        }
     parsed["writeback_hints"] = {"observation_category": "credential_validation", "url": url, "username": username}
     return _payload(
         success=authenticated,
@@ -513,6 +718,237 @@ def _http_basic_auth_check(arguments: dict[str, Any]) -> dict[str, Any]:
         exit_code=response["status"],
         parsed=parsed,
     )
+
+
+def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
+    service = _string(arguments.get("service"))
+    product = (_string(arguments.get("product")) or "").lower()
+    parsed = _default_parsed()
+    matches: list[dict[str, Any]] = []
+    for profile in SAFE_VALIDATION_PROFILES.values():
+        if service and profile.required_service and service.lower() != profile.required_service.lower():
+            continue
+        if product and profile.affected_products and not any(product in item.lower() for item in profile.affected_products):
+            continue
+        item = profile.model_dump(mode="json")
+        matches.append(item)
+        parsed["entities"].append({"type": "vulnerability_profile", **item})
+    parsed["writeback_hints"] = {"observation_category": "vulnerability_profile_match"}
+    return _payload(success=True, stdout=json.dumps(matches, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _validation_precheck(arguments: dict[str, Any]) -> dict[str, Any]:
+    target_url = _required(arguments, "target_url")
+    profile = _profile(_required(arguments, "profile_id"))
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
+    checks = _run_profile_prechecks(target_url=target_url, profile=profile, timeout=timeout)
+    passed = all(item["passed"] for item in checks)
+    parsed = _default_parsed()
+    plan = ValidationPlan(
+        profile_id=profile.vulnerability_id,
+        target_ref=target_url,
+        preconditions=[f"path:{path}" for path in profile.required_paths],
+        tool_sequence=[{"tool": method, "target_url": target_url} for method in profile.safe_validation_methods],
+        expected_evidence=["reachable_required_paths"],
+        timeout_seconds=timeout,
+    )
+    parsed["entities"].append({"type": "validation_plan", **plan.model_dump(mode="json")})
+    parsed["runtime_hints"] = {"validation_precheck_passed": passed, "profile_id": profile.vulnerability_id}
+    parsed["writeback_hints"] = {"observation_category": "validation_precheck", "url": target_url}
+    return _payload(success=passed, stdout=json.dumps({"checks": checks}, ensure_ascii=True), exit_code=0 if passed else "precheck_failed", parsed=parsed)
+
+
+def _safe_vuln_validate(arguments: dict[str, Any]) -> dict[str, Any]:
+    if not bool(arguments.get("safe_mode", True)):
+        return _payload(
+            success=False,
+            stderr="safe_vuln_validate only supports safe_mode=true",
+            exit_code="unsafe_mode_rejected",
+            parsed={"runtime_hints": {"blocked_by": "unsafe_mode_rejected"}},
+        )
+    target_url = _required(arguments, "target_url")
+    profile = _profile(_required(arguments, "profile_id"))
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
+    checks = _run_profile_prechecks(target_url=target_url, profile=profile, timeout=timeout)
+    precheck_passed = all(item["passed"] for item in checks)
+    authenticated: bool | None = None
+    if profile.requires_auth:
+        username = _string(arguments.get("username"))
+        password = _string(arguments.get("password"))
+        if username is None or password is None:
+            validation = ValidationResult(
+                vulnerability_id=profile.vulnerability_id,
+                status="blocked",
+                confidence=0.0,
+                safe_payload_summary="validation not executed because provided credential was missing",
+                evidence={"checks": checks},
+                tool={"name": "safe_vuln_validate"},
+                failure_reason="credential_required",
+            )
+            return _validation_payload(validation=validation, target_url=target_url, success=False)
+        auth_result = _http_basic_auth_check({"url": target_url, "username": username, "password": password, "timeout_seconds": timeout})
+        authenticated = bool(auth_result.get("success"))
+    status = "validated" if (precheck_passed and (authenticated is True or not profile.requires_auth)) else "not_detected"
+    confidence = 0.92 if status == "validated" else 0.35
+    validation = ValidationResult(
+        vulnerability_id=profile.vulnerability_id,
+        status=status,  # type: ignore[arg-type]
+        confidence=confidence,
+        safe_payload_summary="executed bounded profile checks only; no exploit payload executed",
+        evidence={"checks": checks, "authenticated": authenticated},
+        tool={"name": "safe_vuln_validate", "profile_id": profile.vulnerability_id},
+    )
+    return _validation_payload(validation=validation, target_url=target_url, success=status == "validated")
+
+
+def _credential_check(arguments: dict[str, Any]) -> dict[str, Any]:
+    auth_method = _required(arguments, "auth_method")
+    if auth_method != "http_basic":
+        return _payload(
+            success=False,
+            stderr=f"unsupported credential auth_method: {auth_method}",
+            exit_code="unsupported_auth_method",
+            parsed={"runtime_hints": {"blocked_by": "unsupported_auth_method", "auth_method": auth_method}},
+        )
+    return _http_basic_auth_check(
+        {
+            "url": _required(arguments, "target_url"),
+            "username": _required(arguments, "username"),
+            "password": _required(arguments, "password"),
+            "credential_id": _required(arguments, "credential_id"),
+            "target_service_id": arguments.get("target_service_id"),
+            "timeout_seconds": arguments.get("timeout_seconds"),
+        }
+    )
+
+
+def _session_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    session_id = _required(arguments, "session_id")
+    reusable = bool(arguments.get("bound_target") or arguments.get("bound_identity"))
+    parsed = _default_parsed()
+    entity = {
+        "type": "session",
+        "session_id": session_id,
+        "bound_target": _string(arguments.get("bound_target")),
+        "bound_identity": _string(arguments.get("bound_identity")),
+        "reusable": reusable,
+    }
+    parsed["entities"].append(entity)
+    parsed["runtime_hints"] = {"session_id": session_id, "session_reusable": reusable}
+    parsed["writeback_hints"] = {"observation_category": "session_probe"}
+    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
+    session_id = _required(arguments, "session_id")
+    lease_seconds = _int(arguments.get("lease_seconds"), 300)
+    parsed = _default_parsed()
+    parsed["runtime_hints"] = {
+        "open_session": True,
+        "session_id": session_id,
+        "bound_target": _string(arguments.get("bound_target")),
+        "bound_identity": _string(arguments.get("bound_identity")),
+        "lease_seconds": lease_seconds,
+        "reuse_policy": _string(arguments.get("reuse_policy")) or "exclusive",
+    }
+    parsed["writeback_hints"] = {"observation_category": "session_open"}
+    return _payload(success=True, stdout=json.dumps(parsed["runtime_hints"], ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _identity_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    identity = _string(arguments.get("identity")) or _string(arguments.get("username")) or "unknown"
+    host = _string(arguments.get("host")) or _string(arguments.get("target")) or "unknown-host"
+    parsed = _default_parsed()
+    entity = {"type": "identity_context", "host": host, "identity": identity, "session_id": _string(arguments.get("session_id"))}
+    parsed["entities"].append(entity)
+    parsed["runtime_hints"] = {"identity": identity, "host": host, "identity_context_observed": True}
+    parsed["writeback_hints"] = {"observation_category": "identity_context"}
+    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _privilege_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    identity = _string(arguments.get("identity")) or "unknown"
+    host = _string(arguments.get("host")) or "unknown-host"
+    privilege_level = _string(arguments.get("privilege_level")) or "low"
+    groups = _string_items(arguments.get("groups"))
+    parsed = _default_parsed()
+    entity = {
+        "type": "privilege_context",
+        "host": host,
+        "identity": identity,
+        "groups": groups,
+        "privilege_level": privilege_level,
+        "can_write_paths": _string_items(arguments.get("can_write_paths")),
+        "can_execute_commands": bool(arguments.get("can_execute_commands", False)),
+        "sudo_available": bool(arguments.get("sudo_available", False)),
+        "container_runtime": bool(arguments.get("container_runtime", False)),
+    }
+    parsed["entities"].append(entity)
+    parsed["findings"].append({"kind": "privilege_precheck", "status": privilege_level, "confidence": 0.8})
+    parsed["runtime_hints"] = {"privilege_level": privilege_level, "needs_privilege_task": privilege_level in {"low", "limited"}}
+    parsed["writeback_hints"] = {"observation_category": "privilege_context"}
+    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    host = _required(arguments, "destination_host")
+    port = _int(arguments.get("destination_port"), 0)
+    if port <= 0 or port > 65535:
+        raise ValueError("destination_port must be between 1 and 65535")
+    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
+    timeout = _int(arguments.get("timeout_seconds"), 5)
+    if protocol in {"http", "https"}:
+        url = f"{protocol}://{host}:{port}/"
+        try:
+            response = _open_url(url, method="GET", timeout=timeout)
+            reachable = int(response["status"]) < 500
+            error = ""
+        except Exception as exc:
+            reachable = False
+            error = str(exc)
+    else:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                reachable = True
+                error = ""
+        except OSError as exc:
+            reachable = False
+            error = str(exc)
+    route_id = _string(arguments.get("route_id")) or f"route::{_string(arguments.get('source_host')) or 'unknown-source'}::{host}:{port}"
+    parsed = _default_parsed()
+    entity = {"type": "pivot_route", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable}
+    parsed["entities"].append(entity)
+    parsed["runtime_hints"] = {
+        "register_pivot_route": True,
+        "route_id": route_id,
+        "destination_host": host,
+        "source_host": _string(arguments.get("source_host")),
+        "via_host": _string(arguments.get("via_host")),
+        "session_id": _string(arguments.get("session_id")),
+        "allowed_ports": [port],
+        "protocol": protocol,
+        "reachable": reachable,
+        "reason": error,
+    }
+    parsed["writeback_hints"] = {"observation_category": "pivot_route_validation"}
+    return _payload(success=reachable, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), stderr=error, exit_code=0 if reachable else "unreachable", parsed=parsed)
+
+
+def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
+    host = _required(arguments, "host")
+    port = _int(arguments.get("port"), 0)
+    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
+    if protocol in {"http", "https"}:
+        return _http_probe(
+            {
+                "target": host,
+                "port": port,
+                "scheme": protocol,
+                "path": arguments.get("path", "/"),
+                "timeout_seconds": arguments.get("timeout_seconds"),
+            }
+        )
+    return _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
 
 
 def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -647,6 +1083,62 @@ def _parse_nmap_output(target: str, stdout: str) -> dict[str, Any]:
         parsed["entities"].append(entity)
         parsed["relations"].append({"type": "HOSTS", "source": target, "target": f"{target}:{entity['port']}"})
     return parsed
+
+
+def _profile(profile_id: str) -> VulnerabilityProfile:
+    try:
+        return SAFE_VALIDATION_PROFILES[profile_id]
+    except KeyError as exc:
+        raise ValueError(f"unknown validation profile: {profile_id}") from exc
+
+
+def _run_profile_prechecks(*, target_url: str, profile: VulnerabilityProfile, timeout: int) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    base_url = target_url.rstrip("/") + "/"
+    for raw_path in profile.required_paths or ["/"]:
+        path = "/" + str(raw_path).lstrip("/")
+        url = urljoin(base_url, path.lstrip("/"))
+        try:
+            response = _open_url(url, method="GET", timeout=timeout)
+            checks.append(
+                {
+                    "type": "http_path",
+                    "url": url,
+                    "status": response["status"],
+                    "passed": int(response["status"]) < 500,
+                }
+            )
+        except Exception as exc:
+            checks.append({"type": "http_path", "url": url, "passed": False, "error": str(exc)})
+    return checks
+
+
+def _validation_payload(*, validation: ValidationResult, target_url: str, success: bool) -> dict[str, Any]:
+    validation_payload = validation.model_dump(mode="json")
+    parsed = _default_parsed()
+    finding = {
+        "kind": "vulnerability_validation",
+        "vulnerability_id": validation.vulnerability_id,
+        "status": validation.status,
+        "confidence": validation.confidence,
+        "evidence_refs": [],
+    }
+    parsed["findings"].append(finding)
+    parsed["runtime_hints"] = {
+        "validated": validation.status == "validated",
+        "requires_auth": False,
+        "validation_status": validation.status,
+        "vulnerability_id": validation.vulnerability_id,
+    }
+    parsed["writeback_hints"] = {"observation_category": "vulnerability_validation", "url": target_url}
+    parsed["validation"] = validation_payload
+    return _payload(
+        success=success,
+        stdout=json.dumps(finding, ensure_ascii=True, sort_keys=True),
+        stderr=validation.failure_reason or "",
+        exit_code=0 if success else validation.status,
+        parsed=parsed,
+    )
 
 
 def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
@@ -833,6 +1325,13 @@ def _string_items(value: Any) -> list[str]:
         return []
     items = value if isinstance(value, list) else [value]
     return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _safe_artifact_name(value: str) -> str:

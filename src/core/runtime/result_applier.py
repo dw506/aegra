@@ -31,12 +31,12 @@ from src.core.agents.graph_projection import GraphProjectionAgent
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.state_writer import StateWriterAgent
 from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.attack_chain_rules import generate_followup_task_candidates_from_result
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskCandidate, TaskGenerationRequest, TaskGenerationResult, TaskGraphBuilder
 from src.core.graph.tg_merge import merge_task_graphs
 from src.core.models.ag import ActionNode, AttackGraph
 from src.core.models.events import (
-    AgentResultAdapter,
     AgentResultStatus,
     AgentTaskResult,
     FactWriteKind,
@@ -70,6 +70,7 @@ from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
+from src.core.runtime.worker_result_adapter import WorkerResultAdapter
 from src.core.visualization.graph_event import VisualGraphDelta
 from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
@@ -149,7 +150,7 @@ class PhaseTwoResultApplier:
         还是 `AgentExecutionResult`，只处理 canonical result。
         """
 
-        canonical_result = AgentResultAdapter.to_task_result(
+        canonical_result = WorkerResultAdapter.to_task_result(
             result,
             agent_input=agent_input,
             agent_name=agent_name,
@@ -165,13 +166,17 @@ class PhaseTwoResultApplier:
         runtime_event_refs = self._apply_runtime_effects(result=canonical_result, state=state)
         apply_result.runtime_event_refs.extend(runtime_event_refs)
         self._sync_runtime_views_from_result(state=state, result=canonical_result)
+        self._apply_capability_hints(state=state, result=canonical_result)
+        self._apply_failed_hypotheses(state=state, result=canonical_result)
         self._apply_task_lifecycle(state=state, result=canonical_result)
         if task_graph is not None and self._sync_task_graph_lifecycle(task_graph=task_graph, result=canonical_result):
             apply_result.tg_graph = task_graph.to_dict()
             apply_result.logs.append(f"synced TG task {canonical_result.tg_node_id} lifecycle from runtime result")
         self._record_recent_outcome(state=state, result=canonical_result)
+        self._audit_stage_result(state=state, result=canonical_result)
         self._audit_tool_invocations(state=state, result=canonical_result)
         self._audit_tool_execution_from_result(state=state, result=canonical_result)
+        self._audit_stage_tool_trace(state=state, result=canonical_result)
         self._record_evidence_and_findings(state=state, result=canonical_result)
 
         state_writer_input: AgentInput | None = None
@@ -438,6 +443,29 @@ class PhaseTwoResultApplier:
             raw_candidates.extend(metadata_candidates)
         candidates: list[TaskCandidate] = []
         seen: set[str] = set()
+        for proposal in result.task_candidate_proposals:
+            candidate = TaskCandidate(
+                source_action_id=f"{proposal.source_task_id}:{proposal.candidate_id}",
+                task_type=proposal.task_type,
+                input_bindings=dict(proposal.input_bindings),
+                target_refs=list(proposal.target_refs),
+                resource_keys=set(proposal.resource_keys),
+                estimated_cost=0.1,
+                estimated_risk=0.5,
+                estimated_noise=0.2,
+                goal_relevance=0.8,
+            )
+            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+        for candidate in generate_followup_task_candidates_from_result(result):
+            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
         for raw in raw_candidates:
             if not isinstance(raw, dict):
                 continue
@@ -969,7 +997,60 @@ class PhaseTwoResultApplier:
 
     def _sync_runtime_views_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         self._sync_credential_view(state=state, result=result)
+        self._apply_credential_hints(state=state, result=result)
+        self._apply_session_hints(state=state, result=result)
+        self._apply_pivot_route_hints(state=state, result=result)
         self._sync_pivot_route_view(state=state, result=result)
+
+    def _apply_capability_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        capabilities = self._stage_result_items(result, "capabilities_gained")
+        if not capabilities:
+            metadata_items = result.metadata.get("capabilities_gained")
+            if isinstance(metadata_items, list):
+                capabilities = [dict(item) for item in metadata_items if isinstance(item, dict)]
+        if not capabilities:
+            return
+        bucket = state.execution.metadata.setdefault("capabilities", [])
+        existing = {
+            str(item.get("capability_id") or item.get("id")): index
+            for index, item in enumerate(bucket)
+            if isinstance(item, dict) and (item.get("capability_id") or item.get("id"))
+        }
+        for capability in capabilities:
+            payload = {
+                **dict(capability),
+                "source_task_id": capability.get("source_task_id") or result.task_id,
+                "worker_result_id": result.result_id,
+            }
+            key = self._string(payload.get("capability_id") or payload.get("id"))
+            if key is None:
+                key = f"capability::{result.task_id}::{len(bucket)}"
+                payload["capability_id"] = key
+            index = existing.get(key)
+            if index is None:
+                existing[key] = len(bucket)
+                bucket.append(payload)
+            else:
+                bucket[index] = payload
+
+    def _apply_failed_hypotheses(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        failed = self._stage_result_items(result, "failed_hypotheses")
+        if not failed:
+            metadata_items = result.metadata.get("failed_hypotheses")
+            if isinstance(metadata_items, list):
+                failed = [dict(item) for item in metadata_items if isinstance(item, dict)]
+        if not failed:
+            return
+        bucket = state.execution.metadata.setdefault("failed_hypotheses", [])
+        for item in failed:
+            bucket.append(
+                {
+                    **dict(item),
+                    "source_task_id": item.get("source_task_id") or result.task_id,
+                    "worker_result_id": result.result_id,
+                    "recorded_at": utc_now().isoformat(),
+                }
+            )
 
     def _record_evidence_and_findings(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         normalized_evidence = self._normalize_evidence_records(result)
@@ -1172,8 +1253,147 @@ class PhaseTwoResultApplier:
             metadata={"validator_output": raw, "source_task_id": result.task_id},
         )
 
+    def _apply_credential_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        for hints in self._runtime_hints(result):
+            credential_id = self._string(hints.get("credential_id"))
+            if credential_id is None:
+                continue
+            principal = self._string(hints.get("principal") or hints.get("username")) or "unknown-principal"
+            if credential_id not in state.credentials:
+                self._credential_manager.upsert_credential(
+                    state,
+                    credential_id,
+                    principal,
+                    kind=self._string(hints.get("kind") or hints.get("credential_kind")) or "password",
+                    secret_ref=self._string(hints.get("secret_ref")),
+                    source_session_id=self._result_session_id(result=result, task=state.execution.tasks.get(result.task_id)),
+                    metadata={"created_by": "runtime_hints", "source_task_id": result.task_id},
+                )
+            status = (
+                self._string(hints.get("credential_status"))
+                or self._string(hints.get("status"))
+                or ("valid" if bool(hints.get("authenticated")) else None)
+            )
+            if status is None:
+                continue
+            target_id = (
+                self._string(hints.get("bind_target"))
+                or self._string(hints.get("target_service_id"))
+                or self._string(hints.get("target_id"))
+            )
+            self._credential_manager.record_validation(
+                state,
+                credential_id,
+                status=status,
+                target_id=target_id if status == "valid" else None,
+                metadata={"runtime_hints": hints, "source_task_id": result.task_id},
+            )
+
+    def _apply_session_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        for hints in self._runtime_hints(result):
+            if not bool(hints.get("open_session")):
+                continue
+            session_id = self._string(hints.get("session_id")) or f"session::{result.task_id}"
+            lease_seconds = self._int(hints.get("lease_seconds")) or 300
+            reuse_policy = self._string(hints.get("reuse_policy")) or "exclusive"
+            session = self._session_manager.open_session(
+                state,
+                session_id=session_id,
+                bound_identity=self._string(hints.get("bound_identity") or hints.get("identity")),
+                bound_target=self._string(hints.get("bound_target") or hints.get("target_id")),
+                lease_seconds=lease_seconds,
+                reusability=reuse_policy,
+            )
+            self._session_manager.bind_task_to_session(state, result.task_id, session.session_id)
+            lease_id = self._lease_id(session.session_id, result.task_id)
+            lease = self._lease_manager.create_lease(
+                state,
+                lease_id=lease_id,
+                session_id=session.session_id,
+                owner_task_id=result.task_id,
+                lease_seconds=lease_seconds,
+                reuse_policy=reuse_policy,
+                metadata={"created_by": "runtime_hints", "source_task_id": result.task_id},
+            )
+            self._lease_manager.bind_lease_to_task_or_session(
+                state,
+                lease.lease_id,
+                task_id=result.task_id,
+                session_id=session.session_id,
+            )
+
+    def _apply_pivot_route_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        for hints in self._runtime_hints(result):
+            if not bool(hints.get("register_pivot_route")):
+                continue
+            destination_host = self._string(hints.get("destination_host") or hints.get("target_host"))
+            if destination_host is None:
+                continue
+            route = self._pivot_route_manager.refresh_from_reachability(
+                state,
+                destination_host=destination_host,
+                reachable=bool(hints.get("reachable", result.status == AgentResultStatus.SUCCEEDED)),
+                source_host=self._string(hints.get("source_host")),
+                via_host=self._string(hints.get("via_host")),
+                session_id=self._string(hints.get("session_id")) or self._result_session_id(result=result, task=state.execution.tasks.get(result.task_id)),
+                protocol=self._string(hints.get("protocol")),
+                route_id=self._string(hints.get("route_id")),
+                destination_zone=self._string(hints.get("destination_zone")),
+                destination_cidr=self._string(hints.get("destination_cidr")),
+                allowed_ports=self._list_or_set(hints.get("allowed_ports") or hints.get("port")),
+                protocols=self._list_or_set(hints.get("protocols")),
+                hop_count=self._int(hints.get("hop_count")),
+                confidence=self._float(hints.get("confidence")),
+                metadata={"runtime_hints": hints, "source_task_id": result.task_id},
+            )
+            task = state.execution.tasks.get(result.task_id)
+            if task is not None:
+                task.metadata["selected_route_id"] = route.route_id
+
     def _sync_pivot_route_view(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         self._reachability_propagator.sync_from_task_result(state=state, result=result)
+
+    def _audit_stage_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        stage_result = result.outcome_payload.get("stage_result")
+        if not isinstance(stage_result, dict):
+            return
+        self._append_audit_log(
+            state,
+            {
+                "event_type": "stage_result_applied",
+                "at": utc_now().isoformat(),
+                "source_task_id": result.task_id,
+                "worker_result_id": result.result_id,
+                "stage_type": stage_result.get("stage_type"),
+                "stage_status": stage_result.get("status"),
+                "summary": result.summary,
+            },
+        )
+
+    def _audit_stage_tool_trace(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        traces = self._stage_result_items(result, "tool_trace")
+        if not traces:
+            raw = result.outcome_payload.get("tool_trace")
+            if isinstance(raw, list):
+                traces = [dict(item) for item in raw if isinstance(item, dict)]
+        if not traces:
+            return
+        for trace in traces:
+            self._append_audit_log(
+                state,
+                {
+                    "event_type": "stage_tool_trace",
+                    "at": utc_now().isoformat(),
+                    "source_task_id": result.task_id,
+                    "worker_result_id": result.result_id,
+                    "stage_type": result.metadata.get("stage_type") or result.outcome_payload.get("outcome_type"),
+                    "server_id": trace.get("server_id"),
+                    "tool_name": trace.get("tool_name"),
+                    "success": trace.get("success"),
+                    "exit_code": trace.get("exit_code"),
+                    "summary": trace.get("summary"),
+                },
+            )
 
     def _release_task_execution_resources(self, *, state: RuntimeState, task_id: str) -> None:
         task = state.execution.tasks.get(task_id)
@@ -1315,6 +1535,70 @@ class PhaseTwoResultApplier:
             if session_id is not None:
                 return session_id
         return self._string(result.outcome_payload.get("session_id"))
+
+    @classmethod
+    def _runtime_hints(cls, result: AgentTaskResult) -> list[dict[str, Any]]:
+        hints: list[dict[str, Any]] = []
+
+        def add(value: Any) -> None:
+            if isinstance(value, dict):
+                hints.append(dict(value))
+
+        add(result.outcome_payload.get("runtime_hints"))
+        parsed = result.outcome_payload.get("parsed")
+        if isinstance(parsed, dict):
+            add(parsed.get("runtime_hints"))
+        payload = result.outcome_payload.get("payload")
+        if isinstance(payload, dict):
+            add(payload.get("runtime_hints"))
+            nested_parsed = payload.get("parsed")
+            if isinstance(nested_parsed, dict):
+                add(nested_parsed.get("runtime_hints"))
+            mcp_payload = payload.get("mcp_payload")
+            if isinstance(mcp_payload, dict):
+                mcp_parsed = mcp_payload.get("parsed")
+                if isinstance(mcp_parsed, dict):
+                    add(mcp_parsed.get("runtime_hints"))
+        mcp_payload = result.outcome_payload.get("mcp_payload")
+        if isinstance(mcp_payload, dict):
+            mcp_parsed = mcp_payload.get("parsed")
+            if isinstance(mcp_parsed, dict):
+                add(mcp_parsed.get("runtime_hints"))
+        for observation in result.observations:
+            add(observation.payload.get("runtime_hints"))
+            parsed = observation.payload.get("parsed")
+            if isinstance(parsed, dict):
+                add(parsed.get("runtime_hints"))
+        for evidence in result.evidence:
+            add(evidence.metadata.get("runtime_hints"))
+            parsed = evidence.metadata.get("parsed")
+            if isinstance(parsed, dict):
+                add(parsed.get("runtime_hints"))
+            mcp_payload = evidence.metadata.get("mcp_payload")
+            if isinstance(mcp_payload, dict):
+                mcp_parsed = mcp_payload.get("parsed")
+                if isinstance(mcp_parsed, dict):
+                    add(mcp_parsed.get("runtime_hints"))
+
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        for item in hints:
+            fingerprint = tuple(sorted((str(key), str(value)) for key, value in item.items()))
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            deduped.append(item)
+        return deduped
+
+    @staticmethod
+    def _stage_result_items(result: AgentTaskResult, key: str) -> list[dict[str, Any]]:
+        stage_result = result.outcome_payload.get("stage_result")
+        if not isinstance(stage_result, dict):
+            return []
+        value = stage_result.get(key)
+        if not isinstance(value, list):
+            return []
+        return [dict(item) for item in value if isinstance(item, dict)]
 
     @staticmethod
     def _result_target_host_id(result: AgentTaskResult) -> str | None:
@@ -1595,6 +1879,7 @@ class PhaseTwoResultApplier:
                     "status": result.status.value,
                     "source_agent": result.agent_role.value,
                     "worker_result_id": result.result_id,
+                    "outcome_payload": result.outcome_payload,
                 },
             )
         )

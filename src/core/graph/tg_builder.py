@@ -930,6 +930,11 @@ class TaskGraphBuilder:
             TaskType.IDENTITY_CONTEXT_CONFIRMATION: 7,
             TaskType.PRIVILEGE_CONFIGURATION_VALIDATION: 8,
             TaskType.GOAL_CONDITION_VALIDATION: 9,
+            TaskType.RECON_STAGE: 10,
+            TaskType.VULN_ANALYSIS_STAGE: 11,
+            TaskType.EXPLOIT_STAGE: 12,
+            TaskType.ACCESS_PIVOT_STAGE: 13,
+            TaskType.GOAL_STAGE: 14,
         }
         return stage_rank.get(producer, -1) >= 0 and stage_rank.get(producer, -1) < stage_rank.get(consumer, -1)
 

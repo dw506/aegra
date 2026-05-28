@@ -201,7 +201,7 @@ def test_run_until_quiescent_ignores_supervisor_when_llm_disabled(tmp_path) -> N
     assert "last_supervisor_control_strategy" not in state.execution.metadata
 
 
-def test_run_until_quiescent_adopts_supervisor_pause_strategy(tmp_path) -> None:
+def test_run_until_quiescent_does_not_adopt_supervisor_pause_strategy(tmp_path) -> None:
     advisor = StaticSupervisorAdvisor(
         SupervisorDecision(
             strategy=SupervisorStrategy.PAUSE_FOR_REVIEW,
@@ -238,16 +238,17 @@ def test_run_until_quiescent_adopts_supervisor_pause_strategy(tmp_path) -> None:
     )
     state = orchestrator.get_operation_state("op-supervisor-pause")
 
-    assert len(results) == 1
-    assert state.operation_status.value == "paused"
-    assert state.execution.metadata["pause_reason"] == "operator review requested"
-    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "pause_for_review"
-    assert state.execution.metadata["control_cycle_history"][-1]["supervisor_control_strategy"]["accepted"] is True
-    assert state.execution.metadata["llm_decision_history"][-1]["agent_kind"] == "supervisor"
-    assert state.execution.metadata["llm_decision_history"][-1]["accepted"] is True
+    assert len(results) == 2
+    assert state.operation_status.value == "completed"
+    assert "pause_reason" not in state.execution.metadata
+    assert "last_supervisor_control_strategy" not in state.execution.metadata
+    assert not any(
+        item.get("agent_kind") == "supervisor"
+        for item in state.execution.metadata.get("llm_decision_history", [])
+    )
 
 
-def test_run_until_quiescent_supervisor_can_request_existing_replan_flow(tmp_path) -> None:
+def test_run_until_quiescent_supervisor_replan_flow_is_disabled(tmp_path) -> None:
     advisor = StaticSupervisorAdvisor(
         SupervisorDecision(
             strategy=SupervisorStrategy.REQUEST_REPLAN,
@@ -285,12 +286,12 @@ def test_run_until_quiescent_supervisor_can_request_existing_replan_flow(tmp_pat
     state = orchestrator.get_operation_state("op-supervisor-replan")
 
     assert len(results) == 2
-    assert state.replan_requests
-    assert state.replan_requests[0].metadata["source"] == "supervisor"
-    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "request_replan"
+    assert state.operation_status.value == "completed"
+    assert state.replan_requests == []
+    assert "last_supervisor_control_strategy" not in state.execution.metadata
 
 
-def test_run_until_quiescent_rejected_supervisor_strategy_falls_back(tmp_path) -> None:
+def test_run_until_quiescent_rejected_supervisor_strategy_is_not_run(tmp_path) -> None:
     advisor = StaticSupervisorAdvisor(
         SupervisorDecision(
             strategy=SupervisorStrategy.PAUSE_FOR_REVIEW,
@@ -329,11 +330,10 @@ def test_run_until_quiescent_rejected_supervisor_strategy_falls_back(tmp_path) -
 
     assert len(results) == 2
     assert state.operation_status.value == "completed"
-    assert state.execution.metadata["last_supervisor_control_strategy"]["strategy"] == "deterministic_fallback"
-    assert state.execution.metadata["last_supervisor_control_strategy"]["accepted"] is False
-    assert any(
-        item["agent_kind"] == "supervisor" and item["accepted"] is False
-        for item in state.execution.metadata["llm_decision_history"]
+    assert "last_supervisor_control_strategy" not in state.execution.metadata
+    assert not any(
+        item.get("agent_kind") == "supervisor"
+        for item in state.execution.metadata.get("llm_decision_history", [])
     )
 
 
