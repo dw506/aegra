@@ -38,9 +38,9 @@ class AgentPipelineAssemblyOptions(BaseModel):
     enable_packy_supervisor_advisor: bool = False
     include_task_builder: bool = True
     include_scheduler: bool = True
-    include_critic: bool = True
+    include_critic: bool = False
     include_supervisor: bool = False
-    include_recon_worker: bool = True
+    include_recon_worker: bool = False
     include_llm_worker: bool = True
     extra_agents: list[BaseAgent] = Field(default_factory=list)
 
@@ -62,7 +62,8 @@ def build_optional_agent_pipeline(
     """Build a standard agent pipeline with optional Packy planner advice.
 
     中文注释：
-    - 默认情况下，这个 builder 产出的 planner 与原逻辑一致，不挂 LLM advisor。
+    - 默认情况下，这个 builder 只注册 LLM worker 作为任务执行 worker。
+    - 旧图级 critic 与 recon worker 只在显式启用时注册。
     - 只有显式传入 `enable_packy_planner_advisor=True`，或者直接传入
       `planner_llm_advisor`，才会启用可选的规划建议层。
     """
@@ -107,7 +108,11 @@ def build_optional_agent_pipeline(
         agents.append(TaskBuilderAgent())
     if resolved_options.include_scheduler:
         agents.append(SchedulerAgent())
-    if resolved_options.include_critic:
+    if (
+        resolved_options.include_critic
+        or resolved_options.enable_packy_critic_advisor
+        or resolved_critic_advisor is not None
+    ):
         agents.append(CriticAgent(llm_advisor=resolved_critic_advisor))
     if (
         resolved_options.include_supervisor

@@ -14,6 +14,7 @@ from src.core.models.ag import GraphRef
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.events import (
+    AgentResultAdapter,
     AgentResultStatus,
     AgentRole,
     AgentTaskResult,
@@ -334,6 +335,71 @@ def test_result_applier_routes_runtime_kg_and_projection_effects() -> None:
     assert any(entry["event_type"] == "tool_invocation" for entry in state.execution.metadata["audit_log"])
     assert any(entry["event_type"] == "fact_write" for entry in state.execution.metadata["audit_log"])
     assert any(entry["event_type"] == "evidence_chain" for entry in state.execution.metadata["audit_log"])
+
+
+def test_result_applier_applies_parsed_entities_from_adapted_llm_worker_result() -> None:
+    applier = PhaseTwoResultApplier()
+    state = build_state()
+    kg = KnowledgeGraph()
+    agent_input = AgentInput(
+        graph_refs=[ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph")],
+        task_ref="task-1",
+        context=AgentContext(operation_id="op-1"),
+        raw_payload={
+            "task_id": "task-1",
+            "task_type": TaskType.SERVICE_VALIDATION.value,
+        },
+    )
+    agent_output = AgentOutput(
+        outcomes=[
+            {
+                "task_id": "task-1",
+                "outcome_type": TaskType.SERVICE_VALIDATION.value,
+                "success": True,
+                "summary": "MCP service validation completed",
+                "confidence": 0.8,
+                "payload": {
+                    "parsed": {
+                        "entities": [
+                            {"id": "host-1", "type": "HOST", "label": "host-1"},
+                            {"id": "svc-1", "type": "SERVICE", "label": "HTTP", "port": 80},
+                        ],
+                        "relations": [
+                            {"type": "HOSTS", "source": "host-1", "target": "svc-1"},
+                        ],
+                        "findings": [],
+                        "runtime_hints": {},
+                        "writeback_hints": {},
+                    }
+                },
+            }
+        ],
+        evidence=[
+            {
+                "result_type": "SERVICE_VALIDATION_result",
+                "summary": "MCP evidence",
+                "payload_ref": "runtime://worker-results/task-1",
+            }
+        ],
+    )
+    task_result = AgentResultAdapter.to_task_result(
+        agent_output,
+        agent_input=agent_input,
+        agent_name="llm_worker_agent",
+        agent_kind=AgentKind.WORKER,
+    )
+
+    applied = applier.apply(
+        task_result,
+        state,
+        kg_ref=ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
+        kg_store=kg,
+    )
+
+    assert applied.kg_apply_result is not None
+    assert kg.get_node("host-1").label == "host-1"
+    assert kg.get_node("svc-1").label == "HTTP"
+    assert kg.list_edges(type="HOSTS")[0].source == "host-1"
 
 
 def test_result_applier_applies_kg_then_reprojects_ag_and_regenerates_tg_candidates() -> None:

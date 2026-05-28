@@ -41,8 +41,9 @@ class ToolExecutionParser:
         }
         if parsed_payload:
             observation_payload["parsed"] = parsed_payload
-            observation_payload["parsed_entities"] = self._list(parsed_payload.get("entities"))
-            observation_payload["parsed_relations"] = self._list(parsed_payload.get("relations"))
+            observation_payload["entities"] = self._list(parsed_payload.get("entities"))
+            observation_payload["relations"] = self._list(parsed_payload.get("relations"))
+            observation_payload["findings"] = self._list(parsed_payload.get("findings"))
             observation_payload["runtime_hints"] = self._dict(parsed_payload.get("runtime_hints"))
             observation_payload["writeback_hints"] = self._dict(parsed_payload.get("writeback_hints"))
 

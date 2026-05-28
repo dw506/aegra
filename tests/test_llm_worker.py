@@ -20,8 +20,10 @@ from src.core.workers.recon_worker import ReconWorker
 class FakeLLMClient:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.calls: list[dict[str, Any]] = []
 
     def complete_chat(self, **kwargs: Any) -> SimpleNamespace:
+        self.calls.append(dict(kwargs))
         return SimpleNamespace(text=self.text, model="fake", usage=None, cost_usd=None, finish_reason="stop")
 
 
@@ -85,6 +87,28 @@ def test_llm_worker_advisor_extracts_json_decision() -> None:
     assert decision.action == "call_mcp_tool"
     assert decision.server_id == "pentest-tools"
     assert decision.arguments["command"] == "whoami"
+
+
+def test_llm_worker_advisor_prompt_respects_policy_and_current_decision_schema() -> None:
+    client = FakeLLMClient(
+        '{"action":"defer","server_id":null,"tool_name":null,"arguments":{},'
+        '"summary":"missing target","expected_evidence":[],"risk_assessment":"none","writeback_hints":{}}'
+    )
+    advisor = LLMWorkerAdvisor(client=client)  # type: ignore[arg-type]
+
+    advisor.advise(
+        task_spec=WorkerTaskSpec(task_id="task-1", task_type="PORT_SCAN"),
+        agent_input=_agent_input(),
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "safe_scan"}]}},
+    )
+
+    system_prompt = client.calls[0]["system_prompt"]
+    user_prompt = client.calls[0]["user_prompt"]
+    assert "Follow Scheduler and Runtime policy constraints" in system_prompt
+    assert "intentionally does not apply Aegra tool policy" not in system_prompt
+    assert "selected_tool_rationale" in user_prompt
+    assert "expected_parsed_output_schema" in user_prompt
+    assert '"task_intent"' in user_prompt
 
 
 def test_llm_worker_calls_mcp_and_outputs_tool_execution() -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef, GraphScope
+from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, GraphRef, GraphScope
 from src.core.agents.critic import CriticAgent, CriticLLMReview
 from src.core.agents.graph_llm_planner import GraphLLMPlannerAdvisor
 from src.core.agents.packy_critic_advisor import PackyCriticAdvisor
@@ -88,6 +88,8 @@ def test_optional_pipeline_builder_keeps_default_planner_behavior_without_packy(
     assert isinstance(planner, PlannerAgent)
     assert planner._llm_advisor is None  # noqa: SLF001
     assert planner._graph_llm_advisor is None  # noqa: SLF001
+    assert [agent.name for agent in pipeline.registry.list_by_kind(AgentKind.WORKER)] == ["llm_worker_agent"]
+    assert pipeline.registry.list_by_kind(AgentKind.CRITIC) == []
 
 
 def test_optional_pipeline_builder_can_inject_explicit_planner_advisor() -> None:

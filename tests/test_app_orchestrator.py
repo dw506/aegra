@@ -30,7 +30,7 @@ from src.core.graph.tg_builder import TaskCandidate
 from src.core.models.ag import GraphRef as AGGraphRef
 from src.core.models.runtime import OperationRuntime, RuntimeState, TaskRuntime, WorkerRuntime, WorkerStatus
 from src.core.models.runtime import LockStatus, ResourceLock, RuntimeEventRef, SessionLeaseRuntime, SessionRuntime, SessionStatus
-from src.core.models.tg import TaskType
+from src.core.models.tg import BaseTaskNode, TaskType
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
 
 
@@ -279,6 +279,19 @@ def test_orchestrator_create_import_and_start_operation(tmp_path) -> None:
     assert summary.pending_event_count == 0
     assert created.execution.metadata["operation_log"][0]["event_type"] == "operation_created"
     assert started.execution.metadata["operation_log"][-1]["event_type"] == "operation_started"
+    assert started.execution.metadata["graph_initialization"]["target"] == "10.0.0.10"
+    assert started.execution.metadata["graph_initialization"]["initial_task_ids"]
+    assert started.execution.metadata["graph_memory"]["kg_version"] > 0
+    assert started.execution.metadata["graph_memory"]["ag_version"] > 0
+    assert started.execution.metadata["graph_memory"]["tg_version"] > 0
+    assert orchestrator.graph_memory_store.load_kg("op-1").list_nodes()
+    assert orchestrator.graph_memory_store.load_ag("op-1").find_actions()
+    initial_tasks = [
+        node
+        for node in orchestrator.graph_memory_store.load_tg("op-1").list_nodes()
+        if isinstance(node, BaseTaskNode)
+    ]
+    assert initial_tasks
     assert len(orchestrator.list_operations()) == 1
 
 

@@ -36,13 +36,52 @@ class LLMWorkerAdvisorConfig(BaseModel):
     max_prompt_context_chars: int = Field(default=16000, ge=1000, le=100000)
     max_response_chars: int = Field(default=20000, ge=1000, le=200000)
     max_response_json_depth: int = Field(default=12, ge=2, le=50)
-    system_prompt: str = (
-        "You are Aegra's experimental lab worker agent. Return JSON only. "
-        "Analyze the scheduled task and choose whether to call one MCP tool, defer, or fail. "
-        "This lab mode intentionally does not apply Aegra tool policy decisions; use your own judgment. "
-        "Return only fields matching LLMWorkerDecision: action, server_id, tool_name, arguments, "
-        "summary, expected_evidence, risk_assessment, and writeback_hints."
-    )
+    system_prompt: str = """You are Aegra's only task execution worker: llm_worker_agent.
+
+You receive exactly one scheduled TG task, its execution context, optional graph references, runtime hints, and an MCP tool catalog.
+
+Your role:
+- Understand the scheduled TG task.
+- Choose exactly one action:
+  1. call_mcp_tool
+  2. defer
+  3. failed
+- If action=call_mcp_tool, select exactly one MCP server and exactly one MCP tool.
+- Prepare safe and minimal tool arguments.
+- Do not execute more than one tool.
+- Do not perform global planning.
+- Do not create, modify, or delete KG/AG/TG/Runtime state directly.
+- Do not claim task success unless the selected MCP tool can produce evidence relevant to the task.
+- Do not invent facts, hosts, services, vulnerabilities, credentials, paths, sessions, or graph entities.
+- Only use information present in the scheduled task, runtime context, graph refs, raw payload, and MCP tool catalog.
+
+Execution boundaries:
+- SchedulerAgent has already decided that this TG task is schedulable.
+- You are not the SchedulerAgent.
+- You are not the PlannerAgent.
+- You are not the ResultApplier.
+- You only choose a single MCP tool call, defer, or fail.
+- ResultApplier is the only component allowed to write Runtime/KG/AG/TG.
+- Your writeback_hints are only hints; they are not graph writes.
+
+Policy and safety:
+- Follow Scheduler and Runtime policy constraints in the provided context.
+- Treat this as an authorized lab or controlled validation environment.
+- Use the least risky MCP tool that can produce useful evidence.
+- Prefer read-only, discovery, validation, or structured parsing tools.
+- Avoid destructive, persistence, evasion, stealth, credential dumping, or uncontrolled lateral actions unless the TG task explicitly authorizes that exact validation and the MCP catalog marks the tool as safe for that purpose.
+- If the task is ambiguous, out of scope, missing target information, or no suitable MCP tool exists, return defer or failed.
+- If a tool has dry_run, safe_mode, timeout, scope, target, or output_format arguments, set them conservatively when available.
+
+Tool selection rules:
+- Prefer tools that return structured output.
+- Prefer tools whose result can include a parsed object with entities, relations, findings, runtime_hints, and writeback_hints.
+- If only raw output is available, request enough detail for downstream parsing.
+- Do not choose a tool only because it is powerful; choose the safest tool that can answer the scheduled task.
+- Arguments must be minimal and derived from the task/context/catalog.
+- Do not add targets that are not present in the input.
+
+Return JSON only. Do not include markdown, comments, or fields outside the requested schema."""
 
 
 class LLMWorkerAdvisor:
@@ -121,13 +160,44 @@ class LLMWorkerAdvisor:
             "mcp_tool_catalog": mcp_tool_catalog,
             "response_schema": {
                 "action": "call_mcp_tool | defer | failed",
-                "server_id": "required when action=call_mcp_tool",
-                "tool_name": "required when action=call_mcp_tool",
-                "arguments": {"tool_specific": "arguments"},
-                "summary": "short execution rationale or failure reason",
-                "expected_evidence": ["expected outputs"],
-                "risk_assessment": "short lab-mode risk note",
-                "writeback_hints": {"optional": "graph/perception hints"},
+                "server_id": "string or null",
+                "tool_name": "string or null",
+                "arguments": {},
+                "summary": "short reason for the decision",
+                "expected_evidence": [],
+                "risk_assessment": "short safety/scope/risk note",
+                "writeback_hints": {
+                    "task_intent": "short description of what the task is trying to validate or discover",
+                    "selected_tool_rationale": "why this tool is the safest useful tool",
+                    "expected_parsed_output_schema": {
+                        "entities": [],
+                        "relations": [],
+                        "findings": [],
+                        "runtime_hints": {},
+                        "writeback_hints": {},
+                    },
+                    "retry_fallback": {
+                        "retryable": True,
+                        "same_tool": True,
+                        "alternate_server_id": None,
+                        "alternate_tool_name": None,
+                        "argument_changes": {},
+                        "reason": None,
+                    },
+                    "writeback_target": {
+                        "kg": True,
+                        "ag": False,
+                        "tg": False,
+                        "runtime": True,
+                    },
+                    "confidence_basis": [],
+                    "parsing_hints": {
+                        "entity_types": [],
+                        "relation_types": [],
+                        "finding_types": [],
+                        "important_fields": [],
+                    },
+                },
             },
         }
         sanitized = sanitize_llm_payload(payload)

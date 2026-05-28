@@ -296,27 +296,28 @@ class AgentPipeline:
             steps.append(projection_step)
             self._forward(projection_step)
 
-        critic_input = self._build_input(
-            operation_id,
-            graph_refs,
-            {
-                "tg_graph": payload.get("tg_graph"),
-                "task_graph": payload.get("task_graph"),
-                "runtime_state": payload.get("runtime_state"),
-                "runtime_summary": payload.get("runtime_summary"),
-                "critic_context": payload.get("critic_context"),
-                "recent_outcomes": payload.get("recent_outcomes") or self._critic_recent_outcomes(worker_like_steps),
-            },
-            context=context,
-        )
-        critic_step = self._dispatch(
-            "critic",
-            critic_input,
-            agent_name=critic_agent,
-            agent_kind=AgentKind.CRITIC,
-        )
-        steps.append(critic_step)
-        self._forward(critic_step)
+        if critic_agent is not None or bool(payload.get("enable_legacy_graph_critic", False)):
+            critic_input = self._build_input(
+                operation_id,
+                graph_refs,
+                {
+                    "tg_graph": payload.get("tg_graph"),
+                    "task_graph": payload.get("task_graph"),
+                    "runtime_state": payload.get("runtime_state"),
+                    "runtime_summary": payload.get("runtime_summary"),
+                    "critic_context": payload.get("critic_context"),
+                    "recent_outcomes": payload.get("recent_outcomes") or self._critic_recent_outcomes(worker_like_steps),
+                },
+                context=context,
+            )
+            critic_step = self._dispatch(
+                "critic",
+                critic_input,
+                agent_name=critic_agent,
+                agent_kind=AgentKind.CRITIC,
+            )
+            steps.append(critic_step)
+            self._forward(critic_step)
         return self._cycle("feedback", operation_id, steps)
 
     def run_supervisor_cycle(

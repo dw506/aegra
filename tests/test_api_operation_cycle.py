@@ -19,6 +19,13 @@ from src.core.models.runtime import WorkerRuntime, WorkerStatus
 
 from test_app_orchestrator import FakePlannerAgent, FakeWorkerAgent, build_graph_refs
 
+
+class FakeAnyTaskWorkerAgent(FakeWorkerAgent):
+    def supports_task(self, task_spec) -> bool:
+        del task_spec
+        return True
+
+
 try:
     from fastapi.testclient import TestClient
 except Exception as exc:  # pragma: no cover - depends on optional HTTP deps
@@ -48,7 +55,7 @@ def _build_client(tmp_path, *, runtime_policy: dict | None = None):
             FakePlannerAgent(),
             TaskBuilderAgent(),
             SchedulerAgent(),
-            FakeWorkerAgent(),
+            FakeAnyTaskWorkerAgent(),
             CriticAgent(),
         ]
     )

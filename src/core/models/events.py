@@ -434,6 +434,11 @@ class AgentResultAdapter:
             or f"worker completed task {task_id}"
         )
         outcome_payload = dict(outcome) if isinstance(outcome, dict) else {}
+        observations = cls._observations_with_parsed_writeback(
+            observations=observations,
+            outcome_payload=outcome_payload,
+            evidence=evidence,
+        )
         return AgentTaskResult(
             request_id=str(agent_input.decision_ref or f"{agent_name or 'worker'}-{task_id}"),
             agent_role=cls._agent_role(agent_input),
@@ -479,6 +484,80 @@ class AgentResultAdapter:
             return AgentResultStatus.FAILED
         return AgentResultStatus.SUCCEEDED
 
+    @classmethod
+    def _observations_with_parsed_writeback(
+        cls,
+        *,
+        observations: list[ObservationRecord],
+        outcome_payload: dict[str, Any],
+        evidence: list[EvidenceArtifact],
+    ) -> list[ObservationRecord]:
+        parsed = cls._first_parsed_payload(outcome_payload=outcome_payload, evidence=evidence)
+        if not parsed:
+            return observations
+
+        writeback_payload = cls._parsed_writeback_payload(parsed)
+        if observations:
+            first = observations[0]
+            merged_payload = {**dict(first.payload), **writeback_payload}
+            return [
+                first.model_copy(update={"payload": merged_payload}),
+                *observations[1:],
+            ]
+
+        confidence = outcome_payload.get("confidence", 0.5)
+        try:
+            normalized_confidence = float(confidence)
+        except (TypeError, ValueError):
+            normalized_confidence = 0.5
+        return [
+            ObservationRecord(
+                category="tool_execution",
+                summary="Parsed worker result prepared for KG writeback",
+                confidence=max(0.0, min(1.0, normalized_confidence)),
+                payload=writeback_payload,
+            )
+        ]
+
+    @classmethod
+    def _first_parsed_payload(
+        cls,
+        *,
+        outcome_payload: dict[str, Any],
+        evidence: list[EvidenceArtifact],
+    ) -> dict[str, Any]:
+        candidates: list[Any] = []
+        nested_payload = outcome_payload.get("payload")
+        if isinstance(nested_payload, dict):
+            candidates.append(nested_payload.get("parsed"))
+            mcp_payload = nested_payload.get("mcp_payload")
+            if isinstance(mcp_payload, dict):
+                candidates.append(mcp_payload.get("parsed"))
+        candidates.append(outcome_payload.get("parsed"))
+        mcp_payload = outcome_payload.get("mcp_payload")
+        if isinstance(mcp_payload, dict):
+            candidates.append(mcp_payload.get("parsed"))
+        for item in evidence:
+            candidates.append(item.metadata.get("parsed"))
+            mcp_payload = item.metadata.get("mcp_payload")
+            if isinstance(mcp_payload, dict):
+                candidates.append(mcp_payload.get("parsed"))
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                return dict(candidate)
+        return {}
+
+    @classmethod
+    def _parsed_writeback_payload(cls, parsed: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "parsed": dict(parsed),
+            "entities": cls._list(parsed.get("entities")),
+            "relations": cls._list(parsed.get("relations")),
+            "findings": cls._list(parsed.get("findings")),
+            "runtime_hints": cls._mapping(parsed.get("runtime_hints")),
+            "writeback_hints": cls._mapping(parsed.get("writeback_hints")),
+        }
+
     @staticmethod
     def _graph_refs(value: Any) -> list[GraphRef]:
         if not isinstance(value, list):
@@ -511,6 +590,10 @@ class AgentResultAdapter:
     @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:
         return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _list(value: Any) -> list[Any]:
+        return list(value) if isinstance(value, list) else []
 
     @staticmethod
     def _string(value: Any) -> str | None:

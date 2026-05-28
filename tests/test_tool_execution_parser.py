@@ -104,8 +104,9 @@ def test_tool_execution_parser_preserves_structured_mcp_parsed_payload() -> None
     )
 
     payload = parsed.observations[0]["payload"]
-    assert payload["parsed_entities"][0]["service"] == "http"
-    assert payload["parsed_relations"][0]["type"] == "HOSTS"
+    assert payload["entities"][0]["service"] == "http"
+    assert payload["relations"][0]["type"] == "HOSTS"
+    assert payload["findings"][0]["kind"] == "open_service"
     assert payload["runtime_hints"]["services"] == 1
     assert payload["writeback_hints"]["observation_category"] == "service_discovery"
     assert parsed.findings[0]["kind"] == "open_service"

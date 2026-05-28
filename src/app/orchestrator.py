@@ -15,6 +15,7 @@ from src.core.agents.packy_llm import PackyLLMClient
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.graph.tg_merge import merge_task_graphs
@@ -219,6 +220,22 @@ class AppOrchestrator:
 
         started_at = utc_now()
         state = self.runtime_store.snapshot(operation_id)
+        graph_initialization = self._ensure_graph_initialized_from_targets(state)
+        if graph_initialization is not None:
+            state.execution.metadata["graph_initialization"] = graph_initialization
+            kg, ag, tg, graph_runtime = self._load_graph_memory(operation_id)
+            state.execution.metadata["graph_memory"] = self._graph_memory_metadata(
+                kg=kg,
+                ag=ag,
+                tg=tg,
+                loaded_runtime=graph_runtime is not None,
+            )
+            self._log_operation_event(
+                state,
+                event_type="graph_memory_initialized",
+                target=graph_initialization["target"],
+                initial_task_count=len(graph_initialization["initial_task_ids"]),
+            )
         state.operation_status = RuntimeStatus.READY
         state.execution.status = RuntimeStatus.READY
         state.execution.started_at = state.execution.started_at or started_at
@@ -1015,6 +1032,49 @@ class AppOrchestrator:
         runtime = self.graph_memory_store.load_runtime(operation_id)
         return kg, ag, tg, runtime
 
+    def _ensure_graph_initialized_from_targets(self, state: RuntimeState) -> dict[str, Any] | None:
+        """Initialize KG / AG / TG from imported targets when graph memory is empty."""
+
+        kg, ag, tg, _runtime = self._load_graph_memory(state.operation_id)
+        if kg.list_nodes() or ag.list_nodes() or tg.list_nodes():
+            return None
+
+        target = self._initial_graph_target(state)
+        if target is None:
+            return None
+
+        result = GraphInitializer(self.graph_memory_store).initialize(
+            operation_id=state.operation_id,
+            target=target,
+            persist=True,
+        )
+        return {
+            "operation_id": result.operation_id,
+            "target": result.target.raw,
+            "target_kind": result.target.kind,
+            "host_id": result.host_id,
+            "goal_id": result.goal_id,
+            "scope_id": result.scope_id,
+            "initial_action_ids": list(result.initial_action_ids),
+            "initial_task_ids": list(result.initial_task_ids),
+        }
+
+    @staticmethod
+    def _initial_graph_target(state: RuntimeState) -> str | None:
+        """Return the first imported target value suitable for graph initialization."""
+
+        inventory = state.execution.metadata.get("target_inventory", [])
+        if not isinstance(inventory, list):
+            return None
+        for item in inventory:
+            if not isinstance(item, dict):
+                continue
+            for key in ("url", "value", "address", "hostname"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
     def _planner_payload_with_graph_memory(
         self,
         planner_payload: dict[str, Any],
@@ -1185,6 +1245,8 @@ class AppOrchestrator:
             "runtime_summary": self._runtime_summary(runtime_state),
             "recent_outcomes": list(recent_outcomes),
         }
+        if self.settings.enable_critic_llm_advisor:
+            payload.setdefault("enable_legacy_graph_critic", True)
         return pipeline.run_feedback_cycle(
             operation_id=operation_id,
             graph_refs=graph_refs,

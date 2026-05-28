@@ -33,7 +33,7 @@ from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.graph.tg_builder import TaskCandidate
 from src.core.models.ag import AttackGraph, GraphRef as AGGraphRef
-from src.core.models.events import AgentRole
+from src.core.models.events import AgentResultAdapter, AgentRole
 from src.core.models.kg import DataAsset, Goal, Host, HostsEdge, Service, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
 from src.core.models.runtime import OperationRuntime, RuntimeState, WorkerRuntime, WorkerStatus
@@ -333,6 +333,71 @@ def test_pipeline_worker_task_results_are_canonical_agent_task_results() -> None
     assert results[0].agent_role == AgentRole.RECON_WORKER
     assert results[0].metadata["adapted_from"] == "agent_output"
     assert results[0].evidence[0].payload_ref == "runtime://worker-results/task-1"
+
+
+def test_feedback_cycle_skips_critic_by_default() -> None:
+    pipeline = AgentPipeline(agents=[CriticAgent()])
+
+    feedback = pipeline.run_feedback_cycle(
+        operation_id="op-1",
+        graph_refs=build_agent_graph_refs(),
+        feedback_payload={"tg_graph": build_ready_task_graph().to_dict()},
+    )
+
+    assert feedback.success is True
+    assert feedback.steps == []
+
+
+def test_agent_result_adapter_promotes_parsed_payload_for_direct_result_applier_path() -> None:
+    agent_input = AgentInput(
+        graph_refs=build_agent_graph_refs(),
+        task_ref="task-1",
+        context=build_agent_context(),
+        raw_payload={
+            "task_id": "task-1",
+            "task_type": TaskType.SERVICE_VALIDATION.value,
+        },
+    )
+    output = AgentOutput(
+        outcomes=[
+            {
+                "task_id": "task-1",
+                "outcome_type": "SERVICE_VALIDATION",
+                "success": True,
+                "summary": "mcp service validation completed",
+                "confidence": 0.8,
+                "payload": {
+                    "parsed": {
+                        "entities": [{"id": "svc-1", "type": "SERVICE", "label": "HTTP", "port": 80}],
+                        "relations": [{"type": "HOSTS", "source": "host-1", "target": "svc-1"}],
+                        "findings": [{"kind": "open_service", "service_id": "svc-1"}],
+                        "runtime_hints": {"services": 1},
+                        "writeback_hints": {"source": "mcp"},
+                    }
+                },
+            }
+        ],
+        evidence=[
+            {
+                "result_type": "SERVICE_VALIDATION_result",
+                "summary": "mcp evidence",
+                "payload_ref": "runtime://worker-results/task-1",
+            }
+        ],
+    )
+
+    result = AgentResultAdapter.to_task_result(
+        output,
+        agent_input=agent_input,
+        agent_name="llm_worker_agent",
+        agent_kind=AgentKind.WORKER,
+    )
+
+    payload = result.observations[0].payload
+    assert payload["entities"][0]["id"] == "svc-1"
+    assert payload["relations"][0]["type"] == "HOSTS"
+    assert payload["findings"][0]["kind"] == "open_service"
+    assert payload["runtime_hints"]["services"] == 1
 
 
 def test_worker_cannot_write_kg_ag_tg_structural_state() -> None:
