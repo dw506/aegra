@@ -10,6 +10,40 @@ from src.core.models.ag import GraphRef, stable_node_id
 from src.core.stage.models import StageTask, StageType
 
 
+STAGE_PLAN: tuple[tuple[StageType, str, list[str], int], ...] = (
+    (
+        StageType.RECON_STAGE,
+        "Discover reachable hosts, services, fingerprints and entry points.",
+        ["host/service/endpoint facts produced", "candidate vuln analysis tasks identified"],
+        90,
+    ),
+    (
+        StageType.VULN_ANALYSIS_STAGE,
+        "Analyze discovered services and paths for viable vulnerability hypotheses.",
+        ["vulnerability hypotheses produced", "exploit candidates ranked"],
+        80,
+    ),
+    (
+        StageType.EXPLOIT_STAGE,
+        "Use validated exploit candidates to establish an access capability.",
+        ["access capability or failure evidence produced"],
+        70,
+    ),
+    (
+        StageType.ACCESS_PIVOT_STAGE,
+        "Validate access, credentials, sessions and pivot routes for downstream reachability.",
+        ["session/credential/pivot context validated"],
+        60,
+    ),
+    (
+        StageType.GOAL_STAGE,
+        "Verify the mission goal and produce final evidence.",
+        ["goal satisfied evidence or final blocker produced"],
+        50,
+    ),
+)
+
+
 class MissionPlannerResult(BaseModel):
     """Planner output containing stage task proposals and dependencies."""
 
@@ -58,7 +92,15 @@ class MissionPlannerAgent:
                 graph_context=graph_context,
                 policy_context=dict(policy_context or {}),
             )
-            return raw if isinstance(raw, MissionPlannerResult) else MissionPlannerResult.model_validate(raw)
+            advised = raw if isinstance(raw, MissionPlannerResult) else MissionPlannerResult.model_validate(raw)
+            if advised.stage_tasks:
+                return advised
+            fallback = self._heuristic_plan(operation_id=operation_id, goal=goal, graph_context=graph_context)
+            fallback.metadata = {
+                **dict(fallback.metadata),
+                "advisor_fallback": advised.model_dump(mode="json"),
+            }
+            return fallback
         return self._heuristic_plan(operation_id=operation_id, goal=goal, graph_context=graph_context)
 
     def _explicit_plan(self, *, operation_id: str, graph_context: dict[str, Any]) -> MissionPlannerResult | None:
@@ -89,17 +131,11 @@ class MissionPlannerAgent:
 
     def _heuristic_plan(self, *, operation_id: str, goal: str, graph_context: dict[str, Any]) -> MissionPlannerResult:
         target_refs = self._target_refs(graph_context)
-        chain = [
-            (StageType.RECON_STAGE, "Discover reachable hosts, services, fingerprints and entry points."),
-            (StageType.VULN_ANALYSIS_STAGE, "Analyze discovered services and paths for viable vulnerability hypotheses."),
-            (StageType.EXPLOIT_STAGE, "Use validated exploit candidates to establish an access capability."),
-            (StageType.ACCESS_PIVOT_STAGE, "Validate access, credentials, sessions and pivot routes for downstream reachability."),
-            (StageType.GOAL_STAGE, goal or "Verify the mission goal and produce final evidence."),
-        ]
         stage_tasks: list[StageTask] = []
         dependencies: list[dict[str, str]] = []
         previous_id: str | None = None
-        for stage_type, objective in chain:
+        for stage_type, default_objective, success_criteria, priority in STAGE_PLAN:
+            objective = goal if stage_type == StageType.GOAL_STAGE and goal else default_objective
             task_id = stable_node_id(
                 "stage-task",
                 {
@@ -116,10 +152,10 @@ class MissionPlannerAgent:
                     objective=objective,
                     target_refs=target_refs,
                     required_context={"mission_goal": goal},
-                    success_criteria=self._success_criteria(stage_type),
+                    success_criteria=list(success_criteria),
                     max_steps=8,
                     risk_level="medium",
-                    priority=self._priority(stage_type),
+                    priority=priority,
                 )
             )
             if previous_id is not None:
@@ -191,25 +227,5 @@ class MissionPlannerAgent:
             metadata=dict(payload.get("metadata") or {}),
         )
 
-    @staticmethod
-    def _success_criteria(stage_type: StageType) -> list[str]:
-        return {
-            StageType.RECON_STAGE: ["host/service/endpoint facts produced", "candidate vuln analysis tasks identified"],
-            StageType.VULN_ANALYSIS_STAGE: ["vulnerability hypotheses produced", "exploit candidates ranked"],
-            StageType.EXPLOIT_STAGE: ["access capability or failure evidence produced"],
-            StageType.ACCESS_PIVOT_STAGE: ["session/credential/pivot context validated"],
-            StageType.GOAL_STAGE: ["goal satisfied evidence or final blocker produced"],
-        }[stage_type]
 
-    @staticmethod
-    def _priority(stage_type: StageType) -> int:
-        return {
-            StageType.RECON_STAGE: 90,
-            StageType.VULN_ANALYSIS_STAGE: 80,
-            StageType.EXPLOIT_STAGE: 70,
-            StageType.ACCESS_PIVOT_STAGE: 60,
-            StageType.GOAL_STAGE: 50,
-        }[stage_type]
-
-
-__all__ = ["MissionPlannerAgent", "MissionPlannerAdvisor", "MissionPlannerResult"]
+__all__ = ["MissionPlannerAgent", "MissionPlannerAdvisor", "MissionPlannerResult", "STAGE_PLAN"]

@@ -24,6 +24,7 @@ from src.core.models.events import AgentTaskResult
 from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.models.tg import BaseTaskNode, DependencyType, TaskGraph, TaskStatus
+from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
 from src.core.planning.stage_task_builder import StageTaskGraphBuilder
 from src.core.runtime.audit_report import build_operation_audit_report
@@ -39,6 +40,7 @@ from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultA
 from src.core.scheduling.scheduler import schedule_ready_tasks
 from src.core.scheduling.stage_scheduler import schedule_ready_stage_tasks
 from src.core.stage.adapters import StageResultAdapter
+from src.core.stage.llm_stage_advisor import LLMStageAdvisor
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
 from src.core.visualization.graph_publisher import graph_delta_publisher
@@ -142,11 +144,24 @@ class AppOrchestrator:
             if self.settings.mcp_enabled
             else None
         )
+        llm_client_config = self.settings.to_packy_llm_config()
+        stage_llm_client = (
+            PackyLLMClient(llm_client_config)
+            if llm_client_config is not None and self._planner_llm_enabled(self.settings)
+            else None
+        )
+        stage_advisor = LLMStageAdvisor(client=stage_llm_client) if stage_llm_client is not None else None
         self.stage_registry = StageAgentRegistry.default(
+            advisor=stage_advisor,
             mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
-        self.mission_planner = MissionPlannerAgent()
+        mission_advisor = (
+            LLMMissionPlannerAdvisor(client=stage_llm_client)
+            if stage_llm_client is not None
+            else None
+        )
+        self.mission_planner = MissionPlannerAgent(advisor=mission_advisor)
         self.stage_task_builder = StageTaskGraphBuilder()
 
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
@@ -168,6 +183,7 @@ class AppOrchestrator:
                 "default_operation_budget": self.settings.default_operation_budget,
                 "default_scan_timeout_sec": self.settings.default_scan_timeout_sec,
                 "llm_advisors": self._llm_advisor_status(self.settings),
+                "agent_architecture": self._agent_architecture_metadata(self.settings),
             },
             # 中文注释：
             # operation metadata 中只落稳定 JSON 结构，避免把 Pydantic 对象直接塞进 state。
@@ -470,6 +486,7 @@ class AppOrchestrator:
             tg=task_graph,
             loaded_runtime=graph_runtime is not None,
         )
+        state.execution.metadata["agent_architecture"] = self._agent_architecture_metadata(self.settings)
         state.operation_status = RuntimeStatus.RUNNING
         state.execution.status = RuntimeStatus.RUNNING
         mark_unclean_shutdown(state, cycle_index=cycle_index)
@@ -1416,6 +1433,7 @@ class AppOrchestrator:
         summary = {
             "cycle_index": cycle_index,
             "started_at": utc_now().isoformat(),
+            "architecture": "graph_driven_multi_agent_multihost",
             "planning_success": planning.success,
             "execution_success": execution.success,
             "feedback_success": feedback.success,
@@ -1820,6 +1838,44 @@ class AppOrchestrator:
             "configured": config is not None,
             "model": config.model if config is not None else None,
             "base_url": config.base_url if config is not None else None,
+        }
+
+    @staticmethod
+    def _agent_architecture_metadata(settings: AppSettings) -> dict[str, Any]:
+        """Stable description of the graph-driven multi-agent runtime."""
+
+        llm_configured = settings.to_packy_llm_config() is not None
+        llm_stage_enabled = llm_configured and AppOrchestrator._planner_llm_enabled(settings)
+        return {
+            "architecture": "graph_driven_multi_agent_multihost",
+            "graph_layer": {
+                "components": ["KG", "AG", "TG", "runtime"],
+                "llm_enabled": False,
+            },
+            "planner_agent": {
+                "implementation": "MissionPlannerAgent",
+                "enabled": True,
+                "reads": ["KG", "AG", "TG", "runtime"],
+                "writes": ["TG stage tasks"],
+                "reasoning_backend": "llm" if llm_stage_enabled else "deterministic",
+            },
+            "execution_layer": {
+                "enabled": True,
+                "reasoning_backend": "llm" if llm_stage_enabled else "deterministic",
+                "agents": [
+                    "ReconAgent",
+                    "VulnAnalysisAgent",
+                    "ExploitAgent",
+                    "AccessPivotAgent",
+                    "GoalAgent",
+                ],
+            },
+            "stage_result_writeback": {
+                "adapter": "StageResultAdapter",
+                "applier": "PhaseTwoResultApplier",
+                "llm_enabled": False,
+                "writes": ["KG facts", "AG state", "TG status/candidates", "runtime sessions/credentials/pivots"],
+            },
         }
 
     @staticmethod
