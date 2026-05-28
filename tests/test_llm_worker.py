@@ -14,6 +14,7 @@ from src.core.workers.base import WorkerTaskSpec
 from src.core.workers.llm_worker import LLMWorkerAgent
 from src.core.workers.llm_worker_advisor import LLMWorkerAdvisor
 from src.core.workers.llm_worker_models import LLMWorkerDecision
+from src.core.workers.recon_worker import ReconWorker
 
 
 class FakeLLMClient:
@@ -213,6 +214,20 @@ def test_pipeline_scheduler_routes_accepted_task_to_single_llm_worker() -> None:
     assert result.success is True
     assert len(worker_steps) == 1
     assert mcp.calls[0]["tool_name"] == "run_command"
+
+
+def test_pipeline_prefers_concrete_worker_before_llm_fallback() -> None:
+    pipeline = AgentPipeline(agents=[LLMWorkerAgent(), ReconWorker()])
+    worker_input = pipeline._build_input(
+        "op-worker-selection",
+        [GraphRef(graph=GraphScope.KG, ref_id="kg-host::abc", ref_type="Host")],
+        {"task_id": "task-1", "task_type": TaskType.ASSET_CONFIRMATION.value},
+        task_ref="task-1",
+    )
+
+    worker = pipeline._select_worker(worker_input)
+
+    assert isinstance(worker, ReconWorker)
 
 
 def test_tool_execution_parser_accepts_llm_worker_output() -> None:

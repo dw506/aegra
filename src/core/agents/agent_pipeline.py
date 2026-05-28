@@ -453,7 +453,10 @@ class AgentPipeline:
                 continue
             if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
                 return agent
-        for agent in self.registry.list_by_kind(AgentKind.WORKER):
+        workers = self.registry.list_by_kind(AgentKind.WORKER)
+        fallback_workers = [agent for agent in workers if agent.name == "llm_worker_agent"]
+        concrete_workers = [agent for agent in workers if agent.name != "llm_worker_agent"]
+        for agent in [*concrete_workers, *fallback_workers]:
             if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
                 return agent
         raise AgentNotFoundError(f"no worker registered for task_type '{spec.task_type}'")

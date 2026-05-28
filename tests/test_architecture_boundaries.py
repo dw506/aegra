@@ -13,17 +13,14 @@ def test_core_planner_does_not_import_agent_wrappers() -> None:
         assert not module.startswith("src.core.agents"), f"{path} imports {module}"
 
 
-def test_core_perception_keeps_incalmo_external_except_compat_shim() -> None:
+def test_core_perception_has_no_external_c2_dependency() -> None:
     for path, module in _imports_under(Path("src/core/perception")):
-        if path.name == "c2_parser.py":
-            continue
-        assert not module.startswith("src.integrations.incalmo"), f"{path} imports {module}"
+        assert ".c2" not in module.lower(), f"{path} imports {module}"
 
 
-def test_worker_services_do_not_depend_on_incalmo_client() -> None:
+def test_worker_services_do_not_depend_on_external_c2_client() -> None:
     for path, module in _imports_under(Path("src/core/workers/services")):
-        assert not module.startswith("src.integrations.incalmo"), f"{path} imports {module}"
-        assert not module.endswith(".incalmo.client"), f"{path} imports {module}"
+        assert ".c2" not in module.lower(), f"{path} imports {module}"
 
 
 def test_execution_adapters_do_not_import_graph_or_result_applier_owners() -> None:

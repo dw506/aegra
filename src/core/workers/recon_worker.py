@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 from typing import Any
+from urllib.parse import urlparse
 
 from src.core.agents.agent_protocol import AgentInput, AgentOutput, GraphRef, GraphScope
 from src.core.execution.adapters.local_shell_adapter import LocalShellAdapter
@@ -247,6 +248,9 @@ class ReconWorker(BaseWorkerAgent):
                 "tool": raw_result.get("tool", {}),
                 "parsed": raw_result.get("parsed", {}),
                 "task_candidates": raw_result.get("task_candidates", []),
+                "fact_write_requests": raw_result.get("fact_write_requests", []),
+                "projection_requests": raw_result.get("projection_requests", []),
+                "runtime_requests": raw_result.get("runtime_requests", []),
             },
         )
         return AgentOutput(
@@ -386,17 +390,22 @@ class ReconWorker(BaseWorkerAgent):
         """Execute host discovery through the execution layer and normalize the result."""
 
         canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
+        target_context = self._target_context_metadata(agent_input.raw_payload)
         host_hint = (
             task_spec.input_bindings.get("host")
             or task_spec.input_bindings.get("target_host")
             or task_spec.input_bindings.get("address")
             or task_spec.input_bindings.get("hostname")
+            or target_context.get("address")
+            or target_context.get("hostname")
+            or self._host_from_url(target_context.get("url"))
             or self._primary_ref_label(task_spec.target_refs, preferred_type="Host")
             or task_spec.input_bindings.get("host_id")
             or canonical_host_id
             or "unknown-host"
         )
         metadata = dict(agent_input.raw_payload)
+        self._apply_target_context_metadata(metadata, target_context)
         if canonical_host_id:
             metadata.setdefault("canonical_host_id", canonical_host_id)
             metadata.setdefault("host_id", canonical_host_id)
@@ -421,14 +430,26 @@ class ReconWorker(BaseWorkerAgent):
 
         canonical_host_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Host")
         canonical_service_id = self._primary_ref_id(task_spec.target_refs, preferred_type="Service")
+        target_context = self._target_context_metadata(agent_input.raw_payload)
+        target_host = (
+            task_spec.input_bindings.get("host")
+            or task_spec.input_bindings.get("target_host")
+            or task_spec.input_bindings.get("address")
+            or target_context.get("address")
+            or target_context.get("hostname")
+            or self._host_from_url(target_context.get("url"))
+        )
         service_hint = (
             task_spec.input_bindings.get("service")
+            or target_context.get("url")
+            or target_host
             or task_spec.input_bindings.get("service_id")
             or canonical_service_id
             or "unknown-service"
         )
-        port = task_spec.input_bindings.get("port") or task_spec.constraints.get("port")
+        port = task_spec.input_bindings.get("port") or task_spec.constraints.get("port") or target_context.get("port")
         metadata = dict(agent_input.raw_payload) | {"service_port": port}
+        self._apply_target_context_metadata(metadata, target_context)
         if canonical_host_id:
             metadata.setdefault("canonical_host_id", canonical_host_id)
             metadata.setdefault("host_id", canonical_host_id)
@@ -528,6 +549,48 @@ class ReconWorker(BaseWorkerAgent):
             input_bindings=task_spec.input_bindings,
         )
         return raw_result
+
+    @staticmethod
+    def _target_context_metadata(raw_payload: dict[str, Any]) -> dict[str, Any]:
+        contexts = raw_payload.get("target_context")
+        if not isinstance(contexts, list):
+            return {}
+        for item in contexts:
+            if not isinstance(item, dict):
+                continue
+            properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+            merged = dict(properties) | {key: value for key, value in item.items() if value is not None}
+            if merged.get("address") or merged.get("hostname") or merged.get("url") or merged.get("port"):
+                return merged
+        return {}
+
+    @staticmethod
+    def _host_from_url(value: Any) -> str | None:
+        if value is None:
+            return None
+        parsed = urlparse(str(value))
+        return parsed.hostname or None
+
+    @classmethod
+    def _apply_target_context_metadata(cls, metadata: dict[str, Any], target_context: dict[str, Any]) -> None:
+        if not target_context:
+            return
+        address = target_context.get("address")
+        hostname = target_context.get("hostname")
+        target_url = target_context.get("url")
+        port = target_context.get("port")
+        scheme = target_context.get("scheme")
+        host = address or hostname or cls._host_from_url(target_url)
+        if host:
+            metadata.setdefault("target_host", host)
+            metadata.setdefault("address", host)
+        if target_url:
+            metadata.setdefault("target_url", target_url)
+        if port is not None:
+            metadata.setdefault("port", port)
+            metadata.setdefault("target_port", port)
+        if scheme:
+            metadata.setdefault("scheme", scheme)
 
     def _run_probe(
         self,
@@ -656,12 +719,42 @@ class ReconWorker(BaseWorkerAgent):
                 "ag_refs": self._filter_refs(refs, GraphScope.AG),
             },
         )
+        evidence_id = f"evidence::{task_id}"
+        primary_ref = self._primary_kg_fact_ref(refs)
+        fact_write_requests = self._fact_writes_from_parsed(
+            task_id=task_id,
+            parsed=normalized["parsed"],
+            primary_ref=primary_ref,
+            evidence_id=evidence_id,
+            confidence=float(normalized["confidence"]),
+            task_type=result_type,
+        )
+        projection_requests = [
+            ProjectionRequest(
+                kind=ProjectionRequestKind.REFRESH_LOCAL_FRONTIER,
+                source_task_id=task_id,
+                reason="recon produced graph facts for local frontier refresh",
+                target_refs=[primary_ref] if primary_ref is not None else [],
+            ).model_dump(mode="json")
+        ]
+        runtime_requests = [
+            RuntimeControlRequest(
+                request_type=RuntimeControlType.CONSUME_BUDGET,
+                source_task_id=task_id,
+                budget_delta=RuntimeBudgetDelta(operations=1, noise=float(metadata.get("noise_cost", 0.1))),
+                reason="recon consumes one worker execution budget unit",
+            ).model_dump(mode="json")
+        ]
         return base | {
+            "evidence_id": evidence_id,
             "success": bool(normalized["success"]),
             "confidence": float(normalized["confidence"]),
             "executor": "execution_executor",
             "tool": normalized["tool"],
             "parsed": normalized["parsed"],
+            "fact_write_requests": [request.model_dump(mode="json") for request in fact_write_requests],
+            "projection_requests": projection_requests,
+            "runtime_requests": runtime_requests,
         }
 
     def _normalize_tool_payload(
@@ -1017,6 +1110,29 @@ class ReconWorker(BaseWorkerAgent):
         """Return refs for a specific graph scope as serialized payloads."""
 
         return [ref.model_dump(mode="json") for ref in refs if ref.graph == scope]
+
+    @staticmethod
+    def _primary_kg_fact_ref(refs: list[GraphRef]) -> KGFactRef | None:
+        """Return the first KG host/service ref as a fact-write compatible ref."""
+
+        for preferred_type in ("Host", "Service"):
+            for ref in refs:
+                if ref.graph == GraphScope.KG and (ref.ref_type or "").lower() == preferred_type.lower():
+                    return KGFactRef(
+                        graph="kg",
+                        ref_id=ref.ref_id,
+                        ref_type=ref.ref_type,
+                        label=getattr(ref, "label", None),
+                    )
+        for ref in refs:
+            if ref.graph == GraphScope.KG:
+                return KGFactRef(
+                    graph="kg",
+                    ref_id=ref.ref_id,
+                    ref_type=ref.ref_type,
+                    label=getattr(ref, "label", None),
+                )
+        return None
 
     @staticmethod
     def _primary_ref_id(refs: list[GraphRef], *, preferred_type: str) -> str | None:

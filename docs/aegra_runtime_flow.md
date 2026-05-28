@@ -48,8 +48,6 @@ and records runtime audit entries such as `tool_execution_recorded` or
 
 ## Ownership Boundaries
 
-- Incalmo is an execution adapter integration, not a core runtime dependency.
-  `IncalmoC2Adapter` converts external C2 responses into `ToolExecutionResult`.
 - Legacy workers are compatibility wrappers. Primary worker selection uses
   `BaseWorkerAgent` implementations through `WorkerRegistry.default()`.
 - Parsers interpret raw results into observation/evidence records. Parsers do
@@ -60,17 +58,14 @@ and records runtime audit entries such as `tool_execution_recorded` or
   runtime side effects, KG deltas, AG projection requests, TG lifecycle updates,
   and audit log entries.
 - `ToolExecutionParser` belongs to core perception because it handles the
-  adapter-neutral result shape. Incalmo-specific parsing remains external under
-  `src.integrations.incalmo`, with `src.core.perception.c2_parser` kept only as
-  a deprecated compatibility import.
+  adapter-neutral result shape.
 
 ## Current Guardrails
 
 - `src.core.planner` is the deterministic planning kernel and must not import
   agent wrappers.
-- `src.core.perception` must not depend on Incalmo integration code except for
-  the deprecated `c2_parser.py` compatibility shim.
-- Worker services must not depend on `IncalmoClient`.
+- `src.core.perception` must not depend on external control-channel integrations.
+- Worker services must not depend on external control-channel clients.
 - Execution adapters must not import ResultApplier, graph stores, or KG/AG/TG
   mutation structures.
 - Tool execution audit is written by `PhaseTwoResultApplier`, not by parsers or

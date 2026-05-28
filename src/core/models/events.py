@@ -392,6 +392,7 @@ class AgentResultAdapter:
 
         evidence = [
             EvidenceArtifact(
+                evidence_id=str(item.get("evidence_id") or new_protocol_id("evidence")),
                 kind=str(item.get("result_type") or item.get("kind") or "worker_result"),
                 summary=str(item.get("summary") or "worker evidence"),
                 payload_ref=str(item.get("payload_ref") or f"runtime://worker-results/{task_id}"),

@@ -60,10 +60,6 @@ class AppSettings(BaseModel):
     mcp_config_json: dict[str, Any] = Field(default_factory=dict)
     mcp_default_timeout_seconds: int = Field(default=60, ge=1)
     allow_local_fallback: bool = True
-    incalmo_enabled: bool = False
-    incalmo_c2_url: str | None = None
-    incalmo_poll_interval_sec: float = Field(default=1.0, gt=0.0)
-    incalmo_command_timeout_sec: float = Field(default=60.0, gt=0.0)
 
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
@@ -273,19 +269,6 @@ class AppSettings(BaseModel):
                 "yes",
                 "on",
             }
-        if "AEGRA_INCALMO_ENABLED" in environ:
-            values["incalmo_enabled"] = environ["AEGRA_INCALMO_ENABLED"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_INCALMO_C2_URL" in environ:
-            values["incalmo_c2_url"] = environ["AEGRA_INCALMO_C2_URL"] or None
-        if "AEGRA_INCALMO_POLL_INTERVAL_SEC" in environ:
-            values["incalmo_poll_interval_sec"] = float(environ["AEGRA_INCALMO_POLL_INTERVAL_SEC"])
-        if "AEGRA_INCALMO_COMMAND_TIMEOUT_SEC" in environ:
-            values["incalmo_command_timeout_sec"] = float(environ["AEGRA_INCALMO_COMMAND_TIMEOUT_SEC"])
         return cls.model_validate(values)
 
 

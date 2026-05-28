@@ -129,7 +129,7 @@ TEMPLATES: dict[str, ActionTemplate] = {
         estimated_noise=0.4,
         approval_required=True,
         resource_key_fields=("host_id", "session_id", "pivot_route_id"),
-        default_bindings={"tool_hint": "incalmo"},
+        default_bindings={"tool_hint": "pivot_probe"},
     ),
     "reuse_credential": ActionTemplate(
         action_type="reuse_credential",
@@ -139,7 +139,7 @@ TEMPLATES: dict[str, ActionTemplate] = {
         estimated_noise=0.3,
         approval_required=True,
         resource_key_fields=("credential_id", "host_id", "service_id"),
-        default_bindings={"tool_hint": "incalmo"},
+        default_bindings={"tool_hint": "credential_validator"},
     ),
     "validate_goal": ActionTemplate(
         action_type="validate_goal",
@@ -148,7 +148,7 @@ TEMPLATES: dict[str, ActionTemplate] = {
         estimated_risk=0.2,
         estimated_noise=0.1,
         resource_key_fields=("goal_id", "host_id"),
-        default_bindings={"tool_hint": "incalmo"},
+        default_bindings={"tool_hint": "goal_validator"},
     ),
 }
 

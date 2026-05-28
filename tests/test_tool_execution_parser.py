@@ -44,20 +44,20 @@ def test_tool_execution_outcome_payload_is_parsed() -> None:
     outcome = _outcome(
         {
             "tool_execution": {
-                "adapter": "incalmo_c2",
+                "adapter": "remote_shell",
                 "tool": "session_probe",
                 "success": True,
                 "command_id": "cmd-1",
-                "payload_ref": "incalmo://commands/cmd-1",
+                "payload_ref": "remote://commands/cmd-1",
             }
         }
     )
 
     parsed = ToolExecutionParser().parse({}, outcome)
 
-    assert parsed.observations[0]["payload"]["adapter"] == "incalmo_c2"
+    assert parsed.observations[0]["payload"]["adapter"] == "remote_shell"
     assert parsed.observations[0]["payload"]["command_id"] == "cmd-1"
-    assert parsed.evidence[0]["payload_ref"] == "incalmo://commands/cmd-1"
+    assert parsed.evidence[0]["payload_ref"] == "remote://commands/cmd-1"
 
 
 def test_tool_execution_failure_preserves_stderr_and_exit_code() -> None:

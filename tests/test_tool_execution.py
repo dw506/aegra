@@ -38,7 +38,7 @@ def _task(host: str = "10.0.0.5") -> TaskNode:
         label="service validation",
         task_type=TaskType.SERVICE_VALIDATION,
         status=TaskStatus.READY,
-        input_bindings={"target_address": host, "tool_hint": "nmap", "adapter": "incalmo_c2", "agent_id": "agent-1"},
+        input_bindings={"target_address": host, "tool_hint": "nmap", "adapter": "remote_shell", "agent_id": "agent-1"},
         target_refs=[GraphRef(graph="kg", ref_id=host, ref_type="Host")],
         estimated_risk=0.1,
         estimated_noise=0.1,
@@ -75,7 +75,7 @@ class FakeMCPClient:
 def test_tool_plan_uses_explicit_adapter_and_agent_ref() -> None:
     plan = build_tool_plan(_task())
 
-    assert plan.adapter == "incalmo_c2"
+    assert plan.adapter == "remote_shell"
     assert plan.command == "nmap"
     assert plan.target_agent_ref == "agent-1"
 

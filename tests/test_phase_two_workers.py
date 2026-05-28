@@ -108,6 +108,56 @@ def test_recon_worker_runs_probe_through_execution_executor() -> None:
     assert result.outcome_payload["executor"] == "execution_executor"
 
 
+def test_recon_worker_prefers_target_context_address_for_agent_tasks() -> None:
+    executor = FakeExecutionExecutor(
+        ExecutionToolResult(
+            adapter="local_shell",
+            tool="nmap",
+            success=True,
+            exit_code=0,
+            stdout=(
+                "Nmap scan report for 10.20.0.20\n"
+                "Host is up.\n"
+                "PORT   STATE SERVICE\n"
+                "80/tcp open  http\n"
+            ),
+            metadata={"category": "success", "command": ["nmap", "-n", "-Pn", "10.20.0.20"], "attempts": 1},
+        )
+    )
+    worker = ReconWorker(executor=executor)
+    task_spec = WorkerTaskSpec(
+        task_id="task-1",
+        task_type=TaskType.ASSET_CONFIRMATION.value,
+        input_bindings={"host_id": "kg-host::abc"},
+        target_refs=[ProtocolGraphRef(graph=GraphScope.KG, ref_id="kg-host::abc", ref_type="Host")],
+    )
+    agent_input = AgentInput(
+        context=AgentContext(operation_id="op-1"),
+        graph_refs=task_spec.target_refs,
+        task_ref=task_spec.task_id,
+        raw_payload={
+            "target_context": [
+                {
+                    "ref_id": "kg-host::abc",
+                    "ref_type": "Host",
+                    "label": "10.20.0.20",
+                    "address": "10.20.0.20",
+                    "url": "http://10.20.0.20/",
+                    "port": 80,
+                    "properties": {"scheme": "http"},
+                }
+            ]
+        },
+    )
+
+    output = worker.execute_task(task_spec, agent_input)
+
+    assert executor.plans
+    assert executor.plans[0].args["argv"][-1] == "10.20.0.20"
+    assert output.outcomes[0]["payload"]["parsed"]["reachable"] is True
+    assert output.outcomes[0]["payload"]["fact_write_requests"]
+
+
 def test_recon_worker_blocks_when_no_real_probe_tool_is_available() -> None:
     worker = ReconWorker()
     request = worker.build_request(

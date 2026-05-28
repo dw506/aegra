@@ -6,8 +6,7 @@
 
 ```text
 D:\Aegra
-├── configs/        # 外部集成和运行配置示例
-│   ├── incalmo.yaml                    # Incalmo C2 集成配置示例
+├── configs/        # MCP 和运行配置示例
 │   ├── mcp.lab.json                    # 实验 MCP lab server 配置示例
 │   └── mcp.lab.docker.json             # Docker 内运行实验 MCP lab server 的配置示例
 ├── docs/           # 架构和运行流程文档
@@ -35,8 +34,7 @@ D:\Aegra
 │   │       ├── index.html              # 控制台 HTML 入口
 │   │       ├── app.js                  # 前端交互和 API 调用逻辑
 │   │       └── styles.css              # 控制台样式
-│   ├── integrations/                   # 外部系统和实验 MCP server 集成
-│   │   ├── incalmo/                    # Incalmo C2 client/mapper/perception
+│   ├── integrations/                   # 实验 MCP server 集成
 │   │   └── mcp_lab/                    # 隔离实验环境 MCP server 和 v1 lab tools
 │   ├── core/                           # 核心领域逻辑
 │   │   ├── actions/                    # AG action 到 TG task 的确定性模板
@@ -134,7 +132,6 @@ D:\Aegra
 │   │   │       ├── mcp_adapter.py      # MCPExecutionAdapter，调用 MCP tool 并转换为 ToolExecutionResult
 │   │   │       ├── local_shell_adapter.py  # 本地 shell/subprocess adapter，支持 argv/env/timeout/截断/exit code 归一化
 │   │   │       ├── http_request_adapter.py # 受控 HTTP GET/HEAD execution adapter
-│   │   │       ├── incalmo_c2_adapter.py   # Incalmo C2 adapter
 │   │   │       ├── proxy_shell_adapter.py  # SOCKS/HTTP proxy 环境注入 adapter
 │   │   │       ├── tunnel_adapter.py       # 预开 TCP tunnel endpoint adapter
 │   │   │       └── netns_shell_adapter.py  # Linux network namespace shell adapter
@@ -143,8 +140,7 @@ D:\Aegra
 │   │   │   ├── parser_protocol.py      # parser 协议和结果模型
 │   │   │   ├── parser_registry.py      # parser registry 和 fallback 选择
 │   │   │   ├── generic_parser.py       # 通用 fallback parser
-│   │   │   ├── tool_execution_parser.py # ToolExecutionResult parser
-│   │   │   └── c2_parser.py            # Incalmo C2 parser 兼容 shim
+│   │   │   └── tool_execution_parser.py # ToolExecutionResult parser
 │   │   ├── feedback/                   # evidence 提取和结果校验
 │   │   │   ├── __init__.py             # 包标识
 │   │   │   ├── evidence_extractor.py   # 从受控工具输出提取证据
@@ -204,17 +200,8 @@ D:\Aegra
 │   │           ├── http_fingerprint.py  # 低风险 HTTP fingerprint validator
 │   │           ├── default_credentials_idor.py # 默认凭据/IDOR 受控验证器
 │   │           └── struts2_s2045.py     # Struts2 S2-045 validator
-│   └── integrations/                    # 外部系统集成
-│       ├── __init__.py                  # 集成包标识
-│       └── incalmo/                     # Incalmo C2 协议集成
-│           ├── __init__.py              # Incalmo API 导出
-│           ├── models.py                # Incalmo protocol model
-│           ├── client.py                # Incalmo HTTP client
-│           ├── mapper.py                # Incalmo <-> Aegra result/runtime 映射
-│           └── perception.py            # Incalmo C2 output parser 插件
 ├── tests/          # 单元、集成、烟测测试
 │   ├── integration/                     # 需要外部服务/显式 env 开关的集成测试
-│   │   └── test_incalmo_c2_live.py      # Incalmo C2 live smoke test
 │   ├── test_app_orchestrator.py         # AppOrchestrator 和应用配置测试
 │   ├── test_api.py                      # API 基础行为测试
 │   ├── test_api_operation_cycle.py      # operation cycle API 测试
@@ -285,9 +272,6 @@ D:\Aegra
 │   ├── test_action_templates.py         # action template 测试
 │   ├── test_candidate_to_task_graph.py  # candidate -> TG 测试
 │   ├── test_execution_end_to_end_smoke.py # execution/perception/runtime audit smoke
-│   ├── test_incalmo_c2_adapter.py       # Incalmo adapter 测试
-│   ├── test_incalmo_integration.py      # Incalmo integration 测试
-│   ├── test_incalmo_settings.py         # Incalmo 与 MCP settings 测试
 │   ├── test_architecture_boundaries.py  # 架构依赖边界测试
 │   ├── test_perception_boundaries.py    # perception 边界测试
 │   ├── test_nuclei_safe_adapter.py      # nuclei safe adapter 测试
@@ -340,7 +324,6 @@ LLM 通过 advisor 层进入系统：
 
 ## `configs/`
 
-- `incalmo.yaml`：Incalmo C2 集成配置示例。
 - `mcp.lab.json`：本机 MCP 配置。包含内置 `pentest-tools` stdio server，以及可选的 Docker `pentest-mcp` stdio server。
 - `mcp.lab.docker.json`：容器内 MCP 配置。包含 `/app` 下运行的内置 `pentest-tools` stdio server，以及指向 `http://host.docker.internal:8765/mcp` 的 `external-tools` HTTP server。
 
@@ -386,7 +369,7 @@ LLM 通过 advisor 层进入系统：
 
 应用层负责把核心能力装配成可运行的本地控制面：配置、API、operation 生命周期、运行主循环、审计查询和前端静态资源。
 
-- `settings.py`：环境变量和运行配置入口。包含 runtime store、审计、策略、LLM、MCP、工具路径、Incalmo 等配置。MCP 相关字段包括 `mcp_enabled`、`mcp_first`、`mcp_config_path`、`mcp_config_json`、`mcp_default_timeout_seconds` 和 `allow_local_fallback`，并支持 `AEGRA_MCP_ENABLED`、`AEGRA_MCP_FIRST`、`AEGRA_MCP_CONFIG_PATH`、`AEGRA_MCP_CONFIG_JSON`、`AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS`、`AEGRA_ALLOW_LOCAL_FALLBACK`；默认 pipeline 会把这些配置用于实验 `LLMWorkerAgent` 的 MCP client 装配。
+- `settings.py`：环境变量和运行配置入口。包含 runtime store、审计、策略、LLM、MCP、工具路径等配置。MCP 相关字段包括 `mcp_enabled`、`mcp_first`、`mcp_config_path`、`mcp_config_json`、`mcp_default_timeout_seconds` 和 `allow_local_fallback`，并支持 `AEGRA_MCP_ENABLED`、`AEGRA_MCP_FIRST`、`AEGRA_MCP_CONFIG_PATH`、`AEGRA_MCP_CONFIG_JSON`、`AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS`、`AEGRA_ALLOW_LOCAL_FALLBACK`；默认 pipeline 会把这些配置用于实验 `LLMWorkerAgent` 的 MCP client 装配。
 - `orchestrator.py`：应用级编排门面。负责 operation 创建/启动/停止、目标导入、运行 control cycle、加载/保存图记忆、调用 pipeline、应用 worker 结果、发布 visual graph delta、记录审计和控制摘要。
 - `llm_decision_observer.py`：从 pipeline cycle 输出中提取 prompt-free 的 LLM decision history，负责记录 accepted/rejected、decision id、target id、模型和 usage 等审计摘要。
 
@@ -457,9 +440,8 @@ Agent 层是系统的决策和协议层。每个 Agent 通过 `AgentInput/AgentO
 
 ## `src/integrations/` 外部集成层
 
-Integration 层封装外部系统和实验 server，不拥有 KG/AG/TG/Runtime 写权限。当前包含 Incalmo C2 集成和实验 MCP lab server。
+Integration 层封装实验 server，不拥有 KG/AG/TG/Runtime 写权限。当前包含实验 MCP lab server。
 
-- `incalmo/`：Incalmo C2 client、模型映射和 perception shim。
 - `mcp_lab/http_server.py`：实验 MCP lab HTTP JSON-RPC server，监听 `/mcp`，复用 stdio server 的 request handler。
 - `mcp_lab/server.py`：隔离实验环境 MCP stdio server，提供 JSON-RPC `initialize`、`tools/list`、`tools/call`。
 - `mcp_lab/tools.py`：v1 lab tools：`run_command`、`nmap_scan`、`http_probe`、`web_fingerprint`、`web_discover`、`dns_lookup`、`tls_probe`。所有工具执行前都要求 `AEGRA_LAB_MODE=1`。
@@ -553,7 +535,6 @@ Execution 层保留两条路径：传统路径把 adapter-neutral `ToolPlan` 交
 - `mcp_adapter.py`：MCPExecutionAdapter。解析 `mcp_server_id`/`mcp_tool_name` binding，调用 MCP client 的 `call_tool`，把 MCP 返回内容转换为 `ToolExecutionResult`，不直接写 KG/AG/TG/Runtime。
 - `local_shell_adapter.py`：本地 shell/subprocess 执行 adapter，支持 `args.argv`、cwd/env/env allowlist、command allowlist、acceptable exit codes、timeout、stdout/stderr 截断和 `success/nonzero_exit/timeout/command_not_found/process_error/policy_denied` 分类；保留为兼容、调试和低风险 fallback。
 - `http_request_adapter.py`：受控 HTTP request adapter，执行同源约束下的 GET/HEAD 请求，把 status、headers、content type、auth_required、reachable、blocked_reason 等归一化到 `ToolExecutionResult.metadata`。
-- `incalmo_c2_adapter.py`：Incalmo C2 外部执行 adapter。
 - `proxy_shell_adapter.py`：SOCKS/HTTP proxy-aware shell adapter，通过 `ALL_PROXY/HTTP_PROXY/HTTPS_PROXY` 等环境变量执行 allowlisted 命令。
 - `tunnel_adapter.py`：使用 runtime 中已经打开的 TCP tunnel endpoint，把 endpoint 作为 adapter-neutral 结果返回给后续工具链。
 - `netns_shell_adapter.py`：Linux network namespace shell adapter；不支持的平台返回明确 `unsupported_platform`，不隐式降级。
@@ -578,7 +559,6 @@ Perception parser 把 raw execution/worker result 转成 observation/evidence/fa
 - `parser_registry.py`：按顺序选择 parser，并提供 fallback。
 - `generic_parser.py`：通用 fallback parser。
 - `tool_execution_parser.py`：解析 adapter-neutral `ToolExecutionResult` 和实验 LLM worker 的 `mcp_direct` payload；当 MCP 返回 `parsed` 时，会保留 entities、relations、findings、runtime hints 和 writeback hints。
-- `c2_parser.py`：Incalmo C2 parser 的兼容导入 shim，实际逻辑在 integration 目录。
 - `__init__.py`：导出 perception API。
 
 ## `src/core/feedback/` 反馈辅助
@@ -669,16 +649,6 @@ Worker 业务逻辑的单一来源，primary 和 legacy worker 都应复用 serv
 - `struts2_s2045.py`：Struts2 S2-045 validator 插件。
 - `__init__.py`：导出 validator 接口和默认实现。
 
-## `src/integrations/incalmo/` Incalmo C2 协议集成
-
-Incalmo 是外部 C2 协议适配，保持在 `integrations` 边界内；核心 runtime/worker service 不应直接依赖 `IncalmoClient`。
-
-- `models.py`：Incalmo Agent、Command、CommandStatus、CommandResult、LLM action payload 等协议模型。
-- `client.py`：Incalmo-compatible C2 HTTP client。
-- `mapper.py`：Incalmo 协议对象与 Aegra runtime/result 模型之间的转换。
-- `perception.py`：Incalmo C2 command output 的 perception parser 插件。
-- `__init__.py`：导出 Incalmo integration API。
-
 ## `tests/` 测试目录
 
 测试文件基本按被测模块命名，覆盖面较完整。主要分组如下：
@@ -692,12 +662,12 @@ Incalmo 是外部 C2 协议适配，保持在 `integrations` 边界内；核心 
 - Fingerprint/漏洞验证：`test_fingerprint_worker.py`、`test_fingerprint_adapters.py`、`test_vulnerability_candidate_matcher.py`、`test_vulnerability_validation_worker.py`、`test_vulnerability_validator_models.py`、`test_vulnerability_validator_registry.py`
 - 策略、报告、审计：`test_scope_policy.py`、`test_policy_gate.py`、`test_policy_scheduler_gate.py`、`test_worker_expansion_tg_policy.py`、`test_report_generator.py`、`test_audit_report.py`、`test_risk_scoring.py`
 - 架构边界：`test_architecture_boundaries.py`、`test_perception_boundaries.py`
-- 外部/烟测：`tests/integration/test_incalmo_c2_live.py`、`test_vulhub_kg_smoke.py`、`test_vulhub_orchestrator_smoke.py`、`test_graph_iteration_vuln_env_smoke.py`
+- 外部/烟测：`test_vulhub_kg_smoke.py`、`test_vulhub_orchestrator_smoke.py`、`test_graph_iteration_vuln_env_smoke.py`
 
 ## 关键边界规则
 
 - `src/core/planner` 是确定性内核，不应 import `src.core.agents` 或 LLM client。
-- Worker service 不应依赖 Incalmo client。
+- Worker service 不应依赖外部控制通道 client。
 - Execution adapter 不应 import graph store、ResultApplier 或 KG/AG/TG mutation owner。
 - Visualization 是只读模型和事件发布边界；parser、worker、execution 层不应 import `src.core.visualization`。
 - Primary Recon/WebDiscovery worker 不应直接调用 legacy `ToolRunner` 或 `urllib.request.urlopen` 执行外部 I/O，必须构造 `ToolPlan` 并交给 `ExecutionExecutor`；实验 `LLMWorkerAgent` 是例外，它直接调用 `MCPClient.call_tool` 并输出 `tool_execution` payload。
