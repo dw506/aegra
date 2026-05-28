@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
+from src.core.models.events import utc_now
 from src.core.stage.models import StageResult, StageTask, StageType, ToolTrace
 
 
@@ -43,6 +44,7 @@ class StageAgentAdvisor(Protocol):
         task: StageTask,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
+        policy_context: dict[str, Any],
         memory: list[dict[str, Any]],
         available_tools: dict[str, Any],
     ) -> StageAgentDecision | dict[str, Any]:
@@ -79,31 +81,26 @@ class BaseStageAgent:
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         tool_catalog: dict[str, Any],
+        policy_context: dict[str, Any] | None = None,
     ) -> StageResult:
-        if task.stage_type != self.stage_type:
+        if task.stage_type.canonical != self.stage_type.canonical:
             raise ValueError(f"{self.agent_name} cannot execute stage type {task.stage_type.value}")
 
         memory: list[dict[str, Any]] = []
         tool_trace: list[ToolTrace] = []
         operation_id = str(runtime_context.get("operation_id") or graph_context.get("operation_id") or "operation")
+        policy = dict(policy_context or graph_context.get("policy_context") or graph_context.get("policy") or {})
         available_tools = self.filter_tool_catalog(tool_catalog)
-        planned_calls = self._planned_tool_calls(task)
 
         for step in range(task.max_steps):
-            if step < len(planned_calls):
-                decision = StageAgentDecision(
-                    action="call_tool",
-                    rationale="executing explicit stage tool_plan",
-                    tool_call=planned_calls[step],
-                )
-            else:
-                decision = self._decide(
-                    task=task,
-                    graph_context=graph_context,
-                    runtime_context=runtime_context,
-                    memory=memory,
-                    available_tools=available_tools,
-                )
+            decision = self._decide(
+                task=task,
+                graph_context=graph_context,
+                runtime_context=runtime_context,
+                policy_context=policy,
+                memory=memory,
+                available_tools=available_tools,
+            )
 
             if decision.action == "call_tool":
                 if decision.tool_call is None:
@@ -114,9 +111,32 @@ class BaseStageAgent:
                         memory=memory,
                         tool_trace=tool_trace,
                     )
-                trace = self._call_tool(step=step, call=decision.tool_call)
+                trace = self._call_tool(
+                    step=step,
+                    call=decision.tool_call,
+                    available_tools=available_tools,
+                    policy_context=policy,
+                    task=task,
+                )
                 tool_trace.append(trace)
                 memory.append({"decision": decision.model_dump(mode="json"), "tool_trace": trace.model_dump(mode="json")})
+                if not trace.success and trace.policy_check.get("allowed") is False:
+                    return self._finish_result(
+                        operation_id=operation_id,
+                        task=task,
+                        decision=StageAgentDecision(
+                            action="finish",
+                            rationale="policy enforcement blocked requested tool call",
+                            finish={
+                                "status": "blocked",
+                                "summary": trace.summary,
+                                "policy_notes": [str(trace.policy_check.get("reason") or trace.summary)],
+                                "observations": memory,
+                            },
+                        ),
+                        memory=memory,
+                        tool_trace=tool_trace,
+                    )
                 continue
 
             if decision.action == "finish":
@@ -142,8 +162,8 @@ class BaseStageAgent:
             decision=StageAgentDecision(
                 action="finish",
                 rationale="stage loop reached max_steps",
-                finish={
-                    "status": "partial" if tool_trace else "needs_replan",
+            finish={
+                    "status": "partial" if tool_trace else "need_more_info",
                     "summary": f"{self.agent_name} reached max_steps for {task.task_id}",
                 },
             ),
@@ -163,7 +183,7 @@ class BaseStageAgent:
             selected = [
                 tool
                 for tool in tools
-                if any(category in str(tool.get("name") or tool).lower() for category in self.tool_categories)
+                if self._tool_matches_stage(tool)
             ]
             if selected:
                 filtered[server_id] = {**payload, "tools": selected}
@@ -175,18 +195,14 @@ class BaseStageAgent:
         task: StageTask,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
+        policy_context: dict[str, Any],
         memory: list[dict[str, Any]],
         available_tools: dict[str, Any],
     ) -> StageAgentDecision:
         if self._advisor is None:
             return StageAgentDecision(
-                action="finish",
-                rationale="no stage advisor configured",
-                finish={
-                    "status": "partial",
-                    "summary": f"{self.agent_name} has no advisor or remaining explicit tool_plan",
-                    "observations": memory,
-                },
+                action="need_replan",
+                rationale=f"{self.agent_name} requires an LLM advisor; no hard-coded stage execution is available",
             )
         raw = self._advisor.decide(
             agent_name=self.agent_name,
@@ -194,13 +210,43 @@ class BaseStageAgent:
             task=task,
             graph_context=graph_context,
             runtime_context=runtime_context,
+            policy_context=policy_context,
             memory=memory,
             available_tools=available_tools,
         )
         return raw if isinstance(raw, StageAgentDecision) else StageAgentDecision.model_validate(raw)
 
-    def _call_tool(self, *, step: int, call: StageToolCall) -> ToolTrace:
+    def _call_tool(
+        self,
+        *,
+        step: int,
+        call: StageToolCall,
+        available_tools: dict[str, Any],
+        policy_context: dict[str, Any],
+        task: StageTask,
+    ) -> ToolTrace:
         timeout = int(call.timeout_seconds or self._default_timeout_seconds)
+        tool_metadata = self._lookup_tool(available_tools, server_id=call.server_id, tool_name=call.tool_name)
+        policy_check = self._enforce_policy(
+            call=call,
+            tool_metadata=tool_metadata,
+            policy_context=policy_context,
+            task=task,
+        )
+        if not policy_check["allowed"]:
+            return ToolTrace(
+                step=step,
+                server_id=call.server_id,
+                tool_name=call.tool_name,
+                tool_category=str(tool_metadata.get("category") or ""),
+                arguments=dict(call.arguments),
+                success=False,
+                summary=f"policy denied {call.server_id}.{call.tool_name}: {policy_check['reason']}",
+                stderr=str(policy_check["reason"]),
+                exit_code="policy_denied",
+                ended_at=utc_now().isoformat(),
+                policy_check=policy_check,
+            )
         raw = self._mcp_client.call_tool(
             server_id=call.server_id,
             tool_name=call.tool_name,
@@ -212,12 +258,18 @@ class BaseStageAgent:
             step=step,
             server_id=call.server_id,
             tool_name=call.tool_name,
+            tool_category=str(tool_metadata.get("category") or ""),
+            input_summary=self._summarize_arguments(call.arguments),
             arguments=dict(call.arguments),
             success=result.success,
             summary=result.stderr if not result.success else result.stdout[:200],
             stdout=result.stdout,
             stderr=result.stderr,
             exit_code=result.exit_code,
+            ended_at=utc_now().isoformat(),
+            policy_check=policy_check,
+            raw_output_ref=str(result.metadata.get("raw_output_ref") or ""),
+            parsed_output=dict(result.metadata.get("parsed_output") or {}),
             metadata={**dict(result.metadata), "content": result.content},
         )
 
@@ -252,6 +304,15 @@ class BaseStageAgent:
             next_stage_candidates=list(payload.get("next_stage_candidates") or []),
             failed_hypotheses=list(payload.get("failed_hypotheses") or []),
             tool_trace=list(tool_trace),
+            tool_traces=list(tool_trace),
+            graph_update_intents=list(payload.get("graph_update_intents") or []),
+            evidence_refs=[str(item) for item in payload.get("evidence_refs", []) if item is not None],
+            confidence=float(payload.get("confidence") or 0.5),
+            risk_level=str(payload.get("risk_level") or task.risk_level),  # type: ignore[arg-type]
+            policy_notes=[str(item) for item in payload.get("policy_notes", []) if item is not None],
+            retry_recommendation=payload.get("retry_recommendation"),
+            replan_recommendation=payload.get("replan_recommendation"),
+            next_stage_suggestion=payload.get("next_stage_suggestion"),
             runtime_hints=dict(payload.get("runtime_hints") or {}),
             writeback_hints=dict(payload.get("writeback_hints") or {}),
         )
@@ -274,19 +335,70 @@ class BaseStageAgent:
             summary=summary,
             observations=list(memory),
             tool_trace=list(tool_trace),
+            tool_traces=list(tool_trace),
+            replan_recommendation=summary,
         )
 
     @staticmethod
-    def _planned_tool_calls(task: StageTask) -> list[StageToolCall]:
-        raw_plan = task.required_context.get("tool_plan")
-        if not isinstance(raw_plan, list):
-            return []
-        calls: list[StageToolCall] = []
-        for item in raw_plan:
+    def _summarize_arguments(arguments: dict[str, Any]) -> str:
+        keys = ", ".join(sorted(str(key) for key in arguments)[:8])
+        return f"arguments: {keys}" if keys else "no arguments"
+
+    def _tool_matches_stage(self, tool: Any) -> bool:
+        if not isinstance(tool, dict):
+            return any(category in str(tool).lower() for category in self.tool_categories)
+        category = str(tool.get("category") or "").lower()
+        name = str(tool.get("name") or tool.get("tool_name") or "").lower()
+        tags = " ".join(str(item).lower() for item in tool.get("policy_tags", []) if item is not None)
+        return any(item in {category} or item in name or item in tags for item in self.tool_categories)
+
+    @staticmethod
+    def _lookup_tool(available_tools: dict[str, Any], *, server_id: str, tool_name: str) -> dict[str, Any]:
+        server = available_tools.get(server_id)
+        if not isinstance(server, dict):
+            return {}
+        for item in server.get("tools", []) if isinstance(server.get("tools"), list) else []:
             if not isinstance(item, dict):
                 continue
-            calls.append(StageToolCall.model_validate(item))
-        return calls
+            if str(item.get("name") or item.get("tool_name")) == tool_name:
+                return dict(item)
+        return {}
+
+    @staticmethod
+    def _enforce_policy(
+        *,
+        call: StageToolCall,
+        tool_metadata: dict[str, Any],
+        policy_context: dict[str, Any],
+        task: StageTask,
+    ) -> dict[str, Any]:
+        category = str(tool_metadata.get("category") or "").lower()
+        name = call.tool_name
+        if not tool_metadata:
+            return {"allowed": False, "reason": f"tool {call.server_id}.{name} is not in the supplied MCP catalog"}
+        deny_tools = {str(item) for item in policy_context.get("mcp_tool_denylist", [])}
+        deny_tools.update(str(item) for item in policy_context.get("disabled_tools", []))
+        if name in deny_tools:
+            return {"allowed": False, "reason": f"MCP tool '{name}' is denied by policy"}
+        allow_tools = {str(item) for item in policy_context.get("mcp_tool_allowlist", [])}
+        if allow_tools and name not in allow_tools:
+            return {"allowed": False, "reason": f"MCP tool '{name}' is not allowlisted by policy"}
+        deny_servers = {str(item) for item in policy_context.get("mcp_server_denylist", [])}
+        if call.server_id in deny_servers:
+            return {"allowed": False, "reason": f"MCP server '{call.server_id}' is denied by policy"}
+        allow_servers = {str(item) for item in policy_context.get("mcp_server_allowlist", [])}
+        if allow_servers and call.server_id not in allow_servers:
+            return {"allowed": False, "reason": f"MCP server '{call.server_id}' is not allowlisted by policy"}
+        strict = category in {"exploit", "access", "credential", "pivot"} or task.stage_type.canonical in {
+            StageType.EXPLOIT,
+            StageType.ACCESS_PIVOT,
+        }
+        if strict and bool(tool_metadata.get("requires_authorization", True)):
+            authorized = bool(policy_context.get("authorized") or policy_context.get("authorization_confirmed"))
+            authorized = authorized or bool(policy_context.get("authorized_hosts") or policy_context.get("engagement"))
+            if not authorized:
+                return {"allowed": False, "reason": f"{category or 'sensitive'} tool requires explicit authorization context"}
+        return {"allowed": True, "reason": "policy allowed MCP tool call"}
 
 
 __all__ = ["BaseStageAgent", "StageAgentAdvisor", "StageAgentDecision", "StageToolCall"]

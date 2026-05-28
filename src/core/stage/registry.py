@@ -41,6 +41,8 @@ class StageAgentRegistry:
 
     def register(self, agent: BaseStageAgent) -> None:
         self._agents[agent.stage_type] = agent
+        self._agents[agent.stage_type.canonical] = agent
+        self._agents[agent.stage_type.legacy] = agent
 
     def resolve(self, stage_type: StageType | str) -> BaseStageAgent:
         resolved = stage_type if isinstance(stage_type, StageType) else StageType(str(stage_type))

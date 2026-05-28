@@ -45,6 +45,7 @@ class LLMStageAdvisor:
         runtime_context: dict[str, Any],
         memory: list[dict[str, Any]],
         available_tools: dict[str, Any],
+        policy_context: dict[str, Any] | None = None,
     ) -> StageAgentDecision | dict[str, Any]:
         prompt = self._build_prompt(
             agent_name=agent_name,
@@ -52,6 +53,7 @@ class LLMStageAdvisor:
             task=task,
             graph_context=graph_context,
             runtime_context=runtime_context,
+            policy_context=dict(policy_context or {}),
             memory=memory,
             available_tools=available_tools,
         )
@@ -69,13 +71,23 @@ class LLMStageAdvisor:
             )
         payload = _extract_json_object(response.text)
         if payload is None:
-            return StageAgentDecision(
-                action="need_replan",
-                rationale="llm stage advisor returned non-json decision",
+            repaired = self._repair_decision(
+                original_text=response.text,
+                prompt=prompt,
             )
+            if repaired is not None:
+                return repaired
+            return StageAgentDecision(action="need_replan", rationale="llm stage advisor returned non-json decision")
         try:
             return StageAgentDecision.model_validate(payload)
         except ValidationError as exc:
+            repaired = self._repair_decision(
+                original_text=response.text,
+                prompt=prompt,
+                validation_error=str(exc),
+            )
+            if repaired is not None:
+                return repaired
             return StageAgentDecision(
                 action="need_replan",
                 rationale=f"llm stage advisor returned invalid decision schema: {exc}",
@@ -89,6 +101,7 @@ class LLMStageAdvisor:
         task: StageTask,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
+        policy_context: dict[str, Any],
         memory: list[dict[str, Any]],
         available_tools: dict[str, Any],
     ) -> str:
@@ -96,10 +109,11 @@ class LLMStageAdvisor:
             "agent_name": agent_name,
             "stage_type": stage_type.value,
             "task": task.model_dump(mode="json"),
-            "graph_context": graph_context,
+            "graph_state_snapshot": graph_context,
             "runtime_context": runtime_context,
+            "policy_context": policy_context,
             "memory": memory[-8:],
-            "available_tools": available_tools,
+            "mcp_tool_catalog": available_tools,
             "decision_schema": {
                 "action": "call_tool | finish | need_replan",
                 "rationale": "short reason",
@@ -124,23 +138,67 @@ class LLMStageAdvisor:
                     "next_stage_candidates": [],
                     "runtime_hints": {},
                     "writeback_hints": {},
+                    "graph_update_intents": [],
+                    "evidence_refs": [],
+                    "confidence": 0.0,
+                    "risk_level": "low | medium | high | critical",
+                    "policy_notes": [],
+                    "retry_recommendation": "optional",
+                    "replan_recommendation": "optional",
+                    "next_stage_suggestion": {},
                 },
             },
         }
         return (
             "Return only JSON matching StageAgentDecision. "
-            "Select one safe next step using the task, graph memory, runtime state and tool catalog. "
-            "When evidence is sufficient, finish with structured observations and writeback data.\n\n"
+            "You are the complete LLM decision maker for this stage. Decide whether the stage can run, "
+            "which MCP tool to call if any, why, and how prior tool results affect completion. "
+            "Use only supplied graph state, policy, task, tool catalog and memory. "
+            "Do not invent scan results, vulnerabilities, credentials, sessions or access. "
+            "Do not write KG/AG/TG/Runtime directly; propose graph_update_intents in the finish payload. "
+            "If evidence is insufficient, finish with need_more_info/partial or request need_replan.\n\n"
             f"{_truncate_json(payload, self._config.max_context_chars)}"
         )
 
+    def _repair_decision(
+        self,
+        *,
+        original_text: str,
+        prompt: str,
+        validation_error: str | None = None,
+    ) -> StageAgentDecision | None:
+        repair_prompt = (
+            "Repair the previous response into strict StageAgentDecision JSON only. "
+            "Do not add new facts. Preserve the intended action when possible.\n\n"
+            f"Validation error: {validation_error or 'not valid JSON'}\n\n"
+            f"Original response:\n{original_text[:4000]}\n\n"
+            f"Original prompt excerpt:\n{prompt[:4000]}"
+        )
+        try:
+            response = self._client.complete_chat(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=repair_prompt,
+                model=self._config.model,
+                temperature=0.0,
+            )
+        except PackyLLMError:
+            return None
+        payload = _extract_json_object(response.text)
+        if payload is None:
+            return None
+        try:
+            return StageAgentDecision.model_validate(payload)
+        except ValidationError:
+            return None
+
 
 SYSTEM_PROMPT = (
-    "You are an Aegra Stage Agent advisor. You may reason about authorized "
-    "penetration-testing tasks, but you must only choose registered tools from "
-    "the supplied catalog. Do not invent shell commands, exploit payload source, "
-    "or direct KG/AG/TG/runtime mutations. StageResult writeback happens through "
-    "the structured finish fields."
+    "You are an Aegra LLM Stage Agent, not a tool wrapper. You own the complete "
+    "stage decision: readiness, tool selection, arguments, result interpretation, "
+    "completion status, retry/replan/handoff. You must follow Policy and only "
+    "choose registered MCP tools from the supplied catalog. Do not invent shell commands. You cannot directly "
+    "modify KG, AG, TG or Runtime; ResultApplier is the only write boundary. "
+    "Return strict JSON only."
 )
 
 

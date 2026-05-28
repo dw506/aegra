@@ -49,6 +49,7 @@ from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
+from src.core.planning.stage_task_builder import StageTaskGraphBuilder
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -71,6 +72,8 @@ from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
 from src.core.runtime.worker_result_adapter import WorkerResultAdapter
+from src.core.stage.adapters import StageResultAdapter
+from src.core.stage.models import PlannerResult, StageResult
 from src.core.visualization.graph_event import VisualGraphDelta
 from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
@@ -129,7 +132,7 @@ class PhaseTwoResultApplier:
 
     def apply(
         self,
-        result: AgentTaskResult | AgentExecutionResult | AgentOutput,
+        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | StageResult,
         state: RuntimeState,
         *,
         agent_input: AgentInput | None = None,
@@ -142,13 +145,18 @@ class PhaseTwoResultApplier:
         goal_context: dict[str, Any] | None = None,
         policy_context: dict[str, Any] | None = None,
     ) -> PhaseTwoApplyResult:
-        """Apply one worker result through runtime, KG and AG ownership paths.
+        """Apply one planner/stage/worker result through runtime, KG and AG ownership paths.
 
         中文注释：
         这里统一接受 worker 的多种运行时返回形态，但会在入口立即收敛为
         `AgentTaskResult`。这样 result applier 内部不再关心 `AgentOutput`
         还是 `AgentExecutionResult`，只处理 canonical result。
         """
+
+        if isinstance(result, PlannerResult):
+            return self._apply_planner_result(result=result, state=state, task_graph=task_graph)
+        if isinstance(result, StageResult):
+            result = StageResultAdapter.to_task_result(result)
 
         canonical_result = WorkerResultAdapter.to_task_result(
             result,
@@ -278,6 +286,64 @@ class PhaseTwoResultApplier:
                 tg_graph=apply_result.tg_graph,
                 include_kg=bool(apply_result.kg_apply_result),
                 include_runtime=bool(runtime_event_refs or canonical_result.tg_node_id or canonical_result.task_id),
+            )
+        )
+        return apply_result
+
+    def _apply_planner_result(
+        self,
+        *,
+        result: PlannerResult,
+        state: RuntimeState,
+        task_graph: TaskGraph | None,
+    ) -> PhaseTwoApplyResult:
+        apply_result = PhaseTwoApplyResult()
+        graph = task_graph or TaskGraph()
+        dependencies = list(getattr(result, "dependencies", []) or [])
+        created_ids = StageTaskGraphBuilder().upsert_stage_tasks(
+            graph,
+            list(result.new_stage_tasks),
+            dependencies=dependencies,
+        )
+        selected_id = result.selected_next_task.task_id if result.selected_next_task is not None else None
+        state.execution.metadata["task_graph"] = graph.to_dict()
+        state.execution.metadata["stage_planning"] = result.model_dump(mode="json")
+        self._append_audit_log(
+            state,
+            {
+                "event_type": "planner_result_applied",
+                "planner_result": {
+                    "operation_id": result.operation_id,
+                    "created_task_ids": created_ids,
+                    "selected_next_task_id": selected_id,
+                    "replan_needed": result.replan_needed,
+                    "stop_condition": result.stop_condition,
+                    "confidence": result.confidence,
+                },
+                "graph_update_intents": [intent.model_dump(mode="json") for intent in result.graph_update_intents],
+            },
+        )
+        if result.replan_needed and result.stop_condition != "planner_llm_unavailable":
+            state.replan_requests.append(
+                ReplanRequest(
+                    request_id=f"replan::{result.operation_id}::{len(state.replan_requests) + 1}",
+                    reason=result.stop_condition or result.reasoning_summary or "planner requested replan",
+                    task_ids=[selected_id] if selected_id else [],
+                    metadata={"planner_result": result.model_dump(mode="json")},
+                )
+            )
+        apply_result.tg_graph = graph.to_dict()
+        apply_result.tg_created_task_ids = created_ids
+        apply_result.logs.append(f"applied PlannerResult with {len(created_ids)} TG stage task(s)")
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=None,
+                ag_graph=None,
+                tg_graph=apply_result.tg_graph,
+                include_kg=False,
+                include_runtime=True,
             )
         )
         return apply_result

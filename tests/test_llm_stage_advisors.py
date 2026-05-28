@@ -73,7 +73,7 @@ def test_llm_mission_planner_advisor_accepts_stage_tasks() -> None:
     assert "Do not output shell commands" in str(fake.calls[0]["system_prompt"])
 
 
-def test_mission_planner_falls_back_when_llm_returns_no_tasks() -> None:
+def test_mission_planner_does_not_hardcode_stage_chain_when_llm_returns_no_tasks() -> None:
     advisor = LLMMissionPlannerAdvisor(client=FakePackyClient(PackyLLMResponse(model="gpt-test", text="not-json")))
     planner = MissionPlannerAgent(advisor=advisor)
 
@@ -85,14 +85,10 @@ def test_mission_planner_falls_back_when_llm_returns_no_tasks() -> None:
         },
     )
 
-    assert [task.stage_type for task in result.stage_tasks] == [
-        StageType.RECON_STAGE,
-        StageType.VULN_ANALYSIS_STAGE,
-        StageType.EXPLOIT_STAGE,
-        StageType.ACCESS_PIVOT_STAGE,
-        StageType.GOAL_STAGE,
-    ]
-    assert result.metadata["advisor_fallback"]["metadata"]["accepted"] is False
+    assert result.stage_tasks == []
+    assert result.replan_needed is True
+    assert result.stop_condition == "invalid_planner_json"
+    assert result.metadata["accepted"] is False
 
 
 def test_llm_stage_advisor_accepts_tool_call_decision() -> None:

@@ -466,7 +466,7 @@ def test_global_app_is_none_when_fastapi_is_unavailable() -> None:
         assert app.title
 
 
-def test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback(tmp_path) -> None:
+def test_orchestrator_run_operation_cycle_requires_llm_stage_planner_without_hardcoded_fallback(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
         agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
@@ -486,13 +486,13 @@ def test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback(
     assert result.planning is not None and result.planning.success is True
     assert result.execution is not None and result.execution.success is True
     assert result.feedback is not None and result.feedback.success is True
-    assert result.selected_task_ids
-    assert result.applied_task_ids == result.selected_task_ids
-    assert len(result.apply_results) == 1
+    assert result.selected_task_ids == []
+    assert result.applied_task_ids == []
+    assert len(result.apply_results) == 0
     state = orchestrator.get_operation_state("op-loop")
     assert state.execution.metadata["last_control_cycle"]["cycle_index"] == 1
-    assert state.execution.metadata["control_cycle_history"][0]["applied_results"][0]["task_id"] == result.applied_task_ids[0]
-    assert any(entry["event_type"] == "stage_result_applied" for entry in state.execution.metadata["audit_log"])
+    assert state.execution.metadata["control_cycle_history"][0]["applied_results"] == []
+    assert any(entry["event_type"] == "planner_result_applied" for entry in state.execution.metadata["audit_log"])
     assert [item["phase"] for item in state.execution.metadata["phase_checkpoints"]] == [
         "cycle_started",
         "planning_completed",
@@ -511,7 +511,7 @@ def test_orchestrator_run_operation_cycle_executes_plan_schedule_apply_feedback(
     assert graph_dir.joinpath("runtime.json").exists()
     assert graph_dir.joinpath("snapshots", "cycle-000001", "manifest.json").exists()
     assert orchestrator.graph_memory_store.load_runtime("op-loop").operation_id == "op-loop"
-    assert orchestrator.graph_memory_store.load_tg("op-loop").list_nodes()
+    assert orchestrator.graph_memory_store.load_tg("op-loop").list_nodes() == []
     assert state.execution.metadata["graph_memory"]["loaded_runtime"] is True
 
 
@@ -533,7 +533,7 @@ def test_orchestrator_run_until_quiescent_stops_when_no_more_tasks(tmp_path) -> 
         max_cycles=6,
     )
 
-    assert len(results) == 6
+    assert len(results) == 1
     assert results[-1].stopped is True
     assert results[-1].stop_reason == "no schedulable work and no replan request"
 

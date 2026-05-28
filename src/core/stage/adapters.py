@@ -37,9 +37,12 @@ class StageResultAdapter:
     }
 
     STATUS_MAP = {
+        "success": AgentResultStatus.SUCCEEDED,
         "succeeded": AgentResultStatus.SUCCEEDED,
         "failed": AgentResultStatus.FAILED,
         "partial": AgentResultStatus.SUCCEEDED,
+        "blocked": AgentResultStatus.NEEDS_REPLAN,
+        "need_more_info": AgentResultStatus.NEEDS_REPLAN,
         "needs_replan": AgentResultStatus.NEEDS_REPLAN,
     }
 
@@ -51,12 +54,12 @@ class StageResultAdapter:
         task_candidates = cls._task_candidate_proposals(stage_result)
         runtime_requests = cls._runtime_requests(stage_result)
         replan_hints = []
-        if stage_result.status == "needs_replan":
+        if stage_result.status in {"needs_replan", "blocked", "need_more_info"}:
             replan_hints.append(
                 ReplanHint(
                     source_task_id=stage_result.stage_task_id,
                     scope=ReplanScope.LOCAL,
-                    reason=stage_result.summary,
+                    reason=stage_result.replan_recommendation or stage_result.summary,
                     task_ids=[stage_result.stage_task_id],
                     metadata={"stage_type": stage_result.stage_type.value},
                 )
@@ -81,6 +84,11 @@ class StageResultAdapter:
                 "runtime_hints": dict(stage_result.runtime_hints),
                 "writeback_hints": dict(stage_result.writeback_hints),
                 "tool_trace": [item.model_dump(mode="json") for item in stage_result.tool_trace],
+                "graph_update_intents": [item.model_dump(mode="json") for item in stage_result.graph_update_intents],
+                "policy_notes": list(stage_result.policy_notes),
+                "retry_recommendation": stage_result.retry_recommendation,
+                "replan_recommendation": stage_result.replan_recommendation,
+                "next_stage_suggestion": stage_result.next_stage_suggestion,
                 "task_candidates": [item.model_dump(mode="json") for item in cls._task_candidates(stage_result)],
             },
             metadata={

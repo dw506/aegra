@@ -1217,13 +1217,10 @@ class AppOrchestrator:
             graph_context=graph_context,
             policy_context=self._mapping(planner_payload.get("policy_context")),
         )
-        created_ids = self.stage_task_builder.upsert_stage_tasks(
-            task_graph,
-            planner_result.stage_tasks,
-            dependencies=planner_result.dependencies,
-        )
-        runtime_state.execution.metadata["task_graph"] = task_graph.to_dict()
-        runtime_state.execution.metadata["stage_planning"] = planner_result.model_dump(mode="json")
+        applied_plan = self.result_applier.apply(planner_result, runtime_state, task_graph=task_graph)
+        if applied_plan.tg_graph is not None:
+            task_graph = TaskGraph.from_dict(applied_plan.tg_graph)
+        created_ids = list(applied_plan.tg_created_task_ids)
         output = AgentOutput(
             decisions=[
                 {
@@ -1232,6 +1229,11 @@ class AppOrchestrator:
                     "action": "propose_stage_tasks",
                     "stage_task_ids": [task.task_id for task in planner_result.stage_tasks],
                     "created_task_ids": created_ids,
+                    "selected_next_task_id": (
+                        planner_result.selected_next_task.task_id
+                        if planner_result.selected_next_task is not None
+                        else None
+                    ),
                 }
             ],
             logs=[planner_result.summary or f"stage planner proposed {len(planner_result.stage_tasks)} task(s)"],
@@ -1276,6 +1278,14 @@ class AppOrchestrator:
     ) -> PipelineCycleResult:
         del scheduler_payload, context
         ready_stage_tasks = schedule_ready_stage_tasks(task_graph, runtime_state)
+        selected_next_task_id = (
+            self._mapping(runtime_state.execution.metadata.get("stage_planning"))
+            .get("selected_next_task", {})
+        )
+        if isinstance(selected_next_task_id, dict):
+            selected_next_task_id = selected_next_task_id.get("task_id")
+        if selected_next_task_id:
+            ready_stage_tasks = [task for task in ready_stage_tasks if task.task_id == selected_next_task_id]
         tool_catalog = self.mcp_client.list_tools() if self.mcp_client is not None else {"available": False, "error": "MCP is not configured"}
         graph_context = self._stage_graph_context(
             operation_id=operation_id,
@@ -1297,6 +1307,7 @@ class AppOrchestrator:
                 graph_context=graph_context,
                 runtime_context=runtime_context,
                 tool_catalog=tool_catalog,
+                policy_context=self._mapping(runtime_state.execution.metadata.get("runtime_policy")),
             )
             task_result = StageResultAdapter.to_task_result(stage_result)
             output = AgentOutput(

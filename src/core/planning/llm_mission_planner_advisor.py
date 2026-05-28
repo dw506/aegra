@@ -47,9 +47,15 @@ class LLMMissionPlannerAdvisor:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
+        recent_stage_results: list[dict[str, Any]] | None = None,
     ) -> MissionPlannerResult | dict[str, Any]:
         operation_id = str(graph_context.get("operation_id") or "operation")
-        prompt = self._build_prompt(goal=goal, graph_context=graph_context, policy_context=policy_context)
+        prompt = self._build_prompt(
+            goal=goal,
+            graph_context=graph_context,
+            policy_context=policy_context,
+            recent_stage_results=recent_stage_results,
+        )
         try:
             response = self._client.complete_chat(
                 system_prompt=SYSTEM_PROMPT,
@@ -60,7 +66,10 @@ class LLMMissionPlannerAdvisor:
         except PackyLLMError as exc:
             return MissionPlannerResult(
                 operation_id=operation_id,
-                summary="llm mission planner unavailable; deterministic fallback required",
+                reasoning_summary="llm mission planner unavailable",
+                replan_needed=True,
+                stop_condition="planner_llm_unavailable",
+                summary="llm mission planner unavailable",
                 metadata={"planner": "llm_mission_planner", "accepted": False, "error": str(exc)},
             )
 
@@ -68,10 +77,18 @@ class LLMMissionPlannerAdvisor:
         if payload is None:
             return MissionPlannerResult(
                 operation_id=operation_id,
-                summary="llm mission planner returned non-json; deterministic fallback required",
+                reasoning_summary="llm mission planner returned non-json",
+                replan_needed=True,
+                stop_condition="invalid_planner_json",
+                summary="llm mission planner returned non-json",
                 metadata={"planner": "llm_mission_planner", "accepted": False, "raw_text": response.text[:1000]},
             )
         payload.setdefault("operation_id", operation_id)
+        if "stage_tasks" in payload and "new_stage_tasks" not in payload:
+            payload["new_stage_tasks"] = payload["stage_tasks"]
+        payload.pop("stage_tasks", None)
+        if "summary" in payload and "reasoning_summary" not in payload:
+            payload["reasoning_summary"] = payload["summary"]
         payload.setdefault("metadata", {})
         payload["metadata"] = {
             **dict(payload["metadata"]),
@@ -85,7 +102,10 @@ class LLMMissionPlannerAdvisor:
         except ValidationError as exc:
             return MissionPlannerResult(
                 operation_id=operation_id,
-                summary="llm mission planner returned invalid stage task schema; deterministic fallback required",
+                reasoning_summary="llm mission planner returned invalid PlannerResult schema",
+                replan_needed=True,
+                stop_condition="invalid_planner_schema",
+                summary="llm mission planner returned invalid PlannerResult schema",
                 metadata={"planner": "llm_mission_planner", "accepted": False, "error": str(exc)},
             )
 
@@ -95,13 +115,20 @@ class LLMMissionPlannerAdvisor:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
+        recent_stage_results: list[dict[str, Any]] | None = None,
     ) -> str:
         context = _truncate_json(
             {
                 "mission_goal": goal,
                 "graph_context": graph_context,
                 "policy_context": policy_context,
+                "recent_stage_results": list(recent_stage_results or []),
                 "allowed_stage_types": [
+                    "recon",
+                    "vuln_analysis",
+                    "exploit",
+                    "access_pivot",
+                    "goal",
                     "RECON_STAGE",
                     "VULN_ANALYSIS_STAGE",
                     "EXPLOIT_STAGE",
@@ -112,18 +139,21 @@ class LLMMissionPlannerAdvisor:
             self._config.max_context_chars,
         )
         return (
-            "Return only JSON matching MissionPlannerResult. "
-            "Plan multi-host penetration testing as stage tasks over the graph memory. "
-            "Use target_refs already present in KG/AG/TG/query context; do not invent shell commands.\n\n"
+            "Return only JSON matching PlannerResult/MissionPlannerResult. "
+            "You are the complete Planner Agent. Understand the user goal, analyze KG/AG/TG/Runtime/Policy, "
+            "identify the current phase, decompose or update stage tasks, select the next best StageTask, "
+            "and emit graph_update_intents for ResultApplier. Do not use a fixed stage order. "
+            "Use target_refs already present in KG/AG/TG/query context; do not invent shell commands or facts.\n\n"
             f"{context}"
         )
 
 
 SYSTEM_PROMPT = (
-    "You are Aegra Planner Agent. Read KG, AG, TG and runtime snapshots, "
-    "then produce coarse stage tasks for ReconAgent, VulnAnalysisAgent, "
-    "ExploitAgent, AccessPivotAgent and GoalAgent. Output strict JSON only. "
-    "Do not output shell commands, payloads, raw exploit code, or direct graph deltas."
+    "You are Aegra's LLM Planner Agent. You own global goal understanding, graph-state analysis, "
+    "stage task decomposition, TG update intent generation, and next-task selection. Code only "
+    "assembles context and validates your JSON; do not rely on hard-coded stage ordering. "
+    "Policy must constrain every task you propose. Do not output shell commands. "
+    "Output strict JSON only, with no chain-of-thought."
 )
 
 
