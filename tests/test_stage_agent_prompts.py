@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from src.core.agents.packy_llm import PackyLLMResponse
+from src.core.stage.llm_stage_advisor import LLMStageAdvisor
+from src.core.stage.models import StageExecutionRequest, StageType
+
+
+class FakePackyClient:
+    def __init__(self) -> None:
+        self.config = type("Config", (), {"model": "gpt-test"})()
+        self.calls: list[dict[str, object]] = []
+
+    def complete_chat(
+        self,
+        *,
+        user_prompt: str,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+    ) -> PackyLLMResponse:
+        self.calls.append(
+            {
+                "user_prompt": user_prompt,
+                "system_prompt": system_prompt,
+                "model": model,
+                "temperature": temperature,
+            }
+        )
+        return PackyLLMResponse(
+            model="gpt-test",
+            text=json.dumps({"action": "finish", "rationale": "done", "finish": {"status": "succeeded", "summary": "done"}}),
+        )
+
+
+def test_all_stage_agent_prompt_files_exist() -> None:
+    prompt_dir = Path("src/core/stage/prompts")
+
+    for filename in [
+        "recon_agent.md",
+        "vuln_analysis_agent.md",
+        "exploit_validation_agent.md",
+        "access_pivot_agent.md",
+        "goal_agent.md",
+    ]:
+        path = prompt_dir / filename
+        assert path.exists()
+        assert "Return only StageAgentDecision JSON" in path.read_text(encoding="utf-8")
+
+
+def test_llm_stage_advisor_uses_common_and_agent_specific_prompt() -> None:
+    fake = FakePackyClient()
+    advisor = LLMStageAdvisor(client=fake)
+    request = StageExecutionRequest(
+        operation_id="op-1",
+        cycle_index=1,
+        agent_name="goal_agent",
+        stage_type=StageType.GOAL_STAGE,
+        objective="Verify goal",
+        risk_level="low",
+        max_steps=1,
+    )
+
+    advisor.decide(
+        agent_name="goal_agent",
+        stage_type=StageType.GOAL_STAGE,
+        request=request,
+        graph_context={},
+        runtime_context={},
+        policy_context={},
+        memory=[],
+        available_tools={},
+    )
+
+    system_prompt = str(fake.calls[0]["system_prompt"])
+    assert "Call only tools present in mcp_tool_catalog" in system_prompt
+    assert "You are GoalAgent" in system_prompt
+    assert "runtime_hints.goal_satisfied=true" in system_prompt
+    assert "You are an Aegra LLM Stage Agent" in system_prompt

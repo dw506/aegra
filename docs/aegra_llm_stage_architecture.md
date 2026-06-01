@@ -1,33 +1,138 @@
 # Aegra LLM Stage Architecture
 
+The LLM architecture is built around one global planning agent and five
+independent execution agents. Aegra does not use a task graph as the main
+execution chain.
+
+Canonical main path:
+
 ```text
-Graph State Layer
-KG / AG / TG / Runtime / Policy
-        ↓
-Planner Agent
-Global Goal -> Stage Tasks
-        ↓
-Stage Agents
-ReconAgent / VulnAnalysisAgent / ExploitAgent / AccessPivotAgent / GoalAgent
-        ↓
-MCP Tool Layer
-recon / vuln / exploit / access / credential / pivot / goal tools
-        ↓
-StageResult / ToolTrace
-        ↓
-ResultApplier.apply()
-        ↓
-Runtime / KG / AG / TG Updates
-        ↓
-Next Loop
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
-The Planner Agent is an LLM Agent. It owns goal understanding, GraphStateSnapshot analysis, stage task decomposition, TG update intent generation and next StageTask selection. Code must not replace that with keyword rules or a fixed recon -> vuln -> exploit -> pivot -> goal sequence.
+```text
+KG/AG/Runtime/Policy
+        |
+        v
+PlannerAgent
+        |
+        v
+PlannerDecision
+        |
+        v
+ResultApplier
+        |
+        v
+StageDispatcher
+        |
+        v
+ReconAgent / VulnAnalysisAgent / ExploitValidationAgent / AccessPivotAgent / GoalAgent
+        |
+        v
+MCP
+        |
+        v
+StageResult / ToolTrace / handoff_suggestion
+        |
+        v
+AttackLogExtractor
+        |
+        v
+ResultApplier
+        |
+        v
+KG/AG/Runtime
+        |
+        v
+Next Cycle
+```
 
-Stage Agents are also LLM Agents. ReconAgent, VulnAnalysisAgent, ExploitAgent, AccessPivotAgent and GoalAgent own their full stage decisions: whether the task is ready, which MCP tools to call, arguments, rationale, result interpretation, completion status, retry, replan, handoff or stop. Code only builds prompts, supplies GraphStateSnapshot and Policy, validates JSON, enforces policy before tool calls, records ToolTrace and returns StageResult.
+## PlannerAgent
 
-MCP tools provide capability only. They return raw output, parsed fields, errors and evidence references. They do not write KG, AG, TG or Runtime.
+`PlannerAgent` is the only global planning LLM. It reads:
 
-ResultApplier.apply() is the only graph state write boundary. PlannerResult and StageResult carry graph_update_intents, facts, evidence, task proposals and runtime hints. ResultApplier performs deterministic validation, merge, status updates, provenance, audit logging and confidence-aware writeback. It does not call the LLM for core judgment.
+- `KG`: environment facts.
+- `AG`: prior attack-process events and decisions.
+- `Runtime`: current execution state.
+- `Policy`: scope, authorization, safety, and MCP constraints.
 
-Policy is read by Planner Agent, Stage Agents and enforced before MCP calls. Sensitive exploit, access, credential and pivot tools require explicit authorization context. Denied calls produce blocked ToolTrace/StageResult and are still applied so Runtime and TG record the blocker.
+It outputs `PlannerDecision`, which may include:
+
+- selected stage
+- `selected_agent`
+- rationale
+- required context
+- expected result shape
+- stop, handoff, or blocked state
+
+It must not output shell commands, payloads, or concrete MCP tool calls. It also
+must not rely on a fixed stage order. The next agent is selected from current
+state and policy, not from a hard-coded sequence.
+
+## StageDispatcher
+
+`StageDispatcher` is deterministic routing. It reads
+`PlannerDecision.selected_agent` and invokes one of:
+
+- `ReconAgent`
+- `VulnAnalysisAgent`
+- `ExploitValidationAgent`
+- `AccessPivotAgent`
+- `GoalAgent`
+
+It does not schedule task-graph nodes, merge task state, or write graphs.
+
+## StageAgent
+
+Each `StageAgent` is an independent LLM stage executor. A stage agent can call
+authorized MCP tools through the policy-enforced tool boundary. It returns:
+
+- `StageResult`
+- `ToolTrace`
+- `handoff_suggestion`
+
+Stage agents cannot directly write `KG`, `AG`, `Runtime`, or audit logs. Their
+outputs are validated and applied later by `ResultApplier`.
+
+## MCP Layer
+
+MCP tools provide capability only. They return tool results, parsed fields,
+errors, and evidence references. Policy enforcement happens before tool calls,
+and denied calls are recorded as blocked tool traces. MCP tools do not persist
+graph or runtime state.
+
+## AttackLogExtractor
+
+`AttackLogExtractor` converts operational records into `AG` attack-process
+nodes. Its inputs are:
+
+- `StageResult`
+- `ToolTrace`
+- `PlannerDecision`
+- audit log entries
+
+The extractor emits candidate `AG` nodes such as `PlannerDecision`,
+`AgentExecution`, `ToolCall`, `StageResult`, `Handoff`, `Blocked`,
+`GoalCheck`, and `AttackCycle`. Each `AG` node records one attack process event
+or decision, not an environment fact.
+
+## ResultApplier
+
+`ResultApplier` is the only write boundary. It validates and persists:
+
+- `KG` environment facts
+- `AG` attack-process nodes
+- `Runtime` session, pivot, credential, lock, and budget updates
+- audit log entries
+- normalized evidence and findings
+
+The applier performs schema validation, merge rules, provenance tracking,
+confidence handling, and policy-compatible writeback. It does not call an LLM
+for core judgment.
+
+## Legacy Compatibility
+
+`SchedulerAgent`, `LLMWorkerAgent`, `TaskGraph`, `StageTaskGraphBuilder`,
+`TaskGraphBuilder`, task-graph merge helpers, and task-graph lifecycle sync may
+remain only as legacy compatibility. They are not part of the main LLM stage
+architecture and must not be used to drive new operation cycles.

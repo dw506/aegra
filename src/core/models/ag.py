@@ -2,28 +2,27 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-def utc_now() -> datetime:
-    """Return the current UTC timestamp."""
-
-    return datetime.now(timezone.utc)
-
-
-def stable_node_id(prefix: str, payload: dict[str, Any]) -> str:
-    """Build a deterministic ID from a small structured payload."""
-
-    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]
-    return f"{prefix}::{digest}"
+from src.core.models.attack_process import (
+    AgentExecutionNode,
+    AttackProcessEdge,
+    AttackProcessEdgeType,
+    AttackCycleNode,
+    AttackProcessNode,
+    AttackProcessNodeType,
+    BlockedReasonNode,
+    HandoffSuggestionNode,
+    PlannerDecisionNode,
+    StageResultNode,
+    ToolCallNode,
+)
+from src.core.models.graph_common import GraphRef, stable_node_id, utc_now
 
 
 class StateNodeType(str, Enum):
@@ -128,22 +127,6 @@ class AGEdgeType(str, Enum):
     BLOCKED_BY = "BLOCKED_BY"
     COMPETES_WITH = "COMPETES_WITH"
     DOMINATES = "DOMINATES"
-
-
-class GraphRef(BaseModel):
-    """Reference to a source object in KG, AG or a derived query."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    graph: Literal["kg", "ag", "tg", "query"]
-    ref_id: str = Field(min_length=1)
-    ref_type: str | None = None
-    label: str | None = None
-
-    def key(self) -> str:
-        """Return a stable key for indexing."""
-
-        return f"{self.graph}:{self.ref_id}"
 
 
 class GraphBinding(BaseModel):
@@ -280,7 +263,8 @@ class ConstraintNode(BaseAGNode):
     activation_status: ActivationStatus = ActivationStatus.ACTIVE
 
 
-AGNode = StateNode | ActionNode | GoalNode | ConstraintNode
+AGNode: TypeAlias = StateNode | ActionNode | GoalNode | ConstraintNode | AttackProcessNode
+AGEdge: TypeAlias = BaseAGEdge | AttackProcessEdge
 
 
 NODE_KIND_MAP: dict[str, type[BaseAGNode]] = {
@@ -296,7 +280,7 @@ class AttackGraph:
 
     def __init__(self) -> None:
         self._nodes: dict[str, AGNode] = {}
-        self._edges: dict[str, BaseAGEdge] = {}
+        self._edges: dict[str, AGEdge] = {}
         self._node_type_index: dict[str, set[str]] = defaultdict(set)
         self._outgoing_index: dict[str, set[str]] = defaultdict(set)
         self._incoming_index: dict[str, set[str]] = defaultdict(set)
@@ -363,7 +347,7 @@ class AttackGraph:
         self._version += 1
         return node
 
-    def add_edge(self, edge: BaseAGEdge) -> BaseAGEdge:
+    def add_edge(self, edge: AGEdge) -> AGEdge:
         """Add an edge between existing nodes."""
 
         if edge.id in self._edges:
@@ -378,12 +362,34 @@ class AttackGraph:
         self._version += 1
         return edge
 
+    def add_process_node(self, node: AttackProcessNode | None = None, **kwargs: Any) -> AttackProcessNode:
+        """Create or add an attack-process node."""
+
+        if node is not None and kwargs:
+            raise ValueError("pass either a process node or process node fields, not both")
+        if node is None:
+            node = parse_ag_node(kwargs)
+        if not isinstance(node, AttackProcessNode):
+            raise ValueError("process node helper only accepts attack-process nodes")
+        return self.add_node(node)
+
+    def add_process_edge(self, edge: AttackProcessEdge | None = None, **kwargs: Any) -> AttackProcessEdge:
+        """Create or add an attack-process edge."""
+
+        if edge is not None and kwargs:
+            raise ValueError("pass either a process edge or process edge fields, not both")
+        if edge is None:
+            edge = parse_ag_edge(kwargs)
+        if not isinstance(edge, AttackProcessEdge):
+            raise ValueError("process edge helper only accepts attack-process edges")
+        return self.add_edge(edge)
+
     def get_node(self, node_id: str) -> AGNode:
         """Return a node by ID."""
 
         return self._nodes[node_id]
 
-    def get_edge(self, edge_id: str) -> BaseAGEdge:
+    def get_edge(self, edge_id: str) -> AGEdge:
         """Return an edge by ID."""
 
         return self._edges[edge_id]
@@ -405,7 +411,7 @@ class AttackGraph:
         self._version += 1
         return node
 
-    def remove_edge(self, edge_id: str) -> BaseAGEdge:
+    def remove_edge(self, edge_id: str) -> AGEdge:
         """Remove an edge by ID."""
 
         edge = self._edges[edge_id]
@@ -425,7 +431,7 @@ class AttackGraph:
             nodes = (self._nodes[node_id] for node_id in self._node_type_index.get(key, set()))
         return sorted(nodes, key=lambda item: item.id)
 
-    def list_edges(self, edge_type: AGEdgeType | str | None = None) -> list[BaseAGEdge]:
+    def list_edges(self, edge_type: AGEdgeType | Enum | str | None = None) -> list[AGEdge]:
         """List all edges, optionally filtered by type."""
 
         if edge_type is None:
@@ -438,7 +444,7 @@ class AttackGraph:
     def neighbors(
         self,
         node_id: str,
-        edge_type: AGEdgeType | str | None = None,
+        edge_type: AGEdgeType | Enum | str | None = None,
         direction: Literal["in", "out", "both"] = "both",
     ) -> list[AGNode]:
         """Return neighboring nodes from incoming, outgoing or both edges."""
@@ -503,6 +509,32 @@ class AttackGraph:
 
         return [node for node in self.list_nodes() if isinstance(node, ConstraintNode)]
 
+    def find_process_nodes(
+        self,
+        operation_id: str | None = None,
+        cycle_index: int | None = None,
+        agent_name: str | None = None,
+        node_type: Enum | str | None = None,
+    ) -> list[AttackProcessNode]:
+        """Return attack-process nodes filtered by process metadata."""
+
+        node_type_key = node_type.value if isinstance(node_type, Enum) else node_type
+        candidates = self.list_nodes(node_type_key) if node_type_key is not None else self.list_nodes()
+        nodes = [node for node in candidates if isinstance(node, AttackProcessNode)]
+        if operation_id is not None:
+            nodes = [node for node in nodes if node.operation_id == operation_id]
+        if cycle_index is not None:
+            nodes = [node for node in nodes if node.cycle_index == cycle_index]
+        if agent_name is not None:
+            nodes = [node for node in nodes if node.agent_name == agent_name]
+        return sorted(nodes, key=lambda item: (item.created_at, item.id))
+
+    def recent_process_nodes(self, limit: int = 20) -> list[AttackProcessNode]:
+        """Return the most recently created attack-process nodes."""
+
+        nodes = [node for node in self.list_nodes() if isinstance(node, AttackProcessNode)]
+        return sorted(nodes, key=lambda item: (item.created_at, item.id), reverse=True)[: max(limit, 0)]
+
     def by_subject_ref(self, ref: GraphRef) -> list[AGNode]:
         """Return AG nodes indexed by a subject-like graph ref."""
 
@@ -533,7 +565,7 @@ class AttackGraph:
         for node_data in payload.get("nodes", []):
             graph.add_node(parse_ag_node(node_data))
         for edge_data in payload.get("edges", []):
-            graph.add_edge(BaseAGEdge.model_validate(edge_data))
+            graph.add_edge(parse_ag_edge(edge_data))
         metadata = payload.get("metadata") or {}
         if isinstance(metadata, dict):
             graph.set_projection_metadata(
@@ -550,6 +582,8 @@ class AttackGraph:
 
     @staticmethod
     def _node_type_key(node: AGNode) -> str:
+        if isinstance(node, AttackProcessNode):
+            return node.node_type.value
         if isinstance(node, StateNode):
             return node.node_type.value
         if isinstance(node, ActionNode):
@@ -561,14 +595,17 @@ class AttackGraph:
     @staticmethod
     def _refs_for_index(node: AGNode) -> list[GraphRef]:
         refs: list[GraphRef] = []
-        if isinstance(node, StateNode):
+        if isinstance(node, AttackProcessNode):
+            refs.extend(node.refs)
+        elif isinstance(node, StateNode):
             refs.extend(node.subject_refs)
             refs.extend(node.created_from)
         elif isinstance(node, GoalNode):
             refs.extend(node.scope_refs)
         elif isinstance(node, ConstraintNode):
             refs.extend(node.applies_to)
-        refs.extend(node.source_refs)
+        if hasattr(node, "source_refs"):
+            refs.extend(node.source_refs)
         unique: dict[str, GraphRef] = {ref.key(): ref for ref in refs}
         return list(unique.values())
 
@@ -576,4 +613,40 @@ class AttackGraph:
 def parse_ag_node(data: dict[str, Any]) -> AGNode:
     """Instantiate a typed AG node from serialized data."""
 
-    return NODE_KIND_MAP[data["kind"]].model_validate(data)
+    kind = data.get("kind")
+    if kind in NODE_KIND_MAP:
+        return NODE_KIND_MAP[kind].model_validate(data)
+
+    node_type = data.get("node_type")
+    node_type_key = node_type.value if isinstance(node_type, Enum) else node_type
+    process_node_types = {item.value for item in AttackProcessNodeType}
+    if kind == "process" or node_type_key in process_node_types:
+        node_data = dict(data)
+        node_data.pop("kind", None)
+        process_node_map = {
+            AttackProcessNodeType.ATTACK_CYCLE.value: AttackCycleNode,
+            AttackProcessNodeType.PLANNER_DECISION.value: PlannerDecisionNode,
+            AttackProcessNodeType.AGENT_EXECUTION.value: AgentExecutionNode,
+            AttackProcessNodeType.TOOL_CALL.value: ToolCallNode,
+            AttackProcessNodeType.STAGE_RESULT.value: StageResultNode,
+            AttackProcessNodeType.HANDOFF_SUGGESTION.value: HandoffSuggestionNode,
+            AttackProcessNodeType.BLOCKED_REASON.value: BlockedReasonNode,
+        }
+        model = process_node_map.get(node_type_key, AttackProcessNode)
+        return model.model_validate(node_data)
+
+    raise ValueError(f"unknown AG node kind or node_type: {kind or node_type_key}")
+
+
+def parse_ag_edge(data: dict[str, Any]) -> AGEdge:
+    """Instantiate a typed AG edge from serialized data."""
+
+    edge_type = data.get("edge_type")
+    edge_type_key = edge_type.value if isinstance(edge_type, Enum) else edge_type
+    if edge_type_key in {item.value for item in AGEdgeType}:
+        return BaseAGEdge.model_validate(data)
+
+    if edge_type_key in {item.value for item in AttackProcessEdgeType}:
+        return AttackProcessEdge.model_validate(data)
+
+    raise ValueError(f"unknown AG edge_type: {edge_type_key}")

@@ -121,7 +121,6 @@ def _default_graph_refs() -> list[GraphRef]:
     return [
         GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
         GraphRef(graph=GraphScope.AG, ref_id="ag-root", ref_type="graph"),
-        GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph"),
     ]
 
 

@@ -1,61 +1,90 @@
 # Aegra Runtime Flow
 
-Aegra uses an LLM Multi-Agent Graph-Driven Runtime. Agent means an
-LLM-owned reasoning module; deterministic code is named as a service, gate,
-validator, applier, store, parser, or adapter.
+Aegra now uses a two-graph runtime: `KG + AG`. `Runtime` and `Policy` are
+execution context, not graphs. The main path must not save, load, schedule, or
+merge a `TaskGraph`.
 
 ## Main Path
 
 ```text
-User Goal / Operation Goal
-  -> KG / AG / TG / Runtime / Policy
-  -> PlannerAgent [LLM]
-  -> ResultApplier
-  -> SchedulerAgent [LLM]
-  -> ResultApplier
-  -> LLMWorkerAgent [LLM]
-  -> MCP Tool / ExecutionAdapter
-  -> CriticAgent [LLM]
-  -> ResultApplier
-  -> KG / AG / TG / Runtime update
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
-`PlannerAgent` reads graph state and policy context, understands the mission
-goal, and emits `PlannerResult` / graph update intents. It does not execute
-tools and does not write KG, AG, TG, or Runtime directly.
+`PlannerAgent` is the only global planning LLM. It reads `KG`, `AG`,
+`Runtime`, and `Policy`, then emits a `PlannerDecision`. The decision selects
+the next stage and `selected_agent`; it does not contain shell commands,
+payloads, or concrete tool invocations.
 
-`SchedulerAgent` reads TG candidates, Runtime constraints, Policy, worker state,
-tool catalog, and recent outcomes. Candidate collection and constraint summaries
-are deterministic services, but the final `ScheduleDecision` is LLM-owned. If
-the scheduler LLM is unavailable, the agent returns blocked/unavailable instead
-of falling back to deterministic dispatch.
+`ResultApplier` is the only write boundary for `KG`, `AG`, `Runtime`, and the
+audit log. Planner decisions, stage results, tool traces, extracted attack
+events, evidence, findings, session updates, pivot updates, and credential
+updates must pass through this boundary before persistence.
 
-`LLMWorkerAgent` receives one `ScheduledTask`, compressed context, policy
-constraints, and the tool catalog. It may only choose `call_mcp_tool`, `defer`,
-or `failed`; it does not create TG tasks or write graph/runtime state.
+`StageDispatcher` reads `PlannerDecision.selected_agent` and invokes exactly one
+of the execution agents:
 
-`CriticAgent` reviews worker evidence, tool traces, and success criteria. It
-emits confidence, evidence quality, and retry/replan/change-tool suggestions.
-It does not block writeback and does not write graph/runtime state.
+- `ReconAgent`
+- `VulnAnalysisAgent`
+- `ExploitValidationAgent`
+- `AccessPivotAgent`
+- `GoalAgent`
+
+There is no fixed `recon -> vuln -> exploit -> pivot -> goal` order. The
+planner may select any authorized stage that is justified by the current
+`KG/AG/Runtime/Policy` context.
+
+Each `StageAgent` is an independent LLM execution agent. It receives bounded
+context and policy constraints, may call authorized MCP tools, and returns
+`StageResult`, `ToolTrace`, and optional `handoff_suggestion`. Stage agents do
+not write `KG`, `AG`, `Runtime`, or audit logs directly.
+
+`AttackLogExtractor` reads `StageResult`, `ToolTrace`, `PlannerDecision`, and
+audit log entries. It extracts attack-process records for `AG` and sends them
+to `ResultApplier`. It does not bypass validation or write directly to graph
+stores.
+
+## State Model
+
+- `KG`: Knowledge Graph. Stores environment facts only, such as `Host`,
+  `Service`, `Port`, `VulnerabilityCandidate`, `ValidatedVulnerability`,
+  `Credential`, `Identity`, `Session`, `PivotRoute`, `Evidence`, and
+  `Finding`.
+- `AG`: Attack Graph. Stores attack-process nodes only. An `AG` node records
+  one attack process event or decision, such as `PlannerDecision`,
+  `AgentExecution`, `ToolCall`, `StageResult`, `Handoff`, `Blocked`,
+  `GoalCheck`, or `AttackCycle`.
+- `Runtime`: execution state, including active operation status, session and
+  pivot managers, credential manager state, leases, locks, budgets, and current
+  cycle metadata. It is not a graph and is exposed to UI consumers as a state
+  panel/read model.
+- `Policy`: authorization, scope, safety, MCP enforcement, and validation
+  constraints. It is not a graph.
 
 ## Boundaries
 
-- Agent: LLM-owned reasoning module. Current primary agents are
-  `PlannerAgent`, `SchedulerAgent`, `LLMWorkerAgent`, and `CriticAgent`.
-- Service: deterministic infrastructure or helper logic, such as
-  `CandidateTaskService`, runtime constraint summarizers, and policy helpers.
-- Applier: write boundary. `ResultApplier` is the only component that persists
-  KG, AG, TG, Runtime, audit log, and LLM decision history changes.
-- Adapter: tool execution boundary. Execution adapters and MCP clients execute
-  tools and return neutral results.
-- Parser: raw result interpretation boundary. Parsers normalize output into
-  observations and evidence, but do not persist graph/runtime state.
+- Agent: LLM-owned reasoning module. The main path agents are `PlannerAgent`
+  and the five `StageAgent` implementations.
+- Dispatcher: deterministic routing from `PlannerDecision.selected_agent` to a
+  stage agent. It does not plan, schedule tasks, or write state.
+- MCP: tool capability layer. MCP tools execute authorized actions and return
+  neutral tool results. They do not write graphs or runtime state.
+- Extractor: deterministic attack-log extraction from planner, stage, tool, and
+  audit records into candidate `AG` process nodes.
+- Applier: deterministic write boundary. `ResultApplier` validates schemas,
+  applies policy-compatible updates, normalizes evidence and findings, merges
+  graph facts, updates runtime managers, and records audit history.
 
 ## Guardrails
 
-- Deterministic helpers may provide candidate lists and constraints, but must
-  not be registered or named as Agents unless the core decision is LLM-owned.
-- Result writeback remains centralized in `PhaseTwoResultApplier`.
-- Execution adapters and parsers do not import graph stores or ResultApplier.
-- LLM unavailable states are explicit blocked/unavailable decisions, not hidden
-  rule-based fallbacks.
+- `TaskGraph` is not a primary graph and must not appear in the main runtime
+  path.
+- Visualization and graph API defaults publish only `KG`, `AG`, and `Runtime`;
+  legacy TG output requires explicit `legacy_tg=true`.
+- `SchedulerAgent`, `LLMWorkerAgent`, `TaskGraph`, `StageTaskGraphBuilder`,
+  `TaskGraphBuilder`, task-graph merge helpers, and task-graph lifecycle sync
+  are legacy compatibility only.
+- Legacy compatibility code must not be used as the default planner,
+  dispatcher, scheduling, merge, or persistence path for new operation cycles.
+- JSON schema validation, MCP policy enforcement, Runtime session, pivot, and
+  credential managers, audit logging, and evidence/finding normalization remain
+  mandatory.

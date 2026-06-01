@@ -9,7 +9,6 @@ from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph, StateNode, StateNodeType
 from src.core.models.kg import Host
 from src.core.models.runtime import OperationRuntime, RuntimeState
-from src.core.models.tg import TaskGraph, TaskNode, TaskType
 from src.core.visualization.graph_event import GraphOperation, VisualGraphChange, VisualGraphDelta
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.core.visualization.graph_serializer import build_visual_snapshot, graph_payload_to_delta
@@ -31,7 +30,7 @@ def _require_test_client():
     return TestClient
 
 
-def test_visual_snapshot_serializes_kg_ag_tg_and_runtime() -> None:
+def test_visual_snapshot_serializes_kg_ag_and_runtime_by_default() -> None:
     kg = KnowledgeGraph()
     kg.add_node(Host(id="host-1", label="10.20.0.30", address="10.20.0.30"))
 
@@ -44,23 +43,19 @@ def test_visual_snapshot_serializes_kg_ag_tg_and_runtime() -> None:
         )
     )
 
-    tg = TaskGraph()
-    tg.add_node(TaskNode(id="task-1", label="Scan host", task_type=TaskType.PORT_SCAN))
-
     runtime = RuntimeState(operation_id="op-vis", execution=OperationRuntime(operation_id="op-vis"))
     snapshot = build_visual_snapshot(
         operation_id="op-vis",
         kg_payload=kg.to_dict(),
         ag_payload=ag.to_dict(),
-        tg_payload=tg.to_dict(),
         runtime_state=runtime,
     )
 
     assert snapshot.type == "graph_snapshot"
     assert snapshot.graphs["kg"].nodes[0].id == "host-1"
     assert snapshot.graphs["ag"].nodes[0].type == "HOST_KNOWN"
-    assert snapshot.graphs["tg"].nodes[0].status == "draft"
     assert snapshot.graphs["runtime"].nodes[0].type == "OperationRuntime"
+    assert "tg" not in snapshot.graphs
 
 
 def test_graph_payload_to_delta_upserts_nodes_and_edges() -> None:

@@ -31,11 +31,19 @@ from src.core.agents.graph_projection import GraphProjectionAgent
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.state_writer import StateWriterAgent
 from src.core.graph.ag_projector import AttackGraphProjector
-from src.core.graph.attack_chain_rules import generate_followup_task_candidates_from_result
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskCandidate, TaskGenerationRequest, TaskGenerationResult, TaskGraphBuilder
-from src.core.graph.tg_merge import merge_task_graphs
-from src.core.models.ag import ActionNode, AttackGraph
+from src.core.models.ag import AttackGraph
+from src.core.models.attack_process import (
+    AgentExecutionNode,
+    AttackProcessEdge,
+    AttackProcessEdgeType,
+    AttackProcessNode,
+    AttackProcessNodeType,
+    PlannerDecisionNode,
+    StageResultNode,
+    ToolCallNode,
+    stable_node_id,
+)
 from src.core.models.events import (
     AgentResultStatus,
     AgentTaskResult,
@@ -48,8 +56,8 @@ from src.core.models.events import (
 from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
-from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
-from src.core.planning.stage_task_builder import StageTaskGraphBuilder
+from src.core.planning.models import PlannerDecision
+from src.core.runtime.attack_log_models import AttackLogExtraction
 from src.core.scheduling.llm_scheduler_models import ScheduleDecision
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
@@ -74,7 +82,7 @@ from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
 from src.core.runtime.worker_result_adapter import WorkerResultAdapter
 from src.core.stage.adapters import StageResultAdapter
-from src.core.stage.models import PlannerResult, StageResult
+from src.core.stage.models import PlannerResult, StageResult, ToolTrace
 from src.core.visualization.graph_event import VisualGraphDelta
 from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
@@ -115,13 +123,13 @@ class PhaseTwoResultApplier:
         checkpoint_manager: RuntimeCheckpointManager | None = None,
         lock_manager: RuntimeLockManager | None = None,
         attack_graph_projector: AttackGraphProjector | None = None,
-        task_graph_builder: AttackGraphTaskBuilder | None = None,
+        task_graph_builder: Any | None = None,
         reachability_propagator: ReachabilityPropagator | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
         self._graph_projection = graph_projection or GraphProjectionAgent()
         self._attack_graph_projector = attack_graph_projector or AttackGraphProjector()
-        self._task_graph_builder = task_graph_builder or AttackGraphTaskBuilder()
+        self._task_graph_builder = task_graph_builder
         self._session_manager = session_manager or RuntimeSessionManager()
         self._credential_manager = credential_manager or RuntimeCredentialManager()
         self._lease_manager = lease_manager or RuntimeLeaseManager()
@@ -133,7 +141,7 @@ class PhaseTwoResultApplier:
 
     def apply(
         self,
-        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | StageResult | ScheduleDecision,
+        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | PlannerDecision | StageResult | AttackLogExtraction | ScheduleDecision,
         state: RuntimeState,
         *,
         agent_input: AgentInput | None = None,
@@ -154,6 +162,22 @@ class PhaseTwoResultApplier:
         还是 `AgentExecutionResult`，只处理 canonical result。
         """
 
+        if isinstance(result, PlannerDecision):
+            if kg_store is None:
+                raise ValueError("kg_store is required to apply PlannerDecision")
+            if attack_graph is None:
+                raise ValueError("attack_graph is required to apply PlannerDecision")
+            return self.apply_planner_decision(result, state, kg_store, attack_graph)
+        if isinstance(result, AttackLogExtraction):
+            if attack_graph is None:
+                raise ValueError("attack_graph is required to apply AttackLogExtraction")
+            return self.apply_log_extraction(result, state, attack_graph)
+        if isinstance(result, StageResult):
+            if kg_store is None:
+                raise ValueError("kg_store is required to apply StageResult")
+            if attack_graph is None:
+                raise ValueError("attack_graph is required to apply StageResult")
+            return self.apply_stage_result(result, state, kg_store, attack_graph)
         if isinstance(result, PlannerResult):
             return self._apply_planner_result(result=result, state=state, task_graph=task_graph)
         if isinstance(result, ScheduleDecision):
@@ -173,6 +197,7 @@ class PhaseTwoResultApplier:
 
         resolved_kg_ref = kg_ref or self._resolve_kg_ref(canonical_result)
         apply_result = PhaseTwoApplyResult()
+        legacy_tg_generation_enabled = bool(state.execution.metadata.get("enable_legacy_tg_generation") or task_graph is not None)
 
         runtime_event_refs = self._apply_runtime_effects(result=canonical_result, state=state)
         apply_result.runtime_event_refs.extend(runtime_event_refs)
@@ -271,27 +296,37 @@ class PhaseTwoResultApplier:
                 apply_result.logs.append(
                     f"re-projected AG from KG version {kg_store.version} into AG version {projected_ag.version}"
                 )
-                generated_tg = self._generate_candidate_task_graph(projected_ag)
-                apply_result.tg_task_candidates = [
-                    candidate.model_dump(mode="json") for candidate in generated_tg.candidates
-                ]
-                apply_result.tg_created_task_ids = list(generated_tg.created_task_ids)
-                if generated_tg.task_graph is not None and generated_tg.candidates:
-                    generated_task_graph = TaskGraph.from_dict(generated_tg.task_graph)
-                    merged_task_graph = merge_task_graphs(task_graph, generated_task_graph)
-                    self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
-                    apply_result.tg_graph = merged_task_graph.to_dict()
-                    apply_result.logs.append(
-                        f"generated {len(apply_result.tg_task_candidates)} TG candidate task(s) from updated AG"
-                    )
+                if legacy_tg_generation_enabled:
+                    generated_tg = self._legacy_generate_candidate_task_graph(projected_ag)
+                    apply_result.tg_task_candidates = [
+                        candidate.model_dump(mode="json") for candidate in generated_tg.candidates
+                    ]
+                    apply_result.tg_created_task_ids = list(generated_tg.created_task_ids)
+                    if generated_tg.task_graph is not None and generated_tg.candidates:
+                        from src.core.graph.tg_merge import merge_task_graphs
+                        from src.core.models.tg import TaskGraph
+
+                        generated_task_graph = TaskGraph.from_dict(generated_tg.task_graph)
+                        merged_task_graph = merge_task_graphs(task_graph, generated_task_graph)
+                        self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
+                        apply_result.tg_graph = merged_task_graph.to_dict()
+                        apply_result.logs.append(
+                            f"generated {len(apply_result.tg_task_candidates)} legacy TG candidate task(s) from updated AG"
+                        )
+                    elif task_graph is not None:
+                        apply_result.tg_graph = task_graph.to_dict()
+                        apply_result.logs.append("updated AG produced no legacy TG candidates; kept existing TG snapshot")
+                    else:
+                        apply_result.logs.append("updated AG produced no legacy TG candidates")
                 elif task_graph is not None:
                     apply_result.tg_graph = task_graph.to_dict()
-                    apply_result.logs.append("updated AG produced no activatable TG candidates; kept existing TG snapshot")
-                else:
-                    apply_result.logs.append("updated AG produced no activatable TG candidates")
+                    apply_result.logs.append("legacy TG candidate generation disabled; kept existing TG snapshot")
 
-        worker_generated_tg = self._generate_worker_candidate_task_graph(canonical_result)
-        if worker_generated_tg.task_graph is not None and worker_generated_tg.candidates:
+        worker_generated_tg = self._legacy_generate_worker_candidate_task_graph(canonical_result) if legacy_tg_generation_enabled else None
+        if worker_generated_tg is not None and worker_generated_tg.task_graph is not None and worker_generated_tg.candidates:
+            from src.core.graph.tg_merge import merge_task_graphs
+            from src.core.models.tg import TaskGraph
+
             existing_task_graph = TaskGraph.from_dict(apply_result.tg_graph) if apply_result.tg_graph is not None else task_graph
             generated_task_graph = TaskGraph.from_dict(worker_generated_tg.task_graph)
             merged_task_graph = merge_task_graphs(existing_task_graph, generated_task_graph)
@@ -314,6 +349,217 @@ class PhaseTwoResultApplier:
                 tg_graph=apply_result.tg_graph,
                 include_kg=bool(apply_result.kg_apply_result),
                 include_runtime=bool(runtime_event_refs or canonical_result.tg_node_id or canonical_result.task_id),
+            )
+        )
+        return apply_result
+
+    def apply_planner_decision(
+        self,
+        decision: PlannerDecision,
+        state: RuntimeState,
+        kg_store: KnowledgeGraph,
+        attack_graph: AttackGraph,
+    ) -> PhaseTwoApplyResult:
+        """Record a PlannerDecision in AG and Runtime without touching TG."""
+
+        del kg_store
+        apply_result = PhaseTwoApplyResult()
+        cycle_id = self._attack_cycle_id(decision.operation_id, decision.cycle_index)
+        decision_id = self._planner_decision_id(decision)
+        self._add_ag_node(
+            attack_graph,
+            AttackProcessNode(
+                id=cycle_id,
+                node_type=AttackProcessNodeType.ATTACK_CYCLE,
+                label=f"Attack cycle {decision.cycle_index}",
+                operation_id=decision.operation_id,
+                cycle_index=decision.cycle_index,
+                status="running",
+                summary=f"cycle {decision.cycle_index}",
+                properties={"operation_id": decision.operation_id},
+            ),
+        )
+        self._add_ag_node(
+            attack_graph,
+            PlannerDecisionNode(
+                id=decision_id,
+                label=f"Planner decision: {decision.decision}",
+                operation_id=decision.operation_id,
+                cycle_index=decision.cycle_index,
+                agent_name="planner_agent",
+                stage_type=decision.selected_stage,
+                status=decision.decision,
+                summary=decision.reasoning_summary or decision.objective,
+                refs=list(decision.target_refs),
+                properties=decision.model_dump(mode="json"),
+            ),
+        )
+        self._add_ag_edge(
+            attack_graph,
+            AttackProcessEdge(
+                id=stable_node_id("edge", {"type": "planned", "source": cycle_id, "target": decision_id}),
+                edge_type=AttackProcessEdgeType.PLANNED,
+                source=cycle_id,
+                target=decision_id,
+                label="planned",
+            ),
+        )
+        if decision.decision == "dispatch_agent" and decision.selected_agent:
+            execution_id = self._agent_execution_id(
+                decision.operation_id,
+                decision.cycle_index,
+                decision.selected_agent,
+            )
+            self._add_ag_node(
+                attack_graph,
+                AgentExecutionNode(
+                    id=execution_id,
+                    label=f"{decision.selected_agent} execution",
+                    operation_id=decision.operation_id,
+                    cycle_index=decision.cycle_index,
+                    agent_name=decision.selected_agent,
+                    stage_type=decision.selected_stage,
+                    status="planned",
+                    summary=decision.objective,
+                    refs=list(decision.target_refs),
+                    properties={"planner_decision_id": decision_id},
+                ),
+            )
+            self._add_ag_edge(
+                attack_graph,
+                AttackProcessEdge(
+                    id=stable_node_id("edge", {"type": "dispatch", "source": decision_id, "target": execution_id}),
+                    edge_type=AttackProcessEdgeType.DISPATCHED_TO,
+                    source=decision_id,
+                    target=execution_id,
+                    label="dispatched to",
+                ),
+            )
+
+        state.execution.metadata["last_planner_decision"] = decision.model_dump(mode="json")
+        self._append_audit_log(
+            state,
+            {
+                "event_type": "planner_decision_applied",
+                "planner_decision": decision.model_dump(mode="json"),
+            },
+        )
+        apply_result.ag_graph = attack_graph.to_dict()
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=None,
+                ag_graph=apply_result.ag_graph,
+                tg_graph=None,
+                include_kg=False,
+                include_runtime=True,
+            )
+        )
+        apply_result.logs.append(f"recorded planner decision {decision.decision}")
+        return apply_result
+
+    def apply_stage_result(
+        self,
+        stage_result: StageResult,
+        state: RuntimeState,
+        kg_store: KnowledgeGraph,
+        attack_graph: AttackGraph,
+    ) -> PhaseTwoApplyResult:
+        """Apply StageResult effects to KG, AG and Runtime without TG writes."""
+
+        canonical_result = StageResultAdapter.to_task_result(stage_result)
+        if canonical_result.operation_id != state.operation_id:
+            raise ValueError("stage_result.operation_id must match RuntimeState.operation_id")
+
+        apply_result = PhaseTwoApplyResult()
+        runtime_event_refs = self._apply_runtime_effects(result=canonical_result, state=state)
+        apply_result.runtime_event_refs.extend(runtime_event_refs)
+        self._sync_runtime_views_from_result(state=state, result=canonical_result)
+        self._apply_capability_hints(state=state, result=canonical_result)
+        self._apply_failed_hypotheses(state=state, result=canonical_result)
+        self._record_recent_outcome(state=state, result=canonical_result)
+        self._audit_stage_result(state=state, result=canonical_result)
+        self._audit_tool_invocations(state=state, result=canonical_result)
+        self._audit_tool_execution_from_result(state=state, result=canonical_result)
+        self._audit_stage_tool_trace(state=state, result=canonical_result)
+        self._record_evidence_and_findings(state=state, result=canonical_result)
+        self._record_direct_stage_findings(state=state, stage_result=stage_result)
+
+        kg_ref = self._resolve_kg_ref(canonical_result)
+        state_writer_result, state_writer_input = self._run_state_writer(
+            result=canonical_result,
+            state=state,
+            kg_ref=kg_ref,
+        )
+        if state_writer_result is not None:
+            apply_result.state_writer_result = state_writer_result
+            apply_result.kg_state_deltas.extend(state_writer_result.output.state_deltas)
+            apply_result.logs.extend(state_writer_result.output.logs)
+
+        apply_result.kg_state_deltas.extend(self._fact_state_deltas(result=canonical_result))
+        if apply_result.kg_state_deltas:
+            apply_result.kg_state_deltas = self._order_kg_state_deltas(apply_result.kg_state_deltas)
+            apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
+                kg_store=kg_store,
+                kg_ref=kg_ref,
+                state=state,
+                state_deltas=apply_result.kg_state_deltas,
+                state_writer_input=state_writer_input,
+            )
+            apply_result.kg_event_batch = self._kg_batch(state_deltas=apply_result.kg_state_deltas)
+
+        self._record_stage_result_in_ag(stage_result=stage_result, attack_graph=attack_graph)
+        apply_result.ag_graph = attack_graph.to_dict()
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=kg_store,
+                ag_graph=apply_result.ag_graph,
+                tg_graph=None,
+                include_kg=bool(apply_result.kg_apply_result),
+                include_runtime=True,
+            )
+        )
+        apply_result.logs.append(f"applied StageResult {stage_result.result_id}")
+        return apply_result
+
+    def apply_log_extraction(
+        self,
+        extraction: AttackLogExtraction,
+        state: RuntimeState,
+        attack_graph: AttackGraph,
+    ) -> PhaseTwoApplyResult:
+        """Apply AttackLogExtractor AG node/edge output."""
+
+        apply_result = PhaseTwoApplyResult()
+        for payload in extraction.ag_nodes:
+            self._add_ag_node(attack_graph, payload)
+        for payload in extraction.ag_edges:
+            self._add_ag_edge(attack_graph, payload)
+        self._append_audit_log(
+            state,
+            {
+                "event_type": "attack_log_extraction_applied",
+                "operation_id": extraction.operation_id,
+                "cycle_index": extraction.cycle_index,
+                "ag_node_count": len(extraction.ag_nodes),
+                "ag_edge_count": len(extraction.ag_edges),
+                "summary": extraction.summary,
+                "evidence_refs": list(extraction.evidence_refs),
+            },
+        )
+        apply_result.ag_graph = attack_graph.to_dict()
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=None,
+                ag_graph=apply_result.ag_graph,
+                tg_graph=None,
+                include_kg=False,
+                include_runtime=True,
             )
         )
         return apply_result
@@ -358,6 +604,8 @@ class PhaseTwoResultApplier:
             worker.status = WorkerStatus.BUSY
             worker.current_task_id = task_id
         if task_graph is not None and task_id in task_graph._nodes:
+            from src.core.models.tg import TaskStatus
+
             task_graph.mark_task_status(task_id, TaskStatus.RUNNING, reason="scheduled by llm SchedulerAgent")
             apply_result.tg_graph = task_graph.to_dict()
         apply_result.logs.append(f"marked scheduled task {task_id} running")
@@ -382,6 +630,9 @@ class PhaseTwoResultApplier:
         task_graph: TaskGraph | None,
     ) -> PhaseTwoApplyResult:
         apply_result = PhaseTwoApplyResult()
+        from src.core.models.tg import TaskGraph
+        from src.core.planning.stage_task_builder import StageTaskGraphBuilder
+
         graph = task_graph or TaskGraph()
         dependencies = list(getattr(result, "dependencies", []) or [])
         created_ids = StageTaskGraphBuilder().upsert_stage_tasks(
@@ -442,17 +693,265 @@ class PhaseTwoResultApplier:
         tg_graph: dict[str, Any] | None,
         include_kg: bool,
         include_runtime: bool,
+        include_legacy_tg: bool = False,
     ) -> list[VisualGraphDelta]:
         deltas: list[VisualGraphDelta] = []
         if include_kg and kg_store is not None:
             deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="kg", payload=kg_store.to_dict()))
         if ag_graph is not None:
             deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="ag", payload=ag_graph))
-        if tg_graph is not None:
+        if include_legacy_tg and tg_graph is not None:
             deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="tg", payload=tg_graph))
         if include_runtime:
             deltas.append(runtime_to_delta(operation_id=operation_id, runtime_state=state))
         return deltas
+
+    @staticmethod
+    def _attack_cycle_id(operation_id: str, cycle_index: int) -> str:
+        return f"attack-cycle::{operation_id}::{cycle_index}"
+
+    @staticmethod
+    def _planner_decision_id(decision: PlannerDecision) -> str:
+        return stable_node_id(
+            "planner-decision",
+            {
+                "operation_id": decision.operation_id,
+                "cycle_index": decision.cycle_index,
+                "decision": decision.decision,
+                "selected_agent": decision.selected_agent,
+                "selected_stage": decision.selected_stage,
+            },
+        )
+
+    @staticmethod
+    def _agent_execution_id(operation_id: str, cycle_index: int | None, agent_name: str) -> str:
+        return f"agent-execution::{operation_id}::{cycle_index if cycle_index is not None else 'unknown'}::{agent_name}"
+
+    @staticmethod
+    def _add_ag_node(attack_graph: AttackGraph, node: Any) -> None:
+        from src.core.models.ag import parse_ag_node
+
+        parsed = parse_ag_node(node) if isinstance(node, dict) else node
+        if parsed.id in attack_graph._nodes:
+            return
+        attack_graph.add_node(parsed)
+
+    @staticmethod
+    def _add_ag_edge(attack_graph: AttackGraph, edge: Any) -> None:
+        from src.core.models.ag import parse_ag_edge
+
+        parsed = parse_ag_edge(edge) if isinstance(edge, dict) else edge
+        if parsed.id in attack_graph._edges:
+            return
+        if parsed.source not in attack_graph._nodes or parsed.target not in attack_graph._nodes:
+            return
+        attack_graph.add_edge(parsed)
+
+    def _record_stage_result_in_ag(self, *, stage_result: StageResult, attack_graph: AttackGraph) -> None:
+        cycle_index = self._stage_result_cycle_index(stage_result)
+        result_node_id = f"stage-result::{stage_result.result_id}"
+        execution_id = self._agent_execution_id(
+            stage_result.operation_id,
+            cycle_index,
+            stage_result.agent_name,
+        )
+        self._add_ag_node(
+            attack_graph,
+            AgentExecutionNode(
+                id=execution_id,
+                label=f"{stage_result.agent_name} execution",
+                operation_id=stage_result.operation_id,
+                cycle_index=cycle_index,
+                agent_name=stage_result.agent_name,
+                stage_type=stage_result.stage_type.value,
+                status=stage_result.status,
+                summary=stage_result.summary,
+                properties={"stage_task_id": stage_result.stage_task_id},
+            ),
+        )
+        self._add_ag_node(
+            attack_graph,
+            StageResultNode(
+                id=result_node_id,
+                label=f"{stage_result.stage_type.value} result",
+                operation_id=stage_result.operation_id,
+                cycle_index=cycle_index,
+                agent_name=stage_result.agent_name,
+                stage_type=stage_result.stage_type.value,
+                status=stage_result.status,
+                summary=stage_result.summary,
+                evidence_refs=list(stage_result.evidence_refs),
+                properties=self._stage_result_process_properties(stage_result),
+            ),
+        )
+        self._add_ag_edge(
+            attack_graph,
+            AttackProcessEdge(
+                id=stable_node_id("edge", {"type": "produced-result", "source": execution_id, "target": result_node_id}),
+                edge_type=AttackProcessEdgeType.PRODUCED_RESULT,
+                source=execution_id,
+                target=result_node_id,
+                label="produced result",
+            ),
+        )
+        for trace in stage_result.tool_trace:
+            node_id = stable_node_id(
+                "tool-call",
+                {
+                    "operation_id": stage_result.operation_id,
+                    "cycle_index": cycle_index,
+                    "stage_result_id": stage_result.result_id,
+                    "stage_task_id": stage_result.stage_task_id,
+                    "step": trace.step,
+                    "server_id": trace.server_id,
+                    "tool_name": trace.tool_name,
+                    "raw_output_ref": trace.raw_output_ref,
+                },
+            )
+            self._add_ag_node(
+                attack_graph,
+                ToolCallNode(
+                    id=node_id,
+                    label=trace.tool_name,
+                    operation_id=stage_result.operation_id,
+                    cycle_index=cycle_index,
+                    agent_name=stage_result.agent_name,
+                    stage_type=stage_result.stage_type.value,
+                    status="succeeded" if trace.success else "failed",
+                    summary=trace.summary or trace.input_summary or trace.tool_name,
+                    evidence_refs=list(trace.evidence_refs),
+                    properties=self._tool_trace_process_properties(trace),
+                ),
+            )
+            self._add_ag_edge(
+                attack_graph,
+                AttackProcessEdge(
+                    id=stable_node_id("edge", {"type": "called-tool", "source": execution_id, "target": node_id}),
+                    edge_type=AttackProcessEdgeType.CALLED_TOOL,
+                    source=execution_id,
+                    target=node_id,
+                    label="called tool",
+                ),
+            )
+        if stage_result.handoff_suggestion is not None:
+            handoff_payload = stage_result.handoff_suggestion.model_dump(mode="json")
+            handoff_id = stable_node_id(
+                "handoff",
+                {
+                    "stage_result_id": stage_result.result_id,
+                    "suggested_agent": stage_result.handoff_suggestion.suggested_agent,
+                    "suggested_stage": stage_result.handoff_suggestion.suggested_stage,
+                },
+            )
+            self._add_ag_node(
+                attack_graph,
+                AttackProcessNode(
+                    id=handoff_id,
+                    node_type=AttackProcessNodeType.HANDOFF_SUGGESTION,
+                    label=f"Handoff to {stage_result.handoff_suggestion.suggested_agent}",
+                    operation_id=stage_result.operation_id,
+                    cycle_index=cycle_index,
+                    agent_name=stage_result.agent_name,
+                    stage_type=stage_result.stage_type.value,
+                    status="suggested",
+                    summary=stage_result.handoff_suggestion.reason,
+                    properties=handoff_payload,
+                ),
+            )
+            self._add_ag_edge(
+                attack_graph,
+                AttackProcessEdge(
+                    id=stable_node_id("edge", {"type": "suggested-handoff", "source": result_node_id, "target": handoff_id}),
+                    edge_type=AttackProcessEdgeType.SUGGESTED_HANDOFF,
+                    source=result_node_id,
+                    target=handoff_id,
+                    label="suggested handoff",
+                ),
+            )
+
+    @staticmethod
+    def _stage_result_cycle_index(stage_result: StageResult) -> int:
+        raw = stage_result.runtime_hints.get("cycle_index") or stage_result.writeback_hints.get("cycle_index")
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _stage_result_process_properties(stage_result: StageResult) -> dict[str, Any]:
+        return {
+            "result_id": stage_result.result_id,
+            "stage_task_id": stage_result.stage_task_id,
+            "status": stage_result.status,
+            "observation_count": len(stage_result.observations),
+            "evidence_count": len(stage_result.evidence),
+            "finding_count": len(stage_result.findings),
+            "discovered_entity_count": len(stage_result.discovered_entities),
+            "discovered_relation_count": len(stage_result.discovered_relations),
+            "tool_trace_count": len(stage_result.tool_trace),
+            "confidence": stage_result.confidence,
+            "risk_level": stage_result.risk_level,
+            "policy_notes": list(stage_result.policy_notes),
+            "retry_recommendation": stage_result.retry_recommendation,
+            "replan_recommendation": stage_result.replan_recommendation,
+            "created_at": stage_result.created_at,
+        }
+
+    @staticmethod
+    def _tool_trace_process_properties(trace: ToolTrace) -> dict[str, Any]:
+        return {
+            "trace_id": trace.trace_id,
+            "step": trace.step,
+            "server_id": trace.server_id,
+            "tool_name": trace.tool_name,
+            "tool_category": trace.tool_category,
+            "input_summary": trace.input_summary[:240],
+            "raw_output_ref": trace.raw_output_ref,
+            "output_summary": (trace.summary or f"stdout {len(trace.stdout or '')} chars; stderr {len(trace.stderr or '')} chars")[:240],
+            "stdout_chars": len(trace.stdout or ""),
+            "stderr_chars": len(trace.stderr or ""),
+            "argument_keys": sorted(str(key) for key in trace.arguments.keys()),
+            "success": trace.success,
+            "exit_code": trace.exit_code,
+            "started_at": trace.started_at,
+            "ended_at": trace.ended_at,
+            "policy_check": dict(trace.policy_check),
+            "metadata": dict(trace.metadata),
+        }
+
+    def _record_direct_stage_findings(self, *, state: RuntimeState, stage_result: StageResult) -> None:
+        if not stage_result.findings:
+            return
+        bucket = state.execution.metadata.setdefault("findings", [])
+        for index, finding in enumerate(stage_result.findings):
+            if not isinstance(finding, dict):
+                continue
+            finding_id = str(
+                finding.get("finding_id")
+                or finding.get("id")
+                or stable_node_id("finding", {"stage_result_id": stage_result.result_id, "index": index})
+            )
+            payload = {
+                **dict(finding),
+                "finding_id": finding_id,
+                "operation_id": stage_result.operation_id,
+                "stage_result_id": stage_result.result_id,
+                "stage_task_id": stage_result.stage_task_id,
+                "source_agent": stage_result.agent_name,
+                "recorded_at": utc_now().isoformat(),
+            }
+            existing_index = next(
+                (
+                    existing_index
+                    for existing_index, item in enumerate(bucket)
+                    if isinstance(item, dict) and item.get("finding_id") == finding_id
+                ),
+                None,
+            )
+            if existing_index is None:
+                bucket.append(payload)
+            else:
+                bucket[existing_index] = payload
 
     @staticmethod
     def _order_kg_state_deltas(state_deltas: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -501,8 +1000,9 @@ class PhaseTwoResultApplier:
         ]
         if not observations and not evidence:
             return None, None
+        graph_refs = [] if kg_ref.ref_id == "kg-root" else [kg_ref]
         agent_input = AgentInput(
-            graph_refs=[kg_ref],
+            graph_refs=graph_refs,
             task_ref=result.task_id,
             context=AgentContext(
                 operation_id=state.operation_id,
@@ -562,7 +1062,14 @@ class PhaseTwoResultApplier:
             policy_context=policy_context,
         )
 
-    def _generate_candidate_task_graph(self, attack_graph: AttackGraph) -> TaskGenerationResult:
+    def _legacy_generate_candidate_task_graph(self, attack_graph: AttackGraph) -> TaskGenerationResult:
+        from src.core.graph.tg_builder import TaskGenerationRequest, TaskGenerationResult
+        from src.core.models.ag import ActionNode
+
+        if self._task_graph_builder is None:
+            from src.core.graph.tg_builder import AttackGraphTaskBuilder
+
+            self._task_graph_builder = AttackGraphTaskBuilder()
         action_ids = [
             action.id
             for action in attack_graph.find_actions(activatable_only=True)
@@ -580,7 +1087,10 @@ class PhaseTwoResultApplier:
         )
 
     @staticmethod
-    def _generate_worker_candidate_task_graph(result: AgentTaskResult) -> TaskGenerationResult:
+    def _legacy_generate_worker_candidate_task_graph(result: AgentTaskResult) -> TaskGenerationResult:
+        from src.core.graph.attack_chain_rules import generate_followup_task_candidates_from_result
+        from src.core.graph.tg_builder import TaskCandidate, TaskGenerationRequest, TaskGenerationResult, TaskGraphBuilder
+
         raw_candidates = []
         payload_candidates = result.outcome_payload.get("task_candidates")
         if isinstance(payload_candidates, list):
@@ -1130,6 +1640,8 @@ class PhaseTwoResultApplier:
                 )
 
     def _sync_task_graph_lifecycle(self, *, task_graph: TaskGraph, result: AgentTaskResult) -> bool:
+        from src.core.models.tg import BaseTaskNode, TaskStatus
+
         raw_status = getattr(result, "status", None)
         status = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "").lower()
 

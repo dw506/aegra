@@ -60,6 +60,7 @@ class AppSettings(BaseModel):
     mcp_config_json: dict[str, Any] = Field(default_factory=dict)
     mcp_default_timeout_seconds: int = Field(default=60, ge=1)
     allow_local_fallback: bool = True
+    legacy_tg: bool = False
 
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
@@ -264,6 +265,13 @@ class AppSettings(BaseModel):
             values["mcp_default_timeout_seconds"] = int(environ["AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS"])
         if "AEGRA_ALLOW_LOCAL_FALLBACK" in environ:
             values["allow_local_fallback"] = environ["AEGRA_ALLOW_LOCAL_FALLBACK"].strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        if "AEGRA_LEGACY_TG" in environ:
+            values["legacy_tg"] = environ["AEGRA_LEGACY_TG"].strip().lower() in {
                 "1",
                 "true",
                 "yes",

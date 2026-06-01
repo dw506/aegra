@@ -165,6 +165,40 @@ class StageTask(BaseModel):
         )
 
 
+class StageExecutionRequest(BaseModel):
+    """PlannerDecision-derived request consumed by a StageAgent."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    operation_id: str = Field(min_length=1)
+    cycle_index: int = Field(ge=0)
+    agent_name: str = Field(min_length=1)
+    stage_type: StageType
+    objective: str = Field(min_length=1)
+    target_refs: list[GraphRef] = Field(default_factory=list)
+    required_context: dict[str, Any] = Field(default_factory=dict)
+    success_criteria: list[str] = Field(default_factory=list)
+    risk_level: str = "medium"
+    max_steps: int = Field(default=8, ge=1)
+    kg_snapshot: dict[str, Any] = Field(default_factory=dict)
+    ag_process_history: dict[str, Any] = Field(default_factory=dict)
+    runtime_context: dict[str, Any] = Field(default_factory=dict)
+    policy_context: dict[str, Any] = Field(default_factory=dict)
+    mcp_tool_catalog: dict[str, Any] = Field(default_factory=dict)
+
+
+class StageHandoffSuggestion(BaseModel):
+    """Suggested next agent/stage handoff emitted by a StageResult."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    suggested_agent: str = Field(min_length=1)
+    suggested_stage: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    required_context_refs: list[Any] = Field(default_factory=list)
+
+
 class StageResult(BaseModel):
     """Stage Agent output consumed by ResultApplier through an adapter."""
 
@@ -203,6 +237,7 @@ class StageResult(BaseModel):
     retry_recommendation: str | None = None
     replan_recommendation: str | None = None
     next_stage_suggestion: dict[str, Any] | None = None
+    handoff_suggestion: StageHandoffSuggestion | None = None
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
@@ -215,7 +250,7 @@ class StageResult(BaseModel):
 
 
 class PlannerResult(BaseModel):
-    """LLM planner output consumed only by ResultApplier."""
+    """Legacy compatibility planner output consumed only by ResultApplier."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -239,6 +274,8 @@ __all__ = [
     "GraphStateSnapshot",
     "GraphUpdateIntent",
     "PlannerResult",
+    "StageExecutionRequest",
+    "StageHandoffSuggestion",
     "StageResult",
     "StageTask",
     "StageType",

@@ -4,13 +4,37 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.stage.base_stage_agent import StageAgentDecision
-from src.core.stage.models import StageTask, StageType
+from src.core.stage.models import StageExecutionRequest, StageTask, StageType
+
+
+PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+PROMPT_BY_AGENT: dict[str, str] = {
+    "recon_agent": "recon_agent.md",
+    "vuln_analysis_agent": "vuln_analysis_agent.md",
+    "exploit_agent": "exploit_validation_agent.md",
+    "exploit_validation_agent": "exploit_validation_agent.md",
+    "access_pivot_agent": "access_pivot_agent.md",
+    "goal_agent": "goal_agent.md",
+}
+PROMPT_BY_STAGE: dict[StageType, str] = {
+    StageType.RECON: "recon_agent.md",
+    StageType.RECON_STAGE: "recon_agent.md",
+    StageType.VULN_ANALYSIS: "vuln_analysis_agent.md",
+    StageType.VULN_ANALYSIS_STAGE: "vuln_analysis_agent.md",
+    StageType.EXPLOIT: "exploit_validation_agent.md",
+    StageType.EXPLOIT_STAGE: "exploit_validation_agent.md",
+    StageType.ACCESS_PIVOT: "access_pivot_agent.md",
+    StageType.ACCESS_PIVOT_STAGE: "access_pivot_agent.md",
+    StageType.GOAL: "goal_agent.md",
+    StageType.GOAL_STAGE: "goal_agent.md",
+}
 
 
 class LLMStageAdvisorConfig(BaseModel):
@@ -40,7 +64,8 @@ class LLMStageAdvisor:
         *,
         agent_name: str,
         stage_type: StageType,
-        task: StageTask,
+        request: StageExecutionRequest | None = None,
+        task: StageTask | None = None,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         memory: list[dict[str, Any]],
@@ -50,6 +75,7 @@ class LLMStageAdvisor:
         prompt = self._build_prompt(
             agent_name=agent_name,
             stage_type=stage_type,
+            request=request,
             task=task,
             graph_context=graph_context,
             runtime_context=runtime_context,
@@ -57,9 +83,10 @@ class LLMStageAdvisor:
             memory=memory,
             available_tools=available_tools,
         )
+        system_prompt = self._build_system_prompt(agent_name=agent_name, stage_type=stage_type)
         try:
             response = self._client.complete_chat(
-                system_prompt=SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 user_prompt=prompt,
                 model=self._config.model,
                 temperature=self._config.temperature,
@@ -98,17 +125,21 @@ class LLMStageAdvisor:
         *,
         agent_name: str,
         stage_type: StageType,
-        task: StageTask,
+        request: StageExecutionRequest | None = None,
+        task: StageTask | None = None,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         policy_context: dict[str, Any],
         memory: list[dict[str, Any]],
         available_tools: dict[str, Any],
     ) -> str:
+        request_payload = request.model_dump(mode="json") if request is not None else None
+        task_payload = task.model_dump(mode="json") if task is not None else None
         payload = {
             "agent_name": agent_name,
             "stage_type": stage_type.value,
-            "task": task.model_dump(mode="json"),
+            "stage_execution_request": request_payload,
+            "legacy_task": task_payload,
             "graph_state_snapshot": graph_context,
             "runtime_context": runtime_context,
             "policy_context": policy_context,
@@ -146,6 +177,13 @@ class LLMStageAdvisor:
                     "retry_recommendation": "optional",
                     "replan_recommendation": "optional",
                     "next_stage_suggestion": {},
+                    "handoff_suggestion": {
+                        "suggested_agent": "optional next agent",
+                        "suggested_stage": "optional next stage",
+                        "reason": "why handoff is appropriate",
+                        "confidence": 0.0,
+                        "required_context_refs": [],
+                    },
                 },
             },
         }
@@ -153,12 +191,15 @@ class LLMStageAdvisor:
             "Return only JSON matching StageAgentDecision. "
             "You are the complete LLM decision maker for this stage. Decide whether the stage can run, "
             "which MCP tool to call if any, why, and how prior tool results affect completion. "
-            "Use only supplied graph state, policy, task, tool catalog and memory. "
+            "Use only supplied graph state, policy, stage execution request, tool catalog and memory. "
             "Do not invent scan results, vulnerabilities, credentials, sessions or access. "
-            "Do not write KG/AG/TG/Runtime directly; propose graph_update_intents in the finish payload. "
+            "Do not write KG/AG/Runtime directly; propose intents and handoff_suggestion in the finish payload. "
             "If evidence is insufficient, finish with need_more_info/partial or request need_replan.\n\n"
             f"{_truncate_json(payload, self._config.max_context_chars)}"
         )
+
+    def _build_system_prompt(self, *, agent_name: str, stage_type: StageType) -> str:
+        return f"{COMMON_SYSTEM_RULES}\n\n{_load_agent_prompt(agent_name=agent_name, stage_type=stage_type)}"
 
     def _repair_decision(
         self,
@@ -193,13 +234,28 @@ class LLMStageAdvisor:
 
 
 SYSTEM_PROMPT = (
-    "You are an Aegra LLM Stage Agent, not a tool wrapper. You own the complete "
-    "stage decision: readiness, tool selection, arguments, result interpretation, "
-    "completion status, retry/replan/handoff. You must follow Policy and only "
-    "choose registered MCP tools from the supplied catalog. Do not invent shell commands. You cannot directly "
-    "modify KG, AG, TG or Runtime; ResultApplier is the only write boundary. "
-    "Return strict JSON only."
+    "Deprecated compatibility alias. Use COMMON_SYSTEM_RULES plus the agent-specific prompt."
 )
+
+
+COMMON_SYSTEM_RULES = (
+    "You are an Aegra LLM Stage Agent, not a tool wrapper. "
+    "Return only StageAgentDecision JSON. "
+    "Choose only one action: call_tool, finish, or need_replan. "
+    "Call only tools present in mcp_tool_catalog. "
+    "Do not output shell commands. Do not invent shell commands. "
+    "Do not invent environment facts, vulnerabilities, credentials, or sessions. "
+    "Do not directly write KG or AG. "
+    "KG fact intents and AG process intents are only suggestions inside the StageResult finish payload; "
+    "ResultApplier writes them."
+)
+
+
+def _load_agent_prompt(*, agent_name: str, stage_type: StageType) -> str:
+    filename = PROMPT_BY_AGENT.get(agent_name) or PROMPT_BY_STAGE.get(stage_type)
+    if filename is None:
+        filename = PROMPT_BY_STAGE.get(stage_type.canonical, "recon_agent.md")
+    return (PROMPT_DIR / filename).read_text(encoding="utf-8")
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:

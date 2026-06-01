@@ -2,6 +2,7 @@
 
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor, LLMMissionPlannerAdvisorConfig
 from src.core.planning.mission_planner_agent import MissionPlannerAgent, MissionPlannerResult
+from src.core.planning.models import PlannerDecision
 from src.core.planning.stage_task_builder import StageTaskGraphBuilder
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "LLMMissionPlannerAdvisorConfig",
     "MissionPlannerAgent",
     "MissionPlannerResult",
+    "PlannerDecision",
     "StageTaskGraphBuilder",
 ]

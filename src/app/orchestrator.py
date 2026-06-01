@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 import inspect
+import importlib
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,7 +12,7 @@ from src.app.settings import AppSettings
 from src.app.llm_decision_observer import LLMDecisionObserver
 from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef, GraphScope
-from src.core.agents.graph_context import GraphContextBuilder
+from src.core.agents.graph_context import GraphContextBuilder, TwoGraphContextBuilder
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
@@ -19,15 +20,12 @@ from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.graph.tg_merge import merge_task_graphs
 from src.core.models.ag import AttackGraph
 from src.core.models.events import AgentTaskResult
 from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, WorkerRuntime, WorkerStatus, utc_now
 from src.core.models.scope import Asset, Engagement
-from src.core.models.tg import BaseTaskNode, DependencyType, TaskGraph, TaskStatus
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
-from src.core.planning.stage_task_builder import StageTaskGraphBuilder
 from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import append_operation_log, mark_clean_shutdown, mark_unclean_shutdown, record_phase_checkpoint
 from src.core.runtime.report_generator import ReportFormat, ReportGenerator
@@ -38,17 +36,12 @@ from src.core.runtime.llm_history import (
     recent_llm_decision_history,
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
-from src.core.scheduling.candidate_task_service import CandidateTaskService, RuntimeConstraintService
-from src.core.scheduling.llm_scheduler_advisor import LLMSchedulerAdvisor
-from src.core.scheduling.llm_scheduler_models import ScheduleDecision, ScheduledTask
-from src.core.scheduling.scheduler import schedule_ready_tasks
+from src.core.runtime.attack_log_extractor import AttackLogExtractor
 from src.core.stage.llm_stage_advisor import LLMStageAdvisor
+from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
 from src.core.visualization.graph_publisher import graph_delta_publisher
-from src.core.workers.llm_worker import LLMWorkerAgent
-from src.core.workers.llm_worker_advisor import LLMWorkerAdvisor
-from src.core.workers.base import WorkerTaskSpec
 
 
 class TargetHost(BaseModel):
@@ -165,7 +158,6 @@ class AppOrchestrator:
             else None
         )
         self.mission_planner = MissionPlannerAgent(advisor=mission_advisor)
-        self.stage_task_builder = StageTaskGraphBuilder()
 
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
         """Create a new operation with control-plane metadata attached."""
@@ -466,6 +458,236 @@ class AppOrchestrator:
         feedback_payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
     ) -> OperationCycleResult:
+        del scheduler_payload, feedback_payload
+
+        state = self.runtime_store.snapshot(operation_id)
+        kg = self.graph_memory_store.load_kg(operation_id)
+        ag = self.graph_memory_store.load_ag(operation_id)
+        stored_runtime = self.graph_memory_store.load_runtime(operation_id)
+        if stored_runtime is not None:
+            state = stored_runtime
+        if self.settings.recovery_enabled and self._needs_recovery(state):
+            state = self.runtime_store.recover_operation(operation_id, reason="unclean_shutdown")
+            resume_summary = dict(state.execution.metadata.get("recovery", {}))
+            self._log_operation_event(state, event_type="operation_resumed", **resume_summary)
+
+        cycle_index = self._next_cycle_index(state)
+        state.execution.metadata["graph_memory"] = {
+            "kg_version": kg.version,
+            "ag_version": ag.version,
+            "source_kg_version": ag.source_kg_version,
+            "loaded_runtime": stored_runtime is not None,
+        }
+        state.execution.metadata["agent_architecture"] = self._agent_architecture_metadata(self.settings)
+        state.operation_status = RuntimeStatus.RUNNING
+        state.execution.status = RuntimeStatus.RUNNING
+        mark_unclean_shutdown(state, cycle_index=cycle_index)
+        self._log_operation_event(state, event_type="cycle_started", cycle_index=cycle_index)
+        self._checkpoint_phase(state, cycle_index=cycle_index, phase="cycle_started", status="running")
+
+        goal = self._mission_goal(planner_payload=planner_payload, context=context)
+        policy_context = self._mapping(
+            planner_payload.get("policy_context")
+            or state.execution.metadata.get("runtime_policy")
+        )
+        graph_snapshot = self._kg_ag_runtime_snapshot(
+            operation_id=operation_id,
+            cycle_index=cycle_index,
+            graph_refs=graph_refs,
+            kg=kg,
+            ag=ag,
+            runtime_state=state,
+            extra=planner_payload,
+        )
+        decision = self.mission_planner.run(
+            goal=goal,
+            graph_context=graph_snapshot,
+            policy_context=policy_context,
+            recent_stage_results=self._planner_recent_stage_results(state),
+        )
+        if decision.operation_id == "operation":
+            decision.operation_id = operation_id
+        decision.cycle_index = cycle_index
+        planning_apply = self.result_applier.apply_planner_decision(decision, state, kg, ag)
+        for delta in planning_apply.visual_graph_deltas:
+            graph_delta_publisher.publish_nowait(delta)
+
+        planning_output = AgentOutput(
+            decisions=[{"planner_decision": decision.model_dump(mode="json")}],
+            logs=[decision.reasoning_summary or f"planner decision={decision.decision}"],
+        )
+        now = utc_now()
+        planning = PipelineCycleResult(
+            cycle_name="planner_decision",
+            operation_id=operation_id,
+            success=decision.decision not in {"stop_failed"},
+            steps=[
+                PipelineStepResult(
+                    step_name="planner_agent",
+                    agent_name="planner_agent",
+                    agent_kind=AgentKind.PLANNER,
+                    success=decision.decision not in {"stop_failed"},
+                    agent_input=AgentInput(
+                        graph_refs=graph_refs,
+                        context=AgentContext(operation_id=operation_id),
+                        raw_payload=planner_payload,
+                    ),
+                    agent_output=planning_output,
+                    started_at=now,
+                    finished_at=now,
+                    duration_ms=0,
+                )
+            ],
+            final_output=planning_output,
+            logs=list(planning_output.logs),
+        )
+        apply_results: list[PhaseTwoApplyResult] = [planning_apply]
+        execution = PipelineCycleResult(
+            cycle_name="stage_dispatch",
+            operation_id=operation_id,
+            success=True,
+            final_output=AgentOutput(logs=["no stage dispatch requested"]),
+        )
+        applied_ids: list[str] = []
+        stopped = decision.decision != "dispatch_agent"
+        stop_reason = decision.stop_condition or (decision.decision if stopped else None)
+
+        if decision.decision == "dispatch_agent":
+            tool_catalog = self.mcp_client.list_tools() if self.mcp_client is not None else {"available": False, "error": "MCP is not configured"}
+            started_at = utc_now()
+            stage_result = StageDispatcher(self.stage_registry).dispatch(
+                decision,
+                kg_snapshot=graph_snapshot,
+                ag_process_history={},
+                runtime_context=state.model_dump(mode="json"),
+                policy_context=policy_context,
+                mcp_tool_catalog=tool_catalog,
+            )
+            finished_at = utc_now()
+            stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+            extraction = AttackLogExtractor().extract(
+                decision,
+                stage_result,
+                stage_result.tool_trace,
+                [event.model_dump(mode="json") for event in state.pending_events[-20:]],
+                [],
+            )
+            log_apply = self.result_applier.apply_log_extraction(extraction, state, ag)
+            for applied in (stage_apply, log_apply):
+                for delta in applied.visual_graph_deltas:
+                    graph_delta_publisher.publish_nowait(delta)
+            apply_results.extend([stage_apply, log_apply])
+            applied_ids.append(stage_result.stage_task_id)
+            stage_output = AgentOutput(
+                outcomes=[stage_result.model_dump(mode="json")],
+                logs=[stage_result.summary],
+            )
+            execution = PipelineCycleResult(
+                cycle_name="stage_dispatch",
+                operation_id=operation_id,
+                success=stage_result.status not in {"failed", "blocked"},
+                steps=[
+                    PipelineStepResult(
+                        step_name=stage_result.agent_name,
+                        agent_name=stage_result.agent_name,
+                        agent_kind=AgentKind.WORKER,
+                        success=stage_result.status not in {"failed", "blocked"},
+                        agent_input=AgentInput(
+                            graph_refs=graph_refs,
+                            context=AgentContext(operation_id=operation_id),
+                            raw_payload={"planner_decision": decision.model_dump(mode="json")},
+                        ),
+                        agent_output=stage_output,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
+                    )
+                ],
+                final_output=stage_output,
+                logs=[stage_result.summary],
+            )
+            stopped = self._goal_satisfied(state) or stage_result.status in {"failed", "blocked"}
+            stop_reason = (
+                "goal satisfied by stage result"
+                if self._goal_satisfied(state)
+                else stage_result.summary
+                if stopped
+                else None
+            )
+
+        feedback = PipelineCycleResult(
+            cycle_name="feedback_disabled",
+            operation_id=operation_id,
+            success=True,
+            logs=["feedback critic phase disabled for stage-agent main path"],
+        )
+        summary = {
+            "cycle_index": cycle_index,
+            "started_at": utc_now().isoformat(),
+            "architecture": "planner_stage_agent_graph_main_path",
+            "planning_success": planning.success,
+            "execution_success": execution.success,
+            "feedback_success": feedback.success,
+            "selected_agent": decision.selected_agent,
+            "selected_stage": decision.selected_stage,
+            "applied_results": len(apply_results),
+            "stopped": stopped,
+            "stop_reason": stop_reason,
+        }
+        history = state.execution.metadata.setdefault("control_cycle_history", [])
+        history.append(summary)
+        state.execution.metadata["last_control_cycle"] = summary
+        state.execution.summary = f"control cycle {cycle_index} completed"
+        state.operation_status = RuntimeStatus.COMPLETED if stopped else RuntimeStatus.READY
+        state.execution.status = state.operation_status
+        state.last_updated = utc_now()
+        self._log_operation_event(
+            state,
+            event_type="cycle_completed",
+            cycle_index=cycle_index,
+            stopped=stopped,
+            stop_reason=stop_reason,
+        )
+        mark_clean_shutdown(state, cycle_index=cycle_index)
+        self._checkpoint_phase(
+            state,
+            cycle_index=cycle_index,
+            phase="cycle_completed",
+            status="completed",
+            applied_task_ids=applied_ids,
+            stopped=stopped,
+            stop_reason=stop_reason,
+            persist=False,
+        )
+        self.runtime_store.save_state(state)
+        self.graph_memory_store.save_kg(operation_id, kg)
+        self.graph_memory_store.save_ag(operation_id, ag)
+        self.graph_memory_store.save_runtime(operation_id, state)
+        self.graph_memory_store.save_snapshot(operation_id, cycle_index)
+        return OperationCycleResult(
+            operation_id=operation_id,
+            cycle_index=cycle_index,
+            planning=planning,
+            execution=execution,
+            feedback=feedback,
+            apply_results=apply_results,
+            selected_task_ids=applied_ids,
+            applied_task_ids=list(applied_ids),
+            stopped=stopped,
+            stop_reason=stop_reason,
+            runtime_state=state.model_copy(deep=True),
+        )
+
+    def run_legacy_operation_cycle(
+        self,
+        operation_id: str,
+        *,
+        graph_refs: list[AgentGraphRef],
+        planner_payload: dict[str, Any],
+        scheduler_payload: dict[str, Any] | None = None,
+        feedback_payload: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> OperationCycleResult:
         """运行一次统一主循环。
 
         中文注释：
@@ -493,6 +715,7 @@ class AppOrchestrator:
         state.execution.metadata["agent_architecture"] = self._agent_architecture_metadata(self.settings)
         state.operation_status = RuntimeStatus.RUNNING
         state.execution.status = RuntimeStatus.RUNNING
+        state.execution.metadata["enable_legacy_tg_generation"] = True
         mark_unclean_shutdown(state, cycle_index=cycle_index)
         self._log_operation_event(state, event_type="cycle_started", cycle_index=cycle_index)
         self._checkpoint_phase(
@@ -524,7 +747,7 @@ class AppOrchestrator:
             cycle_index=cycle_index,
             cycle=planning,
         )
-        task_graph = TaskGraph.from_dict(state.execution.metadata.get("task_graph") or task_graph.to_dict())
+        task_graph = self._legacy_task_graph_model().from_dict(state.execution.metadata.get("task_graph") or task_graph.to_dict())
         state.execution.metadata["task_graph"] = task_graph.to_dict()
         self._checkpoint_phase(
             state,
@@ -581,7 +804,7 @@ class AppOrchestrator:
             if applied.ag_graph is not None:
                 ag = AttackGraph.from_dict(applied.ag_graph)
             if applied.tg_graph is not None:
-                task_graph = TaskGraph.from_dict(applied.tg_graph)
+                task_graph = self._legacy_task_graph_model().from_dict(applied.tg_graph)
             for delta in applied.visual_graph_deltas:
                 graph_delta_publisher.publish_nowait(delta)
             apply_results.append(applied)
@@ -989,7 +1212,7 @@ class AppOrchestrator:
             context=context,
         )
 
-    def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, TaskGraph, RuntimeState | None]:
+    def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, Any, RuntimeState | None]:
         """Load KG / AG / TG / Runtime snapshots for the current operation cycle."""
 
         kg = self.graph_memory_store.load_kg(operation_id)
@@ -997,6 +1220,22 @@ class AppOrchestrator:
         tg = self.graph_memory_store.load_tg(operation_id)
         runtime = self.graph_memory_store.load_runtime(operation_id)
         return kg, ag, tg, runtime
+
+    @staticmethod
+    def _legacy_task_graph_model() -> Any:
+        return importlib.import_module("src.core.models.tg").TaskGraph
+
+    @staticmethod
+    def _legacy_task_status_model() -> Any:
+        return importlib.import_module("src.core.models.tg").TaskStatus
+
+    @staticmethod
+    def _legacy_dependency_type_model() -> Any:
+        return importlib.import_module("src.core.models.tg").DependencyType
+
+    @staticmethod
+    def _legacy_base_task_node_model() -> Any:
+        return importlib.import_module("src.core.models.tg").BaseTaskNode
 
     def _ensure_graph_initialized_from_targets(self, state: RuntimeState) -> dict[str, Any] | None:
         """Initialize KG / AG / TG from imported targets when graph memory is empty."""
@@ -1164,7 +1403,7 @@ class AppOrchestrator:
             "tg_graph": task_graph.to_dict(),
             "runtime_state": runtime_state.model_dump(mode="json"),
         }
-        scheduling_result = schedule_ready_tasks(
+        scheduling_result = importlib.import_module("src.core.scheduling.scheduler").schedule_ready_tasks(
             task_graph=task_graph,
             runtime_state=runtime_state,
             context=self._mapping(payload.get("scheduling_context")),
@@ -1202,7 +1441,7 @@ class AppOrchestrator:
         planner_payload: dict[str, Any],
         kg: KnowledgeGraph,
         ag: AttackGraph,
-        task_graph: TaskGraph,
+            task_graph: Any,
         runtime_state: RuntimeState,
         context: dict[str, Any] | None,
     ) -> PipelineCycleResult:
@@ -1224,7 +1463,7 @@ class AppOrchestrator:
         )
         applied_plan = self.result_applier.apply(planner_result, runtime_state, task_graph=task_graph)
         if applied_plan.tg_graph is not None:
-            task_graph = TaskGraph.from_dict(applied_plan.tg_graph)
+            task_graph = self._legacy_task_graph_model().from_dict(applied_plan.tg_graph)
         created_ids = list(applied_plan.tg_created_task_ids)
         output = AgentOutput(
             decisions=[
@@ -1276,7 +1515,7 @@ class AppOrchestrator:
         graph_refs: list[AgentGraphRef],
         kg: KnowledgeGraph,
         ag: AttackGraph,
-        task_graph: TaskGraph,
+            task_graph: Any,
         runtime_state: RuntimeState,
         scheduler_payload: dict[str, Any] | None,
         context: dict[str, Any] | None,
@@ -1292,7 +1531,7 @@ class AppOrchestrator:
             runtime_state=runtime_state,
             extra=dict(scheduler_payload or {}),
         )
-        candidate_tasks = CandidateTaskService().collect(task_graph, runtime_state)
+        candidate_tasks = importlib.import_module("src.core.scheduling.candidate_task_service").CandidateTaskService().collect(task_graph, runtime_state)
         selected_next_task_id = (
             self._mapping(runtime_state.execution.metadata.get("stage_planning"))
             .get("selected_next_task", {})
@@ -1301,7 +1540,7 @@ class AppOrchestrator:
             selected_next_task_id = selected_next_task_id.get("task_id")
         if selected_next_task_id:
             candidate_tasks = [task for task in candidate_tasks if task.get("task_id") == selected_next_task_id]
-        runtime_summary = RuntimeConstraintService().summarize(runtime_state)
+        runtime_summary = importlib.import_module("src.core.scheduling.candidate_task_service").RuntimeConstraintService().summarize(runtime_state)
         policy_context = self._mapping(runtime_state.execution.metadata.get("runtime_policy"))
         recent_outcomes = [entry.model_dump(mode="json") for entry in runtime_state.recent_outcomes[-8:]]
         scheduler = self._scheduler_agent()
@@ -1320,7 +1559,7 @@ class AppOrchestrator:
         schedule_decision = scheduler.last_decision or self._decision_from_scheduler_output(scheduler_execution.output)
         applied_schedule = self.result_applier.apply(schedule_decision, runtime_state, task_graph=task_graph)
         if applied_schedule.tg_graph is not None:
-            task_graph = TaskGraph.from_dict(applied_schedule.tg_graph)
+            task_graph = self._legacy_task_graph_model().from_dict(applied_schedule.tg_graph)
         steps: list[PipelineStepResult] = []
         scheduler_step = PipelineStepResult(
             step_name="scheduler_agent",
@@ -1554,6 +1793,34 @@ class AppOrchestrator:
             "extra": dict(extra or {}),
         }
 
+    @staticmethod
+    def _kg_ag_runtime_snapshot(
+        *,
+        operation_id: str,
+        cycle_index: int,
+        graph_refs: list[AgentGraphRef],
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        runtime_state: RuntimeState,
+        extra: dict[str, Any],
+    ) -> dict[str, Any]:
+        del operation_id, cycle_index, graph_refs
+        policy_context = AppOrchestrator._mapping(extra.get("policy_context") or runtime_state.execution.metadata.get("runtime_policy"))
+        current_goal = str(
+            extra.get("mission_goal")
+            or extra.get("goal")
+            or extra.get("objective")
+            or runtime_state.execution.summary
+            or ""
+        )
+        return TwoGraphContextBuilder().build(
+            knowledge_graph=kg,
+            attack_graph=ag,
+            runtime_state=runtime_state,
+            policy_context=policy_context,
+            current_goal=current_goal,
+        )
+
     def _append_llm_decision_history_from_cycle(
         self,
         state: RuntimeState,
@@ -1594,9 +1861,10 @@ class AppOrchestrator:
     ) -> list[LLMDecisionHistoryRecord]:
         return LLMDecisionObserver(self.settings).extract(cycle_index=cycle_index, cycle=cycle)
 
-    def _task_graph_from_planning(self, *, planning: PipelineCycleResult, state: RuntimeState) -> TaskGraph:
+    def _task_graph_from_planning(self, *, planning: PipelineCycleResult, state: RuntimeState) -> Any:
+        task_graph_model = AppOrchestrator._legacy_task_graph_model()
         payload = state.execution.metadata.get("task_graph")
-        current = TaskGraph.from_dict(payload) if isinstance(payload, dict) and payload else TaskGraph()
+        current = task_graph_model.from_dict(payload) if isinstance(payload, dict) and payload else task_graph_model()
         patch_payload = {"nodes": [], "edges": []}
         for delta in planning.final_output.state_deltas:
             patch = dict(delta.get("patch", {}))
@@ -1606,18 +1874,20 @@ class AppOrchestrator:
                 patch_payload["edges"].append(dict(patch["edge"]))
         if not patch_payload["nodes"] and not patch_payload["edges"]:
             return current
-        return merge_task_graphs(current, TaskGraph.from_dict(patch_payload))
+        return importlib.import_module("src.core.graph.tg_merge").merge_task_graphs(current, task_graph_model.from_dict(patch_payload))
 
     @staticmethod
-    def _mark_applied_tasks(task_graph: TaskGraph, task_ids: list[str]) -> None:
+    def _mark_applied_tasks(task_graph: Any, task_ids: list[str]) -> None:
         """把已经执行并完成 apply 的 task 标记为 succeeded，避免下一轮重复调度。"""
 
+        base_task_node_model = AppOrchestrator._legacy_base_task_node_model()
+        task_status_model = AppOrchestrator._legacy_task_status_model()
         for task_id in task_ids:
             if task_id not in task_graph._nodes:
                 continue
             node = task_graph.get_node(task_id)
-            if isinstance(node, BaseTaskNode):
-                task_graph.mark_task_status(task_id, TaskStatus.SUCCEEDED, reason=node.reason)
+            if isinstance(node, base_task_node_model):
+                task_graph.mark_task_status(task_id, task_status_model.SUCCEEDED, reason=node.reason)
 
     def _selected_task_ids(self, execution: PipelineCycleResult) -> list[str]:
         if execution.final_output.decisions:
@@ -1712,24 +1982,24 @@ class AppOrchestrator:
             scheduler = schedulers[0]
             if hasattr(scheduler, "build_input") and hasattr(scheduler, "last_decision"):
                 return scheduler
-        from src.core.agents.scheduler_agent import SchedulerAgent
+        return importlib.import_module("src.core.agents.scheduler_agent").SchedulerAgent()
 
-        return SchedulerAgent()
-
-    def _worker_agent(self) -> LLMWorkerAgent:
+    def _worker_agent(self) -> Any:
+        worker_model = importlib.import_module("src.core.workers.llm_worker").LLMWorkerAgent
         workers = self.pipeline.registry.list_by_kind(AgentKind.WORKER)
         for worker in workers:
-            if isinstance(worker, LLMWorkerAgent):
+            if isinstance(worker, worker_model):
                 return worker
-        return LLMWorkerAgent(mcp_client=self.mcp_client, default_timeout_seconds=self.settings.mcp_default_timeout_seconds)
+        return worker_model(mcp_client=self.mcp_client, default_timeout_seconds=self.settings.mcp_default_timeout_seconds)
 
     @staticmethod
-    def _decision_from_scheduler_output(output: AgentOutput) -> ScheduleDecision:
+    def _decision_from_scheduler_output(output: AgentOutput) -> Any:
+        schedule_decision_model = importlib.import_module("src.core.scheduling.llm_scheduler_models").ScheduleDecision
         for decision in output.decisions:
             payload = decision.get("schedule_decision")
             if isinstance(payload, dict):
-                return ScheduleDecision.model_validate(payload)
-        return ScheduleDecision(
+                return schedule_decision_model.model_validate(payload)
+        return schedule_decision_model(
             decision="blocked",
             rationale="scheduler_output_missing_schedule_decision",
             metadata={"accepted": False, "reason": "scheduler_output_missing_schedule_decision"},
@@ -1740,13 +2010,13 @@ class AppOrchestrator:
         *,
         operation_id: str,
         graph_refs: list[AgentGraphRef],
-        scheduled_task: ScheduledTask,
+        scheduled_task: Any,
         tool_catalog: dict[str, Any],
         graph_context: dict[str, Any],
     ) -> AgentInput:
         target_refs = [dict(ref) for ref in scheduled_task.target_refs if isinstance(ref, dict)]
         target_values = AppOrchestrator._target_values_from_refs(target_refs)
-        task_spec = WorkerTaskSpec(
+        task_spec = importlib.import_module("src.core.workers.base").WorkerTaskSpec(
             task_id=scheduled_task.task_id,
             task_type=scheduled_task.stage_type,
             input_bindings={
@@ -1826,16 +2096,19 @@ class AppOrchestrator:
         }
 
     @staticmethod
-    def _draft_task_debug_records(task_graph: TaskGraph) -> list[dict[str, Any]]:
+    def _draft_task_debug_records(task_graph: Any) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
-        for node in task_graph.list_nodes(status=TaskStatus.DRAFT):
-            if isinstance(node, BaseTaskNode):
-                dependency_predecessors = task_graph.predecessors(node.id, DependencyType.DEPENDS_ON)
+        task_status_model = AppOrchestrator._legacy_task_status_model()
+        base_task_node_model = AppOrchestrator._legacy_base_task_node_model()
+        dependency_type_model = AppOrchestrator._legacy_dependency_type_model()
+        for node in task_graph.list_nodes(status=task_status_model.DRAFT):
+            if isinstance(node, base_task_node_model):
+                dependency_predecessors = task_graph.predecessors(node.id, dependency_type_model.DEPENDS_ON)
                 draft_blockers = []
                 unsatisfied_dependencies = [
                     f"{pred.id}:{pred.status.value}"
                     for pred in dependency_predecessors
-                    if pred.status != TaskStatus.SUCCEEDED
+                    if pred.status != task_status_model.SUCCEEDED
                 ]
                 if unsatisfied_dependencies:
                     draft_blockers.append(
@@ -1970,13 +2243,16 @@ class AppOrchestrator:
             if settings.mcp_enabled
             else None
         )
+        llm_worker_advisor_model = importlib.import_module("src.core.workers.llm_worker_advisor").LLMWorkerAdvisor
+        scheduler_advisor_model = importlib.import_module("src.core.scheduling.llm_scheduler_advisor").LLMSchedulerAdvisor
+        worker_model = importlib.import_module("src.core.workers.llm_worker").LLMWorkerAgent
         llm_worker_advisor = (
-            LLMWorkerAdvisor(client=PackyLLMClient(llm_client_config))
+            llm_worker_advisor_model(client=PackyLLMClient(llm_client_config))
             if llm_client_config is not None
             else None
         )
         scheduler_advisor = (
-            LLMSchedulerAdvisor(client=PackyLLMClient(llm_client_config))
+            scheduler_advisor_model(client=PackyLLMClient(llm_client_config))
             if llm_client_config is not None
             else None
         )
@@ -1993,7 +2269,7 @@ class AppOrchestrator:
                 include_llm_worker=True,
             ),
             "llm_client_config": llm_client_config,
-            "llm_worker_agent": LLMWorkerAgent(
+            "llm_worker_agent": worker_model(
                 advisor=llm_worker_advisor,
                 mcp_client=mcp_client,
                 default_timeout_seconds=settings.mcp_default_timeout_seconds,

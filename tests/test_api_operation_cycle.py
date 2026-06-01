@@ -136,7 +136,8 @@ def test_api_operation_cycle_runs_and_exposes_summary_and_audit(tmp_path) -> Non
     assert payload["cycle_index"] == 1
     assert payload["planning"]["success"] is True
     assert payload["execution"]["success"] is True
-    assert payload["execution"]["final_output"]["decisions"][0]["action"] == "dispatch"
+    assert payload["execution"]["cycle_name"] == "stage_dispatch"
+    assert "task_graph" not in payload["runtime_state"]["execution"]["metadata"]
     assert payload["feedback"]["success"] is True
 
     summary_response = client.get("/operations/op-api-cycle/summary")

@@ -24,15 +24,18 @@ def build_visual_snapshot(
     ag_payload: dict[str, Any] | None = None,
     tg_payload: dict[str, Any] | None = None,
     runtime_state: RuntimeState | dict[str, Any] | None = None,
+    legacy_tg: bool = False,
 ) -> VisualGraphSnapshot:
+    graphs: dict[GraphName, VisualGraphState] = {
+        "kg": graph_payload_to_state("kg", kg_payload or {}),
+        "ag": graph_payload_to_state("ag", ag_payload or {}),
+        "runtime": runtime_to_state(runtime_state),
+    }
+    if legacy_tg:
+        graphs["tg"] = graph_payload_to_state("tg", tg_payload or {})
     return VisualGraphSnapshot(
         operation_id=operation_id,
-        graphs={
-            "kg": graph_payload_to_state("kg", kg_payload or {}),
-            "ag": graph_payload_to_state("ag", ag_payload or {}),
-            "tg": graph_payload_to_state("tg", tg_payload or {}),
-            "runtime": runtime_to_state(runtime_state),
-        },
+        graphs=graphs,
     )
 
 

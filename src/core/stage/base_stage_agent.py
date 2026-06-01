@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.events import utc_now
-from src.core.stage.models import StageResult, StageTask, StageType, ToolTrace
+from src.core.stage.models import StageExecutionRequest, StageResult, StageTask, StageType, ToolTrace
 
 
 class StageToolCall(BaseModel):
@@ -41,7 +41,7 @@ class StageAgentAdvisor(Protocol):
         *,
         agent_name: str,
         stage_type: StageType,
-        task: StageTask,
+        request: StageExecutionRequest,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         policy_context: dict[str, Any],
@@ -76,25 +76,40 @@ class BaseStageAgent:
 
     def run(
         self,
+        request: StageExecutionRequest | None = None,
         *,
-        task: StageTask,
-        graph_context: dict[str, Any],
-        runtime_context: dict[str, Any],
-        tool_catalog: dict[str, Any],
+        task: StageTask | None = None,
+        graph_context: dict[str, Any] | None = None,
+        runtime_context: dict[str, Any] | None = None,
+        tool_catalog: dict[str, Any] | None = None,
         policy_context: dict[str, Any] | None = None,
     ) -> StageResult:
-        if task.stage_type.canonical != self.stage_type.canonical:
-            raise ValueError(f"{self.agent_name} cannot execute stage type {task.stage_type.value}")
+        if request is None:
+            if task is None:
+                raise ValueError("StageExecutionRequest is required")
+            request = self._request_from_legacy_task(
+                task=task,
+                graph_context=dict(graph_context or {}),
+                runtime_context=dict(runtime_context or {}),
+                tool_catalog=dict(tool_catalog or {}),
+                policy_context=dict(policy_context or {}),
+            )
+        if request.stage_type.canonical != self.stage_type.canonical:
+            raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type.value}")
+        if request.agent_name != self.agent_name:
+            raise ValueError(f"{self.agent_name} cannot execute request for {request.agent_name}")
 
         memory: list[dict[str, Any]] = []
         tool_trace: list[ToolTrace] = []
-        operation_id = str(runtime_context.get("operation_id") or graph_context.get("operation_id") or "operation")
-        policy = dict(policy_context or graph_context.get("policy_context") or graph_context.get("policy") or {})
-        available_tools = self.filter_tool_catalog(tool_catalog)
+        operation_id = request.operation_id
+        policy = dict(request.policy_context)
+        graph_context = self._graph_context_from_request(request)
+        runtime_context = dict(request.runtime_context)
+        available_tools = self.filter_tool_catalog(request.mcp_tool_catalog)
 
-        for step in range(task.max_steps):
+        for step in range(request.max_steps):
             decision = self._decide(
-                task=task,
+                request=request,
                 graph_context=graph_context,
                 runtime_context=runtime_context,
                 policy_context=policy,
@@ -106,7 +121,7 @@ class BaseStageAgent:
                 if decision.tool_call is None:
                     return self._replan_result(
                         operation_id=operation_id,
-                        task=task,
+                        request=request,
                         summary="stage advisor requested a tool call without tool_call details",
                         memory=memory,
                         tool_trace=tool_trace,
@@ -116,14 +131,14 @@ class BaseStageAgent:
                     call=decision.tool_call,
                     available_tools=available_tools,
                     policy_context=policy,
-                    task=task,
+                    request=request,
                 )
                 tool_trace.append(trace)
                 memory.append({"decision": decision.model_dump(mode="json"), "tool_trace": trace.model_dump(mode="json")})
                 if not trace.success and trace.policy_check.get("allowed") is False:
                     return self._finish_result(
                         operation_id=operation_id,
-                        task=task,
+                        request=request,
                         decision=StageAgentDecision(
                             action="finish",
                             rationale="policy enforcement blocked requested tool call",
@@ -142,7 +157,7 @@ class BaseStageAgent:
             if decision.action == "finish":
                 return self._finish_result(
                     operation_id=operation_id,
-                    task=task,
+                    request=request,
                     decision=decision,
                     memory=memory,
                     tool_trace=tool_trace,
@@ -150,7 +165,7 @@ class BaseStageAgent:
 
             return self._replan_result(
                 operation_id=operation_id,
-                task=task,
+                request=request,
                 summary=decision.rationale or "stage agent requested replanning",
                 memory=memory,
                 tool_trace=tool_trace,
@@ -158,13 +173,13 @@ class BaseStageAgent:
 
         return self._finish_result(
             operation_id=operation_id,
-            task=task,
+            request=request,
             decision=StageAgentDecision(
                 action="finish",
                 rationale="stage loop reached max_steps",
-            finish={
+                finish={
                     "status": "partial" if tool_trace else "need_more_info",
-                    "summary": f"{self.agent_name} reached max_steps for {task.task_id}",
+                    "summary": f"{self.agent_name} reached max_steps for {self._request_id(request)}",
                 },
             ),
             memory=memory,
@@ -192,7 +207,7 @@ class BaseStageAgent:
     def _decide(
         self,
         *,
-        task: StageTask,
+        request: StageExecutionRequest,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         policy_context: dict[str, Any],
@@ -204,16 +219,30 @@ class BaseStageAgent:
                 action="need_replan",
                 rationale=f"{self.agent_name} requires an LLM advisor; no hard-coded stage execution is available",
             )
-        raw = self._advisor.decide(
-            agent_name=self.agent_name,
-            stage_type=self.stage_type,
-            task=task,
-            graph_context=graph_context,
-            runtime_context=runtime_context,
-            policy_context=policy_context,
-            memory=memory,
-            available_tools=available_tools,
-        )
+        try:
+            raw = self._advisor.decide(
+                agent_name=self.agent_name,
+                stage_type=self.stage_type,
+                request=request,
+                graph_context=graph_context,
+                runtime_context=runtime_context,
+                policy_context=policy_context,
+                memory=memory,
+                available_tools=available_tools,
+            )
+        except TypeError as exc:
+            if "request" not in str(exc):
+                raise
+            raw = self._advisor.decide(
+                agent_name=self.agent_name,
+                stage_type=self.stage_type,
+                task=self._legacy_task_from_request(request),
+                graph_context=graph_context,
+                runtime_context=runtime_context,
+                policy_context=policy_context,
+                memory=memory,
+                available_tools=available_tools,
+            )
         return raw if isinstance(raw, StageAgentDecision) else StageAgentDecision.model_validate(raw)
 
     def _call_tool(
@@ -223,7 +252,7 @@ class BaseStageAgent:
         call: StageToolCall,
         available_tools: dict[str, Any],
         policy_context: dict[str, Any],
-        task: StageTask,
+        request: StageExecutionRequest,
     ) -> ToolTrace:
         timeout = int(call.timeout_seconds or self._default_timeout_seconds)
         tool_metadata = self._lookup_tool(available_tools, server_id=call.server_id, tool_name=call.tool_name)
@@ -231,7 +260,7 @@ class BaseStageAgent:
             call=call,
             tool_metadata=tool_metadata,
             policy_context=policy_context,
-            task=task,
+            request=request,
         )
         if not policy_check["allowed"]:
             return ToolTrace(
@@ -277,7 +306,7 @@ class BaseStageAgent:
         self,
         *,
         operation_id: str,
-        task: StageTask,
+        request: StageExecutionRequest,
         decision: StageAgentDecision,
         memory: list[dict[str, Any]],
         tool_trace: list[ToolTrace],
@@ -286,11 +315,11 @@ class BaseStageAgent:
         status = str(payload.get("status") or ("succeeded" if tool_trace and all(item.success for item in tool_trace) else "partial"))
         return StageResult(
             operation_id=operation_id,
-            stage_task_id=task.task_id,
-            stage_type=task.stage_type,
+            stage_task_id=self._request_id(request),
+            stage_type=request.stage_type,
             agent_name=self.agent_name,
             status=status,  # type: ignore[arg-type]
-            summary=str(payload.get("summary") or decision.rationale or f"{self.agent_name} finished {task.task_id}"),
+            summary=str(payload.get("summary") or decision.rationale or f"{self.agent_name} finished {self._request_id(request)}"),
             observations=list(payload.get("observations") or memory),
             evidence=list(payload.get("evidence") or []),
             findings=list(payload.get("findings") or []),
@@ -308,12 +337,13 @@ class BaseStageAgent:
             graph_update_intents=list(payload.get("graph_update_intents") or []),
             evidence_refs=[str(item) for item in payload.get("evidence_refs", []) if item is not None],
             confidence=float(payload.get("confidence") or 0.5),
-            risk_level=str(payload.get("risk_level") or task.risk_level),  # type: ignore[arg-type]
+            risk_level=str(payload.get("risk_level") or request.risk_level),  # type: ignore[arg-type]
             policy_notes=[str(item) for item in payload.get("policy_notes", []) if item is not None],
             retry_recommendation=payload.get("retry_recommendation"),
             replan_recommendation=payload.get("replan_recommendation"),
             next_stage_suggestion=payload.get("next_stage_suggestion"),
-            runtime_hints=dict(payload.get("runtime_hints") or {}),
+            handoff_suggestion=payload.get("handoff_suggestion"),
+            runtime_hints={**dict(payload.get("runtime_hints") or {}), "cycle_index": request.cycle_index},
             writeback_hints=dict(payload.get("writeback_hints") or {}),
         )
 
@@ -321,15 +351,15 @@ class BaseStageAgent:
         self,
         *,
         operation_id: str,
-        task: StageTask,
+        request: StageExecutionRequest,
         summary: str,
         memory: list[dict[str, Any]],
         tool_trace: list[ToolTrace],
     ) -> StageResult:
         return StageResult(
             operation_id=operation_id,
-            stage_task_id=task.task_id,
-            stage_type=task.stage_type,
+            stage_task_id=self._request_id(request),
+            stage_type=request.stage_type,
             agent_name=self.agent_name,
             status="needs_replan",
             summary=summary,
@@ -337,6 +367,7 @@ class BaseStageAgent:
             tool_trace=list(tool_trace),
             tool_traces=list(tool_trace),
             replan_recommendation=summary,
+            runtime_hints={"cycle_index": request.cycle_index},
         )
 
     @staticmethod
@@ -370,7 +401,7 @@ class BaseStageAgent:
         call: StageToolCall,
         tool_metadata: dict[str, Any],
         policy_context: dict[str, Any],
-        task: StageTask,
+        request: StageExecutionRequest,
     ) -> dict[str, Any]:
         category = str(tool_metadata.get("category") or "").lower()
         name = call.tool_name
@@ -389,7 +420,7 @@ class BaseStageAgent:
         allow_servers = {str(item) for item in policy_context.get("mcp_server_allowlist", [])}
         if allow_servers and call.server_id not in allow_servers:
             return {"allowed": False, "reason": f"MCP server '{call.server_id}' is not allowlisted by policy"}
-        strict = category in {"exploit", "access", "credential", "pivot"} or task.stage_type.canonical in {
+        strict = category in {"exploit", "access", "credential", "pivot"} or request.stage_type.canonical in {
             StageType.EXPLOIT,
             StageType.ACCESS_PIVOT,
         }
@@ -399,6 +430,81 @@ class BaseStageAgent:
             if not authorized:
                 return {"allowed": False, "reason": f"{category or 'sensitive'} tool requires explicit authorization context"}
         return {"allowed": True, "reason": "policy allowed MCP tool call"}
+
+    def _request_from_legacy_task(
+        self,
+        *,
+        task: StageTask,
+        graph_context: dict[str, Any],
+        runtime_context: dict[str, Any],
+        tool_catalog: dict[str, Any],
+        policy_context: dict[str, Any],
+    ) -> StageExecutionRequest:
+        operation_id = str(runtime_context.get("operation_id") or graph_context.get("operation_id") or "operation")
+        return StageExecutionRequest(
+            operation_id=operation_id,
+            cycle_index=int(runtime_context.get("cycle_index") or graph_context.get("cycle_index") or 0),
+            agent_name=self.agent_name,
+            stage_type=task.stage_type,
+            objective=task.objective,
+            target_refs=list(task.target_refs),
+            required_context=dict(task.required_context),
+            success_criteria=list(task.success_criteria),
+            risk_level=str(task.risk_level),
+            max_steps=task.max_steps,
+            kg_snapshot=dict(graph_context.get("kg_snapshot") or graph_context.get("kg_summary") or graph_context.get("kg") or {}),
+            ag_process_history=dict(graph_context.get("ag_process_history") or graph_context.get("ag_summary") or graph_context.get("ag") or {}),
+            runtime_context=dict(runtime_context),
+            policy_context=dict(policy_context or graph_context.get("policy_context") or graph_context.get("policy") or {}),
+            mcp_tool_catalog=dict(tool_catalog),
+        )
+
+    def _legacy_task_from_request(self, request: StageExecutionRequest) -> StageTask:
+        return StageTask(
+            task_id=self._request_id(request),
+            stage_type=request.stage_type,
+            objective=request.objective,
+            target_refs=list(request.target_refs),
+            required_context=dict(request.required_context),
+            success_criteria=list(request.success_criteria),
+            max_steps=request.max_steps,
+            risk_level=request.risk_level,  # type: ignore[arg-type]
+            metadata={"operation_id": request.operation_id, "cycle_index": request.cycle_index},
+        )
+
+    @staticmethod
+    def _graph_context_from_request(request: StageExecutionRequest) -> dict[str, Any]:
+        two_graph_keys = {
+            "kg_summary",
+            "ag_process_summary",
+            "runtime_summary",
+            "policy_summary",
+            "recent_evidence",
+            "known_assets",
+            "known_services",
+            "active_sessions",
+            "recent_attack_process_nodes",
+            "recent_handoff_suggestions",
+            "recent_failures",
+            "current_goal",
+        }
+        if two_graph_keys.issubset(set(request.kg_snapshot.keys())):
+            return {key: request.kg_snapshot.get(key) for key in sorted(two_graph_keys)}
+        return {
+            "operation_id": request.operation_id,
+            "cycle_index": request.cycle_index,
+            "kg_snapshot": dict(request.kg_snapshot),
+            "ag_process_history": dict(request.ag_process_history),
+            "runtime_context": dict(request.runtime_context),
+            "policy_context": dict(request.policy_context),
+            "target_refs": [ref.model_dump(mode="json") for ref in request.target_refs],
+            "required_context": dict(request.required_context),
+            "success_criteria": list(request.success_criteria),
+        }
+
+    @staticmethod
+    def _request_id(request: StageExecutionRequest) -> str:
+        return f"stage-{request.operation_id}-{request.cycle_index}-{request.agent_name}"
 
 
 __all__ = ["BaseStageAgent", "StageAgentAdvisor", "StageAgentDecision", "StageToolCall"]

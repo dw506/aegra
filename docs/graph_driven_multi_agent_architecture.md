@@ -1,45 +1,47 @@
 # Aegra Graph-Driven Multi-Agent Architecture
 
-Aegra now treats KG, AG, TG and runtime state as the first-class graph layer. This layer does not call LLMs; it only stores, queries and persists structured state. The operation loop is:
+Aegra's graph-driven runtime is now the two-graph architecture described in
+`docs/aegra_two_graph_architecture.md`.
 
-1. Load graph memory snapshots: KG facts, AG attack frontier, TG task state and runtime sessions/credentials/pivots.
-2. Planner Agent reads the graph context and mission goal, then proposes coarse stage tasks for TG.
-3. Stage scheduler selects ready stage tasks from TG dependencies and runtime locks.
-4. Dedicated Stage Agents execute bounded ReAct loops through the MCP tool catalog.
-5. Stage Agents return structured `StageResult` objects.
-6. `StageResultAdapter` and `PhaseTwoResultApplier` deterministically write observations, facts, capabilities, sessions, pivots, task candidates and status transitions back to KG/AG/TG/runtime.
-7. Updated graph memory is persisted and snapshotted per cycle.
+The primary graph layer is:
 
-## Layers
+- `KG`: environment facts only.
+- `AG`: attack-process nodes only.
 
-Layer 1 is graph memory, with no LLM decisions in this layer:
+`Runtime` and `Policy` are required context for execution and constraints, but
+they are not graphs.
 
-- KG: target, service, vulnerability, evidence and capability facts.
-- AG: goals, actions, activation status and attack path state.
-- TG: stage-level tasks, dependencies, priorities and completion state.
-- runtime: operation status, sessions, credentials, pivots, leases, locks, budgets and audit events.
+## Operation Loop
 
-Layer 2 is the mandatory Planner Agent:
+```text
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
+```
 
-- implementation: `MissionPlannerAgent`
-- reasoning backend: LLM when configured, deterministic stage planning otherwise
-- input: KG/AG/TG/runtime graph context plus policy and mission goal
-- output: TG stage tasks and dependencies
+The loop has no task-graph scheduling or task-graph merge step. `PlannerAgent`
+is the only global planning LLM and outputs `PlannerDecision`, which selects the
+next stage agent without producing commands or payloads.
 
-Layer 3 is the mandatory execution-agent layer:
+`StageDispatcher` invokes exactly one of the five stage agents selected by the
+planner:
 
 - `ReconAgent`
 - `VulnAnalysisAgent`
-- `ExploitAgent`
+- `ExploitValidationAgent`
 - `AccessPivotAgent`
 - `GoalAgent`
 
-Each Stage Agent is the execution unit for its stage. When an LLM backend is configured, `LLMStageAdvisor` provides the agent's bounded reasoning over graph/runtime context and the registered MCP tool catalog. Agents do not directly mutate graph stores. They return `StageResult`, and writeback is centralized through the deterministic adapter/applier path.
+Stage agents call authorized MCP tools and return `StageResult`, `ToolTrace`,
+and optional `handoff_suggestion`. They do not write graphs or runtime state.
 
-## Reference Design
+## Write Boundary
 
-The design mirrors the useful split from `nbshenxm/pentest-agent`: planning, reconnaissance and execution are separated into agents with memory. Aegra extends that pattern to multi-host operations by replacing per-script local memory with KG/AG/TG/runtime graph memory and by making stage completion write structured graph updates.
+`ResultApplier` is the only persistence boundary for `KG`, `AG`, `Runtime`, and
+audit log changes. `AttackLogExtractor` extracts `AG` attack-process nodes from
+planner, stage, tool, and audit records, then sends candidates through
+`ResultApplier`.
 
 ## Legacy Compatibility
 
-The older worker pipeline remains available for tests and compatibility paths, but the application-level `run_operation_cycle` follows the graph-driven stage-agent path by default.
+`SchedulerAgent`, `LLMWorkerAgent`, `TaskGraph`, `StageTaskGraphBuilder`,
+`TaskGraphBuilder`, task-graph merge helpers, and task-graph lifecycle sync are
+legacy compatibility only. They must not drive the main operation loop.

@@ -1,4 +1,4 @@
-"""File-backed Graph Memory Store for operation graph snapshots."""
+"""File-backed Graph Memory Store for operation snapshots."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from src.core.models.tg import TaskGraph
 
 
 class GraphMemoryStore:
-    """Persist KG / AG / TG / Runtime snapshots under one operation directory.
+    """Persist KG / AG / Runtime snapshots under one operation directory.
 
     The first implementation intentionally uses JSON files instead of an
     external graph database so local runs and tests can inspect every artifact.
@@ -23,6 +23,8 @@ class GraphMemoryStore:
 
     KG_FILENAME = "kg.json"
     AG_FILENAME = "ag.json"
+    # Legacy compatibility: TG persistence remains readable/writable for older callers,
+    # but the primary snapshot path no longer includes TG by default.
     TG_FILENAME = "tg.json"
     RUNTIME_FILENAME = "runtime.json"
     SNAPSHOTS_DIRNAME = "snapshots"
@@ -69,7 +71,7 @@ class GraphMemoryStore:
             self._write_json(self._artifact_path(operation_id, self.AG_FILENAME), ag.to_dict())
 
     def load_tg(self, operation_id: str) -> TaskGraph:
-        """Load a Task Graph snapshot, or return an empty graph when absent."""
+        """Legacy compatibility: load a Task Graph snapshot, or return an empty graph when absent."""
 
         with self._lock:
             path = self._artifact_path(operation_id, self.TG_FILENAME)
@@ -78,7 +80,7 @@ class GraphMemoryStore:
             return TaskGraph.from_dict(self._read_json(path))
 
     def save_tg(self, operation_id: str, tg: TaskGraph) -> None:
-        """Persist a Task Graph snapshot."""
+        """Legacy compatibility: persist a Task Graph snapshot."""
 
         with self._lock:
             self._write_json(self._artifact_path(operation_id, self.TG_FILENAME), tg.to_dict())
@@ -103,7 +105,7 @@ class GraphMemoryStore:
                 runtime.model_dump(mode="json"),
             )
 
-    def save_snapshot(self, operation_id: str, cycle_index: int) -> Path:
+    def save_snapshot(self, operation_id: str, cycle_index: int, *, include_legacy_tg: bool = False) -> Path:
         """Copy current operation graph files into a cycle snapshot directory."""
 
         if cycle_index < 0:
@@ -119,12 +121,15 @@ class GraphMemoryStore:
                 "cycle_index": cycle_index,
                 "files": [],
             }
-            for filename in (
+            filenames = [
                 self.KG_FILENAME,
                 self.AG_FILENAME,
-                self.TG_FILENAME,
                 self.RUNTIME_FILENAME,
-            ):
+            ]
+            if include_legacy_tg:
+                filenames.insert(2, self.TG_FILENAME)
+
+            for filename in filenames:
                 source = operation_dir / filename
                 if not source.exists():
                     continue

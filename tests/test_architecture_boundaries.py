@@ -84,18 +84,33 @@ def test_default_pipeline_contains_llm_agents() -> None:
     assert [agent.name for agent in pipeline.registry.list_by_kind(AgentKind.WORKER)] == ["llm_worker_agent"]
 
 
-def test_orchestrator_main_chain_uses_scheduling_function_and_disables_feedback() -> None:
+def test_orchestrator_main_chain_is_two_graph_stage_dispatch_and_disables_feedback() -> None:
     source = Path("src/app/orchestrator.py").read_text(encoding="utf-8")
-    run_cycle_source = source.split("    def run_until_quiescent", maxsplit=1)[0]
-    execution_phase_source = source.split("    def _run_execution_phase", maxsplit=1)[1].split(
-        "    def _run_feedback_phase",
-        maxsplit=1,
-    )[0]
+    run_cycle_source = source.split("    def run_legacy_operation_cycle", maxsplit=1)[0]
 
-    assert "schedule_ready_tasks(" in execution_phase_source
-    assert "run_execution_cycle(" not in run_cycle_source
+    assert "StageDispatcher(" in run_cycle_source
+    assert "AttackLogExtractor(" in run_cycle_source
+    assert "schedule_ready_tasks(" not in run_cycle_source
+    assert "CandidateTaskService" not in run_cycle_source
+    assert 'state.execution.metadata["task_graph"]' not in run_cycle_source
     assert "_run_feedback_phase(" not in run_cycle_source
     assert 'cycle_name="feedback_disabled"' in run_cycle_source
+
+
+def test_orchestrator_does_not_import_legacy_tg_scheduler_or_worker_agents() -> None:
+    imports = {module for _, module in _imports_under_file(Path("src/app/orchestrator.py"))}
+
+    assert "src.core.models.tg" not in imports
+    assert "src.core.agents.scheduler_agent" not in imports
+    assert "src.core.workers.llm_worker" not in imports
+
+
+def test_result_applier_main_path_does_not_import_task_graph_builder() -> None:
+    source = Path("src/core/runtime/result_applier.py").read_text(encoding="utf-8")
+    main_path_source = source.split("    def _apply_schedule_decision", maxsplit=1)[0]
+
+    assert "TaskGraphBuilder" not in main_path_source
+    assert "StageTaskGraphBuilder" not in main_path_source
 
 
 def test_scheduler_agent_does_not_hardcode_final_dispatch() -> None:
