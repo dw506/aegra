@@ -92,7 +92,7 @@ def test_policy_gate_denies_when_budget_is_insufficient() -> None:
     assert decision.gate == "budget"
 
 
-def test_scheduler_agent_applies_policy_gate_before_assignment() -> None:
+def test_scheduler_agent_requires_llm_before_policy_bound_dispatch() -> None:
     state = _state({"command_allowlist": ["nmap"]})
     state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
     graph = TaskGraph()
@@ -107,6 +107,6 @@ def test_scheduler_agent_applies_policy_gate_before_assignment() -> None:
     )
 
     assert result.success is True
-    assert result.output.decisions[0]["action"] == "deny"
+    assert result.output.decisions[0]["action"] == "blocked"
     assert not result.output.decisions[0]["accepted"]
-    assert any(delta["delta_type"] == "task_status_update" for delta in result.output.state_deltas)
+    assert result.output.decisions[0]["schedule_decision"]["metadata"]["accepted"] is False

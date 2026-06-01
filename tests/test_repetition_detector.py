@@ -167,8 +167,8 @@ def test_scheduler_repetition_detector_rejects_repeat_failed_task_before_assignm
 
     assert result.success is True
     assert not any(decision["accepted"] for decision in result.output.decisions)
-    assert result.output.decisions[0]["action"] == "reject"
-    assert any("repetition detector rejected 1 task" in log for log in result.output.logs)
+    assert result.output.decisions[0]["action"] == "blocked"
+    assert result.output.decisions[0]["schedule_decision"]["metadata"]["reason"] == "scheduler_llm_unavailable"
 
 
 def test_scheduler_runtime_probe_does_not_create_repetition_history() -> None:
@@ -180,18 +180,6 @@ def test_scheduler_runtime_probe_does_not_create_repetition_history() -> None:
     state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
     scheduler = SchedulerAgent()
 
-    def mutating_probe(*, task_graph: TaskGraph, runtime_state: RuntimeState) -> list[str]:
-        runtime_state.register_task(
-            TaskRuntime(
-                task_id=task.id,
-                tg_node_id=task.id,
-                status=TaskRuntimeStatus.BLOCKED,
-            )
-        )
-        return []
-
-    scheduler._runtime_scheduler.select_schedulable_tasks = mutating_probe  # noqa: SLF001
-
     result = scheduler.run(
         AgentInput(
             graph_refs=[GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
@@ -201,8 +189,8 @@ def test_scheduler_runtime_probe_does_not_create_repetition_history() -> None:
     )
 
     assert result.success is True
-    assert result.output.decisions[0]["action"] == "assign"
-    assert result.output.decisions[0]["accepted"] is True
+    assert result.output.decisions[0]["action"] == "blocked"
+    assert result.output.decisions[0]["accepted"] is False
     assert not any("repetition detector rejected 1 task" in log for log in result.output.logs)
 
 
@@ -231,11 +219,8 @@ def test_scheduler_repetition_detector_skips_repeat_succeeded_task_before_assign
 
     assert result.success is True
     assert not any(decision["accepted"] for decision in result.output.decisions)
-    assert result.output.decisions[0]["action"] == "skip"
-    assert any("repetition detector skipped 1 satisfied task" in log for log in result.output.logs)
-    patches = [delta["patch"] for delta in result.output.state_deltas]
-    assert any(patch.get("status") == TaskStatus.SKIPPED.value for patch in patches)
-    assert any(patch.get("status") == TaskRuntimeStatus.SKIPPED.value for patch in patches)
+    assert result.output.decisions[0]["action"] == "blocked"
+    assert result.output.decisions[0]["schedule_decision"]["metadata"]["reason"] == "scheduler_llm_unavailable"
 
 
 class TaskBuilderAgentShim:

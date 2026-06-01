@@ -4,8 +4,13 @@ import ast
 from pathlib import Path
 from typing import Any
 
+from src.app.orchestrator import AppOrchestrator
+from src.app.settings import AppSettings
 from src.core.models.runtime import OperationRuntime, RuntimeState
+from src.core.models.runtime import OutcomeCacheEntry
 from src.core.models.tg import TaskGraph, TaskStatus
+from src.core.graph.ag_projector import AttackGraphProjector
+from src.core.graph.kg_store import KnowledgeGraph
 from src.core.planning.mission_planner_agent import MissionPlannerAgent, MissionPlannerResult
 from src.core.runtime.result_applier import PhaseTwoResultApplier
 from src.core.stage.agents import ExploitAgent, ReconAgent
@@ -33,6 +38,22 @@ class PlannerAdvisor:
             "selected_next_task": task,
             "confidence": 0.8,
             "summary": "planned one stage",
+        }
+
+
+class RecordingPlannerAdvisor:
+    def __init__(self) -> None:
+        self.recent_stage_results: list[dict[str, Any]] = []
+
+    def propose_stage_tasks(self, **kwargs: Any) -> dict[str, Any]:
+        self.recent_stage_results = list(kwargs["recent_stage_results"])
+        return {
+            "operation_id": "op-replan",
+            "reasoning_summary": "read recent stage result before planning",
+            "new_stage_tasks": [],
+            "selected_next_task": None,
+            "confidence": 0.8,
+            "summary": "planner read previous stage output",
         }
 
 
@@ -131,6 +152,56 @@ def test_stage_agent_uses_llm_decision_and_records_tool_trace() -> None:
     assert result.status == "success"
     assert result.tool_traces[0].tool_name == "safe_recon_probe"
     assert result.graph_update_intents[0].target_graph == "KG"
+
+
+def test_orchestrator_passes_stage_output_back_to_planner() -> None:
+    advisor = RecordingPlannerAdvisor()
+    settings = AppSettings(runtime_store_backend="memory")
+    orchestrator = AppOrchestrator(settings=settings)
+    orchestrator.mission_planner = MissionPlannerAgent(advisor=advisor)
+    state = orchestrator.create_operation("op-replan")
+    state.record_outcome(
+        OutcomeCacheEntry(
+            outcome_id="outcome::stage-recon-1",
+            task_id="stage-recon-1",
+            outcome_type=StageType.RECON_STAGE.value,
+            summary="Recon found an HTTP service",
+            payload_ref="runtime://stage-results/stage-recon-1",
+            metadata={
+                "status": "succeeded",
+                "outcome_payload": {
+                    "stage_result": {
+                        "stage_task_id": "stage-recon-1",
+                        "stage_type": StageType.RECON_STAGE.value,
+                        "status": "succeeded",
+                        "summary": "Recon found an HTTP service",
+                    },
+                    "task_candidates": [
+                        {
+                            "task_type": StageType.VULN_ANALYSIS_STAGE.value,
+                            "input_bindings": {"objective": "Analyze discovered HTTP service"},
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    orchestrator.runtime_store.save_state(state)
+
+    orchestrator._run_stage_planning_phase(  # noqa: SLF001
+        operation_id="op-replan",
+        graph_refs=[],
+        planner_payload={"mission_goal": "Continue from graph state", "policy_context": {"authorized": True}},
+        kg=KnowledgeGraph(),
+        ag=AttackGraphProjector().project(KnowledgeGraph()),
+        task_graph=TaskGraph(),
+        runtime_state=state,
+        context=None,
+    )
+
+    assert advisor.recent_stage_results
+    assert advisor.recent_stage_results[0]["stage_result"]["summary"] == "Recon found an HTTP service"
+    assert advisor.recent_stage_results[0]["task_candidates"][0]["input_bindings"]["objective"] == "Analyze discovered HTTP service"
 
 
 def test_sensitive_tool_policy_denial_becomes_blocked_tool_trace() -> None:

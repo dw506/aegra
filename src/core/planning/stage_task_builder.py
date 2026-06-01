@@ -70,7 +70,7 @@ class StageTaskGraphBuilder:
             id=stage_task.task_id,
             label=stage_task.objective,
             task_type=stage_task.stage_type.task_type,
-            status=TaskStatus.DRAFT,
+            status=TaskStatus.READY,
             input_bindings={
                 "objective": stage_task.objective,
                 "required_context": dict(stage_task.required_context),

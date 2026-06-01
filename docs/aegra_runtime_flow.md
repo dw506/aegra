@@ -1,72 +1,61 @@
 # Aegra Runtime Flow
 
-This document summarizes the current execution path and ownership boundaries for
-Aegra's core runtime loop.
+Aegra uses an LLM Multi-Agent Graph-Driven Runtime. Agent means an
+LLM-owned reasoning module; deterministic code is named as a service, gate,
+validator, applier, store, parser, or adapter.
 
 ## Main Path
 
 ```text
-KG / AG / TG
-  -> Scheduler
-  -> WorkerRegistry
-  -> Primary Worker
-  -> ValidationService
-  -> ExecutionExecutor
-  -> ExecutionAdapter
-  -> ToolExecutionResult
-  -> PerceptionAgent
-  -> ParserRegistry
+User Goal / Operation Goal
+  -> KG / AG / TG / Runtime / Policy
+  -> PlannerAgent [LLM]
   -> ResultApplier
-  -> Runtime audit
+  -> SchedulerAgent [LLM]
+  -> ResultApplier
+  -> LLMWorkerAgent [LLM]
+  -> MCP Tool / ExecutionAdapter
+  -> CriticAgent [LLM]
+  -> ResultApplier
+  -> KG / AG / TG / Runtime update
 ```
 
-The current smoke path exercises this chain with access validation:
+`PlannerAgent` reads graph state and policy context, understands the mission
+goal, and emits `PlannerResult` / graph update intents. It does not execute
+tools and does not write KG, AG, TG, or Runtime directly.
 
-```text
-AccessValidationWorker
-  -> AccessValidationService
-  -> ExecutionExecutor(LocalShellAdapter)
-  -> ToolExecutionResult
-  -> PerceptionAgent / ToolExecutionParser
-  -> AgentTaskResult
-  -> PhaseTwoResultApplier
-  -> audit_log.tool_execution_recorded
-```
+`SchedulerAgent` reads TG candidates, Runtime constraints, Policy, worker state,
+tool catalog, and recent outcomes. Candidate collection and constraint summaries
+are deterministic services, but the final `ScheduleDecision` is LLM-owned. If
+the scheduler LLM is unavailable, the agent returns blocked/unavailable instead
+of falling back to deterministic dispatch.
 
-Planner and scheduler decide what should run. Worker selection goes through
-`WorkerRegistry.default()`, which registers primary `BaseWorkerAgent`
-implementations. The selected worker delegates business behavior to a validation
-service. If the service needs a tool, it builds a `ToolPlan` and passes it to
-`ExecutionExecutor`, which selects an execution adapter.
+`LLMWorkerAgent` receives one `ScheduledTask`, compressed context, policy
+constraints, and the tool catalog. It may only choose `call_mcp_tool`, `defer`,
+or `failed`; it does not create TG tasks or write graph/runtime state.
 
-Execution adapters return adapter-neutral `ToolExecutionResult` objects. These
-results are carried in worker outcomes and evidence metadata so the perception
-layer can parse them into observations and evidence. `PhaseTwoResultApplier`
-then applies the canonical worker result through runtime, KG, AG, and TG owners
-and records runtime audit entries such as `tool_execution_recorded` or
-`tool_execution_failed`.
+`CriticAgent` reviews worker evidence, tool traces, and success criteria. It
+emits confidence, evidence quality, and retry/replan/change-tool suggestions.
+It does not block writeback and does not write graph/runtime state.
 
-## Ownership Boundaries
+## Boundaries
 
-- Legacy workers are compatibility wrappers. Primary worker selection uses
-  `BaseWorkerAgent` implementations through `WorkerRegistry.default()`.
-- Parsers interpret raw results into observation/evidence records. Parsers do
-  not write Runtime State, KG, AG, or TG.
-- Execution adapters execute `ToolPlan` objects and return
-  `ToolExecutionResult`. They do not write KG, AG, TG, or Runtime audit.
-- `ResultApplier` is the boundary that turns accepted worker results into
-  runtime side effects, KG deltas, AG projection requests, TG lifecycle updates,
-  and audit log entries.
-- `ToolExecutionParser` belongs to core perception because it handles the
-  adapter-neutral result shape.
+- Agent: LLM-owned reasoning module. Current primary agents are
+  `PlannerAgent`, `SchedulerAgent`, `LLMWorkerAgent`, and `CriticAgent`.
+- Service: deterministic infrastructure or helper logic, such as
+  `CandidateTaskService`, runtime constraint summarizers, and policy helpers.
+- Applier: write boundary. `ResultApplier` is the only component that persists
+  KG, AG, TG, Runtime, audit log, and LLM decision history changes.
+- Adapter: tool execution boundary. Execution adapters and MCP clients execute
+  tools and return neutral results.
+- Parser: raw result interpretation boundary. Parsers normalize output into
+  observations and evidence, but do not persist graph/runtime state.
 
-## Current Guardrails
+## Guardrails
 
-- `src.core.planner` is the deterministic planning kernel and must not import
-  agent wrappers.
-- `src.core.perception` must not depend on external control-channel integrations.
-- Worker services must not depend on external control-channel clients.
-- Execution adapters must not import ResultApplier, graph stores, or KG/AG/TG
-  mutation structures.
-- Tool execution audit is written by `PhaseTwoResultApplier`, not by parsers or
-  adapters.
+- Deterministic helpers may provide candidate lists and constraints, but must
+  not be registered or named as Agents unless the core decision is LLM-owned.
+- Result writeback remains centralized in `PhaseTwoResultApplier`.
+- Execution adapters and parsers do not import graph stores or ResultApplier.
+- LLM unavailable states are explicit blocked/unavailable decisions, not hidden
+  rule-based fallbacks.

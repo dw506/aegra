@@ -7,19 +7,25 @@ services:
       dockerfile: lab/Dockerfile.aegra
     container_name: aegra_lab_agent
     working_dir: /app
+    env_file:
+        - ../.env
     environment:
-      PYTHONPATH: /app
-      AEGRA_LAB_MODE: "1"
-      AEGRA_MCP_ENABLED: "1"
-      AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
-      AEGRA_RUNTIME_STORE_BACKEND: file
-      AEGRA_RUNTIME_STORE_DIR: /app/lab/outputs/runtime
-      AEGRA_AUDIT_DIR: /app/lab/outputs/audit
-      AEGRA_RUNTIME_POLICY_PATH: /app/lab/scope/docker_lab.policy.json
-      AEGRA_LAB_PIVOT_HOST: 10.20.0.30
-      AEGRA_LAB_PIVOT_USER: pivot
-      AEGRA_LAB_PIVOT_PASSWORD: pivotpass
-      AEGRA_LAB_PIVOT_SOCKS: socks5://127.0.0.1:1080
+        AEGRA_LLM_API_KEY: sk-m3RZWQxU7UrWkv5ZhrynUV3Ym5TOUF3AS8zgHdUmsyhkHtn5
+        AEGRA_LLM_BASE_URL: https://www.packyapi.com/v1
+        AEGRA_LLM_MODEL: gpt-5.4-high
+        AEGRA_LLM_TIMEOUT_SEC: "180"
+        PYTHONPATH: /app
+        AEGRA_LAB_MODE: "1"
+        AEGRA_MCP_ENABLED: "1"
+        AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
+        AEGRA_RUNTIME_STORE_BACKEND: file
+        AEGRA_RUNTIME_STORE_DIR: /app/lab/outputs/runtime
+        AEGRA_AUDIT_DIR: /app/lab/outputs/audit
+        AEGRA_RUNTIME_POLICY_PATH: /app/lab/scope/docker_lab.policy.json
+        AEGRA_LAB_PIVOT_HOST: 10.20.0.30
+        AEGRA_LAB_PIVOT_USER: pivot
+        AEGRA_LAB_PIVOT_PASSWORD: pivotpass
+        AEGRA_LAB_PIVOT_SOCKS: socks5://127.0.0.1:1080
     ports:
       - "127.0.0.1:8001:8000"
     volumes:

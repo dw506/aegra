@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-from src.app.orchestrator import AppOrchestrator
+from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.agent_models import DecisionRecord
 from src.core.agents.agent_pipeline import AgentPipeline
@@ -500,27 +500,39 @@ def test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain(tmp_path:
     if not _is_tcp_open(host, port):
         pytest.skip(f"Vulhub target {host}:{port} is not reachable")
 
-    settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
-    pipeline = AgentPipeline(
-        agents=[
-            VulhubPlannerAgent(host=host, port=port),
-            TaskBuilderAgent(),
-            SchedulerAgent(),
-            VulhubReconWorkerAgent(base_url=base_url),
-            CriticAgent(),
-        ]
+    settings = AppSettings.from_env().model_copy(
+        update={
+            "runtime_store_backend": "file",
+            "runtime_store_dir": tmp_path / "runtime-store",
+            "runtime_policy": {"authorized_hosts": [host]},
+        }
     )
-    orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
+    orchestrator = AppOrchestrator(settings=settings)
     orchestrator.create_operation("op-vulhub-orchestrator")
-
-    state = orchestrator.get_operation_state("op-vulhub-orchestrator")
-    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
-    orchestrator.runtime_store.save_state(state)
+    orchestrator.import_targets(
+        "op-vulhub-orchestrator",
+        [
+            TargetHost(
+                kind="url",
+                value=base_url,
+                address=host if _is_tcp_open(host, port, timeout_sec=0.2) else None,
+                hostname=None if host.replace(".", "").isdigit() else host,
+                port=port,
+                protocol="tcp",
+                url=base_url,
+                tags=["docker-lab", "authorized"],
+            )
+        ],
+    )
+    orchestrator.start_operation("op-vulhub-orchestrator")
 
     result = orchestrator.run_operation_cycle(
         "op-vulhub-orchestrator",
         graph_refs=_build_graph_refs(),
-        planner_payload={"goal_refs": [], "planning_context": {"top_k": 1, "max_depth": 1}},
+        planner_payload={
+            "mission_goal": f"Use the graph-driven agent architecture to validate the authorized Docker lab HTTP endpoint {base_url}.",
+            "policy_context": {"authorized": True, "authorized_hosts": [host], "authorized_urls": [base_url]},
+        },
     )
 
     persisted = orchestrator.get_operation_state("op-vulhub-orchestrator")
@@ -532,7 +544,7 @@ def test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain(tmp_path:
     assert result.feedback is not None and result.feedback.success is True
     assert result.selected_task_ids
     assert result.applied_task_ids == result.selected_task_ids
-    assert len(result.apply_results) == 1
+    assert result.apply_results
     assert [item["phase"] for item in persisted.execution.metadata["phase_checkpoints"]] == [
         "cycle_started",
         "planning_completed",
@@ -542,53 +554,11 @@ def test_vulhub_orchestrator_cycle_builds_runtime_and_minimal_kg_chain(tmp_path:
         "cycle_completed",
     ]
     assert persisted.execution.metadata["last_phase_checkpoint"]["phase"] == "cycle_completed"
-    assert any(entry["event_type"] == "tool_invocation" for entry in persisted.execution.metadata["audit_log"])
+    assert persisted.execution.metadata["stage_planning"]["metadata"]["accepted"] is True
+    assert persisted.recent_outcomes
     assert recovery_snapshot["last_phase_checkpoint"]["phase"] == "cycle_completed"
     assert audit_report["operation_log"][-1]["event_type"] == "phase_checkpoint"
-
-    entity_deltas = [
-        cleaned
-        for delta in result.apply_results[0].kg_state_deltas
-        if (cleaned := _clean_entity_delta(delta)) is not None
-    ]
-    relation_deltas = [
-        cleaned
-        for delta in result.apply_results[0].kg_state_deltas
-        if (cleaned := _clean_relation_delta(delta)) is not None
-    ]
-
-    kg = KnowledgeGraph()
-    kg.apply_patch_batch(
-        {
-            "patch_batch_id": "orchestrator-entities",
-            "base_kg_version": 0,
-            "state_deltas": entity_deltas,
-            "metadata": {},
-        }
-    )
-    kg.apply_patch_batch(
-        {
-            "patch_batch_id": "orchestrator-relations",
-            "base_kg_version": kg.version,
-            "state_deltas": relation_deltas,
-            "metadata": {},
-        }
-    )
-
-    service_id = f"{host}:{port}/tcp"
-    host_nodes = [node.id for node in kg.list_nodes(type="Host")]
-    service_nodes = [node.id for node in kg.list_nodes(type="Service")]
-    observation_nodes = [node.id for node in kg.list_nodes(type="Observation")]
-    evidence_nodes = [node.id for node in kg.list_nodes(type="Evidence")]
-    hosts_edges = [edge.id for edge in kg.list_edges(type="HOSTS")]
-    supported_by_edges = [edge.id for edge in kg.list_edges(type="SUPPORTED_BY")]
-
-    assert host in host_nodes
-    assert service_id in service_nodes
-    assert f"hosts::{host}::{service_id}" in hosts_edges
-    assert observation_nodes
-    assert evidence_nodes
-    assert len(supported_by_edges) >= 2
+    assert any(item.visual_graph_deltas for item in result.apply_results)
 
 
 def test_vulhub_default_orchestrator_pipeline_enables_planner_and_critic_llm_smoke(

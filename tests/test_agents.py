@@ -38,6 +38,7 @@ from src.core.models.kg import DataAsset, Goal, Host, HostsEdge, Service, Target
 from src.core.models.kg_enums import EntityStatus
 from src.core.models.runtime import OperationRuntime, RuntimeState, WorkerRuntime, WorkerStatus
 from src.core.models.tg import TaskGraph, TaskNode, TaskStatus, TaskType
+from src.core.scheduling.llm_scheduler_models import ScheduleDecision, ScheduledTask
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
 
 
@@ -58,6 +59,29 @@ class IllegalStructuralWorker(BaseWorkerAgent):
                     "patch": {"id": "host-1"},
                 }
             ]
+        )
+
+
+class FakeSchedulerAdvisor:
+    def choose_next_task(self, **kwargs):
+        task = kwargs["candidate_tasks"][0]
+        return ScheduleDecision(
+            decision="dispatch",
+            task_id=task["task_id"],
+            worker_id="worker-1",
+            rationale="test llm scheduler dispatch",
+            confidence=0.9,
+            scheduled_task=ScheduledTask(
+                task_id=task["task_id"],
+                stage_type=task["stage_type"],
+                objective=task["objective"],
+                target_refs=task.get("target_refs", []),
+                constraints=task.get("constraints", []),
+                success_criteria=task.get("success_criteria", []),
+                policy_context=kwargs.get("policy_context", {}),
+                runtime_context=kwargs.get("runtime_summary", {}),
+            ),
+            metadata={"accepted": True},
         )
 
 
@@ -766,7 +790,7 @@ def test_perception_can_use_llm_only_for_output_normalization() -> None:
 
 
 def test_scheduler_emits_assignment_for_ready_task() -> None:
-    agent = SchedulerAgent()
+    agent = SchedulerAgent(advisor=FakeSchedulerAdvisor())
     result = agent.run(
         AgentInput(
             graph_refs=[GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
@@ -808,7 +832,7 @@ def test_agent_registry_dispatches_named_agent() -> None:
 def test_agent_pipeline_runs_minimal_single_round_cycle() -> None:
     planner = PlannerAgent()
     task_builder = TaskBuilderAgent()
-    scheduler = SchedulerAgent()
+    scheduler = SchedulerAgent(advisor=FakeSchedulerAdvisor())
     worker = PipelineWorker()
     perception = PerceptionAgent()
     state_writer = StateWriterAgent()

@@ -10,6 +10,7 @@ from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.execution.mcp_client import MCPToolCallResult
 from src.core.models.tg import TaskGraph, TaskNode, TaskStatus, TaskType
 from src.core.perception.tool_execution_parser import ToolExecutionParser
+from src.core.scheduling.llm_scheduler_models import ScheduleDecision, ScheduledTask
 from src.core.workers.base import WorkerTaskSpec
 from src.core.workers.llm_worker import LLMWorkerAgent
 from src.core.workers.llm_worker_advisor import LLMWorkerAdvisor
@@ -33,6 +34,23 @@ class FakeAdvisor:
 
     def advise(self, **kwargs: Any) -> LLMWorkerDecision:
         return self.decision
+
+
+class FakeSchedulerAdvisor:
+    def choose_next_task(self, **kwargs: Any) -> ScheduleDecision:
+        task = kwargs["candidate_tasks"][0]
+        return ScheduleDecision(
+            decision="dispatch",
+            task_id=task["task_id"],
+            worker_id="llm_worker_agent",
+            rationale="dispatch for worker test",
+            scheduled_task=ScheduledTask(
+                task_id=task["task_id"],
+                stage_type=task["stage_type"],
+                objective=task["objective"],
+            ),
+            metadata={"accepted": True},
+        )
 
 
 class FakeMCPClient:
@@ -213,7 +231,7 @@ def test_pipeline_scheduler_routes_accepted_task_to_single_llm_worker() -> None:
         ),
         mcp_client=mcp,
     )
-    pipeline = AgentPipeline(agents=[SchedulerAgent(), worker])
+    pipeline = AgentPipeline(agents=[SchedulerAgent(advisor=FakeSchedulerAdvisor()), worker])
     graph = TaskGraph()
     graph.add_node(
         TaskNode(

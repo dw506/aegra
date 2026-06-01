@@ -88,6 +88,15 @@ def test_stage_result_adapter_and_applier_write_runtime_stage_effects() -> None:
                 "active": True,
             }
         ],
+        next_stage_candidates=[
+            {
+                "stage_type": StageType.GOAL_STAGE.value,
+                "objective": "Verify the mission goal from established access",
+                "required_context": {"session_id": "session-1"},
+                "success_criteria": ["goal condition verified"],
+                "priority": 90,
+            }
+        ],
         tool_trace=[
             ToolTrace(
                 step=0,
@@ -107,4 +116,11 @@ def test_stage_result_adapter_and_applier_write_runtime_stage_effects() -> None:
     assert state.execution.metadata["capabilities"][0]["capability_id"] == "cap-1"
     assert graph.get_node("stage-exploit-1").status == TaskStatus.SUCCEEDED
     assert applied.tg_graph is not None
+    updated_graph = TaskGraph.from_dict(applied.tg_graph)
+    assert any(
+        node.task_type == TaskType.GOAL_STAGE
+        and node.input_bindings["objective"] == "Verify the mission goal from established access"
+        for node in updated_graph.list_nodes()
+        if hasattr(node, "task_type")
+    )
     assert any(entry["event_type"] == "stage_tool_trace" for entry in state.execution.metadata["audit_log"])

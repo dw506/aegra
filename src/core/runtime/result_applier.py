@@ -46,10 +46,11 @@ from src.core.models.events import (
     RuntimeControlType,
 )
 from src.core.models.finding import EvidenceArtifactRecord, Finding
-from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
+from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.models.tg import BaseTaskNode, TaskGraph, TaskStatus
 from src.core.planning.stage_task_builder import StageTaskGraphBuilder
+from src.core.scheduling.llm_scheduler_models import ScheduleDecision
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -132,7 +133,7 @@ class PhaseTwoResultApplier:
 
     def apply(
         self,
-        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | StageResult,
+        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | StageResult | ScheduleDecision,
         state: RuntimeState,
         *,
         agent_input: AgentInput | None = None,
@@ -155,6 +156,8 @@ class PhaseTwoResultApplier:
 
         if isinstance(result, PlannerResult):
             return self._apply_planner_result(result=result, state=state, task_graph=task_graph)
+        if isinstance(result, ScheduleDecision):
+            return self._apply_schedule_decision(result=result, state=state, task_graph=task_graph)
         if isinstance(result, StageResult):
             result = StageResultAdapter.to_task_result(result)
 
@@ -177,9 +180,34 @@ class PhaseTwoResultApplier:
         self._apply_capability_hints(state=state, result=canonical_result)
         self._apply_failed_hypotheses(state=state, result=canonical_result)
         self._apply_task_lifecycle(state=state, result=canonical_result)
-        if task_graph is not None and self._sync_task_graph_lifecycle(task_graph=task_graph, result=canonical_result):
+        if task_graph is None:
+            apply_result.logs.append(
+                f"TG lifecycle sync skipped: task_graph is None "
+                f"result_id={canonical_result.result_id} "
+                f"tg_node_id={canonical_result.tg_node_id} "
+                f"task_id={canonical_result.task_id} "
+                f"status={canonical_result.status}"
+        )
+        else:
+            synced_tg = self._sync_task_graph_lifecycle(
+                task_graph=task_graph,
+                result=canonical_result,
+    )
+
+        apply_result.logs.append(
+             f"TG lifecycle sync result={synced_tg} "
+             f"result_id={canonical_result.result_id} "
+             f"tg_node_id={canonical_result.tg_node_id} "
+             f"task_id={canonical_result.task_id} "
+             f"status={canonical_result.status}"
+    )
+
+        if synced_tg:
             apply_result.tg_graph = task_graph.to_dict()
-            apply_result.logs.append(f"synced TG task {canonical_result.tg_node_id} lifecycle from runtime result")
+            apply_result.logs.append(
+                f"synced TG task {canonical_result.tg_node_id or canonical_result.task_id} "
+                f"lifecycle from runtime result"
+        )
         self._record_recent_outcome(state=state, result=canonical_result)
         self._audit_stage_result(state=state, result=canonical_result)
         self._audit_tool_invocations(state=state, result=canonical_result)
@@ -286,6 +314,62 @@ class PhaseTwoResultApplier:
                 tg_graph=apply_result.tg_graph,
                 include_kg=bool(apply_result.kg_apply_result),
                 include_runtime=bool(runtime_event_refs or canonical_result.tg_node_id or canonical_result.task_id),
+            )
+        )
+        return apply_result
+
+    def _apply_schedule_decision(
+        self,
+        *,
+        result: ScheduleDecision,
+        state: RuntimeState,
+        task_graph: TaskGraph | None,
+    ) -> PhaseTwoApplyResult:
+        apply_result = PhaseTwoApplyResult()
+        state.execution.metadata["last_schedule_decision"] = result.model_dump(mode="json")
+        self._append_audit_log(
+            state,
+            {
+                "event_type": "schedule_decision_applied",
+                "schedule_decision": result.model_dump(mode="json"),
+            },
+        )
+        if result.decision != "dispatch" or result.task_id is None:
+            state.execution.metadata["scheduler_blocked_reason"] = result.rationale
+            apply_result.logs.append(f"recorded scheduler decision {result.decision}: {result.rationale}")
+            return apply_result
+
+        task_id = result.task_id
+        now = utc_now()
+        runtime_task = state.execution.tasks.get(task_id)
+        if runtime_task is None:
+            runtime_task = TaskRuntime(task_id=task_id, tg_node_id=task_id)
+            state.register_task(runtime_task)
+        runtime_task.status = TaskRuntimeStatus.RUNNING
+        runtime_task.assigned_worker = result.worker_id
+        runtime_task.queued_at = runtime_task.queued_at or now
+        runtime_task.started_at = now
+        runtime_task.metadata["schedule_decision"] = result.model_dump(mode="json")
+        runtime_task.metadata["scheduled_task"] = (
+            result.scheduled_task.model_dump(mode="json") if result.scheduled_task is not None else {}
+        )
+        if result.worker_id and result.worker_id in state.workers:
+            worker = state.workers[result.worker_id]
+            worker.status = WorkerStatus.BUSY
+            worker.current_task_id = task_id
+        if task_graph is not None and task_id in task_graph._nodes:
+            task_graph.mark_task_status(task_id, TaskStatus.RUNNING, reason="scheduled by llm SchedulerAgent")
+            apply_result.tg_graph = task_graph.to_dict()
+        apply_result.logs.append(f"marked scheduled task {task_id} running")
+        apply_result.visual_graph_deltas.extend(
+            self._visual_graph_deltas(
+                operation_id=state.operation_id,
+                state=state,
+                kg_store=None,
+                ag_graph=None,
+                tg_graph=apply_result.tg_graph,
+                include_kg=False,
+                include_runtime=True,
             )
         )
         return apply_result
@@ -1046,19 +1130,46 @@ class PhaseTwoResultApplier:
                 )
 
     def _sync_task_graph_lifecycle(self, *, task_graph: TaskGraph, result: AgentTaskResult) -> bool:
-        """Mirror successful Runtime task completion into the Task Graph."""
+        raw_status = getattr(result, "status", None)
+        status = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "").lower()
 
-        if result.status != AgentResultStatus.SUCCEEDED:
+        task_ids = [
+            task_id
+            for task_id in (getattr(result, "tg_node_id", None), getattr(result, "task_id", None))
+            if task_id
+        ]
+
+        if not task_ids:
+           return False
+
+        if status in {"succeeded", "success", "completed", "complete"}:
+            target_status = TaskStatus.SUCCEEDED
+            reason = result.summary or "worker result succeeded"
+        elif status in {"failed", "failure", "error"}:
+            target_status = TaskStatus.FAILED
+            reason = result.summary or "worker result failed"
+        elif status in {"blocked", "deferred", "wait"}:
+            target_status = TaskStatus.BLOCKED
+            reason = result.summary or f"worker result {status}"
+        else:
             return False
-        for task_id in (result.tg_node_id, result.task_id):
+
+        for task_id in task_ids:
             if task_id not in task_graph._nodes:
                 continue
+
             node = task_graph.get_node(task_id)
             if not isinstance(node, BaseTaskNode):
                 continue
-            updated = task_graph.mark_task_status(task_id, TaskStatus.SUCCEEDED, reason=result.summary)
+
+            updated = task_graph.mark_task_status(
+                task_id,
+                target_status,
+                reason=reason,
+            )   
             updated.last_outcome_ref = f"runtime://results/{result.result_id}"
             return True
+
         return False
 
     def _sync_runtime_views_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any
@@ -293,10 +295,14 @@ def create_app(
         title=resolved_settings.control_api_title,
         version=resolved_settings.control_api_version,
     )
+
     if CORSMiddleware is not None and resolved_settings.control_api_cors_origins:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=list(resolved_settings.control_api_cors_origins),
+            allow_origins=[
+                "http://127.0.0.1:5174",
+                "http://localhost:5174",
+            ],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

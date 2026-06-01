@@ -1,8 +1,7 @@
 """Deterministic TG/Runtime scheduling function.
 
-This module is the non-agent scheduling boundary for the main execution path.
-The legacy ``SchedulerAgent`` remains as a compatibility implementation while
-callers migrate away from registering a scheduler in the agent pipeline.
+This module is a non-agent compatibility service for deterministic scheduling
+helpers. It must not be used as the final decision owner for LLM agent flows.
 """
 
 from __future__ import annotations
@@ -11,10 +10,11 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentOutput, GraphRef, GraphScope
-from src.core.agents.scheduler_agent import SchedulerAgent, SchedulingContext
+from src.core.agents.agent_protocol import AgentOutput, GraphRef
+from src.core.agents.scheduler_agent import SchedulingContext
 from src.core.models.runtime import RuntimeState
 from src.core.models.tg import TaskGraph
+from src.core.runtime.scheduler import RuntimeScheduler
 
 
 class SchedulingResult(BaseModel):
@@ -65,30 +65,25 @@ def schedule_ready_tasks(
     graph_refs: Sequence[GraphRef] | None = None,
     payload: dict[str, Any] | None = None,
 ) -> SchedulingResult:
-    """Find schedulable TG tasks and emit assignment decisions.
-
-    The implementation intentionally returns scheduler-shaped data instead of
-    an agent execution envelope. The legacy ``SchedulerAgent`` is only used as
-    a transitional compatibility implementation behind this functional API.
-    """
+    """Find schedulable TG tasks and emit deterministic service decisions."""
 
     scheduling_context = (
         context
         if isinstance(context, SchedulingContext)
         else SchedulingContext.model_validate(dict(context or {}))
     )
-    raw_payload = {
-        **dict(payload or {}),
-        "tg_graph": task_graph.to_dict(),
-        "scheduling_context": scheduling_context.model_dump(mode="json"),
-    }
-    if runtime_state is not None:
-        raw_payload["runtime_state"] = runtime_state.model_dump(mode="json")
-    refs = list(graph_refs or [GraphRef(graph=GraphScope.TG, ref_id="task_graph", ref_type="TaskGraph")])
-    scheduler_input = AgentInput(
-        graph_refs=refs,
-        context=AgentContext(operation_id=operation_id),
-        raw_payload=raw_payload,
+    del graph_refs, payload, scheduling_context
+    if runtime_state is None:
+        decisions = [
+            {"task_id": task.id, "worker_id": None, "action": "assign", "accepted": True}
+            for task in task_graph.find_schedulable_tasks()
+        ]
+        return SchedulingResult(decisions=decisions, logs=[f"deterministic scheduler selected {len(decisions)} task(s)"])
+    tick = RuntimeScheduler().tick(task_graph=task_graph, runtime_state=runtime_state)
+    return SchedulingResult(
+        decisions=[decision.model_dump(mode="json") for decision in tick.decisions],
+        logs=[
+            f"deterministic scheduler considered {len(tick.candidate_task_ids)} task(s)",
+            f"deterministic scheduler selected {len(tick.selected_task_ids)} task(s)",
+        ],
     )
-    output = SchedulerAgent().execute(scheduler_input)
-    return SchedulingResult.from_agent_output(output)

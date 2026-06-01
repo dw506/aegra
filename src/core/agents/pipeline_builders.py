@@ -23,6 +23,7 @@ from src.core.agents.packy_planner_advisor import PackyPlannerAdvisor
 from src.core.agents.packy_supervisor_advisor import PackySupervisorAdvisor
 from src.core.agents.planner import GraphLLMPlannerAdvisorProtocol, PlannerAgent, PlannerLLMAdvisor
 from src.core.agents.scheduler_agent import SchedulerAgent
+from src.core.scheduling.llm_scheduler_advisor import LLMSchedulerAdvisor
 from src.core.agents.supervisor import SupervisorAgent, SupervisorLLMAdvisor
 from src.core.agents.task_builder import TaskBuilderAgent
 from src.core.workers.llm_worker import LLMWorkerAgent
@@ -54,6 +55,7 @@ def build_optional_agent_pipeline(
     graph_llm_planner_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
     critic_llm_advisor: CriticLLMAdvisor | None = None,
     supervisor_llm_advisor: SupervisorLLMAdvisor | None = None,
+    scheduler_llm_advisor: LLMSchedulerAdvisor | None = None,
     llm_worker_agent: LLMWorkerAgent | None = None,
     llm_client_config: PackyLLMConfig | None = None,
     event_sink: Callable[[list[dict[str, Any]]], None] | None = None,
@@ -107,7 +109,7 @@ def build_optional_agent_pipeline(
     if resolved_options.include_task_builder:
         agents.append(TaskBuilderAgent())
     if resolved_options.include_scheduler:
-        agents.append(SchedulerAgent())
+        agents.append(SchedulerAgent(advisor=scheduler_llm_advisor))
     if (
         resolved_options.include_critic
         or resolved_options.enable_packy_critic_advisor

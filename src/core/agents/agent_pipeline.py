@@ -651,7 +651,7 @@ class AgentPipeline:
         return [
             decision
             for decision in decisions
-            if bool(decision.get("accepted")) and str(decision.get("action")) == "assign"
+            if bool(decision.get("accepted")) and str(decision.get("action")) in {"assign", "dispatch"}
         ]
 
     @staticmethod

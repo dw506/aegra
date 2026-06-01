@@ -31,6 +31,7 @@ from src.core.models.ag import GraphRef as AGGraphRef
 from src.core.models.runtime import OperationRuntime, RuntimeState, TaskRuntime, WorkerRuntime, WorkerStatus
 from src.core.models.runtime import LockStatus, ResourceLock, RuntimeEventRef, SessionLeaseRuntime, SessionRuntime, SessionStatus
 from src.core.models.tg import BaseTaskNode, TaskType
+from src.core.scheduling.llm_scheduler_models import ScheduleDecision, ScheduledTask
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
 
 
@@ -116,6 +117,33 @@ class FakeWorkerAgent(BaseWorkerAgent):
             outcomes=[outcome.to_agent_output_fragment()],
             evidence=[raw_result],
             logs=["worker executed fake probe"],
+        )
+
+
+class FakeSchedulerAdvisor:
+    def choose_next_task(self, **kwargs):
+        if not kwargs["candidate_tasks"]:
+            return ScheduleDecision(
+                decision="blocked",
+                rationale="no candidate tasks",
+                metadata={"accepted": False, "reason": "no_candidate_tasks"},
+            )
+        task = kwargs["candidate_tasks"][0]
+        return ScheduleDecision(
+            decision="dispatch",
+            task_id=task["task_id"],
+            worker_id="fake_worker",
+            rationale="test scheduler dispatch",
+            confidence=0.9,
+            scheduled_task=ScheduledTask(
+                task_id=task["task_id"],
+                stage_type=task["stage_type"],
+                objective=task["objective"],
+                target_refs=task.get("target_refs", []),
+                policy_context=kwargs.get("policy_context", {}),
+                runtime_context=kwargs.get("runtime_summary", {}),
+            ),
+            metadata={"accepted": True},
         )
 
 
@@ -375,7 +403,7 @@ def test_orchestrator_builds_default_pipeline_with_planner_llm_when_key_exists(t
     assert options.enable_graph_llm_planner_advisor is True
     assert options.enable_packy_critic_advisor is False
     assert options.enable_packy_supervisor_advisor is False
-    assert options.include_scheduler is False
+    assert options.include_scheduler is True
     assert options.include_critic is False
     assert options.include_supervisor is False
     assert captured["planner_llm_advisor"] is None
@@ -469,7 +497,7 @@ def test_global_app_is_none_when_fastapi_is_unavailable() -> None:
 def test_orchestrator_run_operation_cycle_requires_llm_stage_planner_without_hardcoded_fallback(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
-        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
+        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(advisor=FakeSchedulerAdvisor()), FakeWorkerAgent(), CriticAgent()]
     )
     orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
     orchestrator.create_operation("op-loop")
@@ -484,7 +512,8 @@ def test_orchestrator_run_operation_cycle_requires_llm_stage_planner_without_har
     )
 
     assert result.planning is not None and result.planning.success is True
-    assert result.execution is not None and result.execution.success is True
+    assert result.execution is not None and result.execution.success is False
+    assert result.execution.final_output.decisions[0]["action"] == "blocked"
     assert result.feedback is not None and result.feedback.success is True
     assert result.selected_task_ids == []
     assert result.applied_task_ids == []
@@ -518,7 +547,7 @@ def test_orchestrator_run_operation_cycle_requires_llm_stage_planner_without_har
 def test_orchestrator_run_until_quiescent_stops_when_no_more_tasks(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
-        agents=[FakePlannerAgent(emit_once=True), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
+        agents=[FakePlannerAgent(emit_once=True), TaskBuilderAgent(), SchedulerAgent(advisor=FakeSchedulerAdvisor()), FakeWorkerAgent(), CriticAgent()]
     )
     orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
     orchestrator.create_operation("op-loop")
@@ -716,7 +745,7 @@ def test_orchestrator_health_and_readiness_status(tmp_path) -> None:
 def test_orchestrator_persists_phase_checkpoints_to_file_store(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
-        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
+        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(advisor=FakeSchedulerAdvisor()), FakeWorkerAgent(), CriticAgent()]
     )
     orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
     orchestrator.create_operation("op-phase")
@@ -750,7 +779,7 @@ def test_orchestrator_cycle_summary_records_llm_advisor_status(tmp_path) -> None
         enable_critic_llm_advisor=True,
     )
     pipeline = AgentPipeline(
-        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
+        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(advisor=FakeSchedulerAdvisor()), FakeWorkerAgent(), CriticAgent()]
     )
     orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
     orchestrator.create_operation("op-llm-summary")
@@ -779,7 +808,7 @@ def test_orchestrator_cycle_summary_records_llm_advisor_status(tmp_path) -> None
 def test_orchestrator_disables_feedback_phase_after_apply(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     pipeline = AgentPipeline(
-        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(), FakeWorkerAgent(), CriticAgent()]
+        agents=[FakePlannerAgent(), TaskBuilderAgent(), SchedulerAgent(advisor=FakeSchedulerAdvisor()), FakeWorkerAgent(), CriticAgent()]
     )
     orchestrator = AppOrchestrator(settings=settings, pipeline=pipeline)
     orchestrator.create_operation("op-crash")

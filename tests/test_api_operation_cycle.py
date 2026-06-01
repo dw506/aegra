@@ -16,14 +16,39 @@ from src.core.agents.critic import CriticAgent
 from src.core.agents.scheduler_agent import SchedulerAgent
 from src.core.agents.task_builder import TaskBuilderAgent
 from src.core.models.runtime import WorkerRuntime, WorkerStatus
+from src.core.execution.mcp_client import MCPToolCallResult
+from src.core.workers.llm_worker import LLMWorkerAgent
+from src.core.workers.llm_worker_models import LLMWorkerDecision
 
-from test_app_orchestrator import FakePlannerAgent, FakeWorkerAgent, build_graph_refs
+from test_app_orchestrator import FakePlannerAgent, FakeSchedulerAdvisor, FakeWorkerAgent, build_graph_refs
 
 
 class FakeAnyTaskWorkerAgent(FakeWorkerAgent):
     def supports_task(self, task_spec) -> bool:
         del task_spec
         return True
+
+
+class FakeLLMWorkerAdvisor:
+    def advise(self, **kwargs):
+        return LLMWorkerDecision(
+            action="call_mcp_tool",
+            server_id="lab",
+            tool_name="noop",
+            arguments={},
+            summary="fake llm worker executed",
+        )
+
+
+class FakeMCPClient:
+    def list_tools(self):
+        return {"available": True, "tools": [{"server_id": "lab", "name": "noop"}]}
+
+    def is_available(self, server_id=None):
+        return True
+
+    def call_tool(self, **kwargs):
+        return MCPToolCallResult(success=True, stdout="ok", metadata={})
 
 
 try:
@@ -54,8 +79,8 @@ def _build_client(tmp_path, *, runtime_policy: dict | None = None):
         agents=[
             FakePlannerAgent(),
             TaskBuilderAgent(),
-            SchedulerAgent(),
-            FakeAnyTaskWorkerAgent(),
+            SchedulerAgent(advisor=FakeSchedulerAdvisor()),
+            LLMWorkerAgent(advisor=FakeLLMWorkerAdvisor(), mcp_client=FakeMCPClient()),
             CriticAgent(),
         ]
     )
@@ -111,6 +136,7 @@ def test_api_operation_cycle_runs_and_exposes_summary_and_audit(tmp_path) -> Non
     assert payload["cycle_index"] == 1
     assert payload["planning"]["success"] is True
     assert payload["execution"]["success"] is True
+    assert payload["execution"]["final_output"]["decisions"][0]["action"] == "dispatch"
     assert payload["feedback"]["success"] is True
 
     summary_response = client.get("/operations/op-api-cycle/summary")
