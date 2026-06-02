@@ -94,7 +94,7 @@ def test_frontend_smoke_serves_required_pages(tmp_path) -> None:
     for label in (
         "Workspace / Asset",
         "Operation Run",
-        "Task Graph",
+        "Legacy TG",
         "Knowledge Graph",
         "Findings",
         "Evidence Details",

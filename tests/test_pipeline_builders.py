@@ -88,7 +88,7 @@ def test_optional_pipeline_builder_keeps_default_planner_behavior_without_packy(
     assert isinstance(planner, PlannerAgent)
     assert planner._llm_advisor is None  # noqa: SLF001
     assert planner._graph_llm_advisor is None  # noqa: SLF001
-    assert [agent.name for agent in pipeline.registry.list_by_kind(AgentKind.WORKER)] == ["llm_worker_agent"]
+    assert [agent.name for agent in pipeline.registry.list_by_kind(AgentKind.WORKER)] == []
     assert pipeline.registry.list_by_kind(AgentKind.CRITIC) == []
 
 

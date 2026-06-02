@@ -243,6 +243,16 @@ def _tasks_from_state(state: Any) -> dict[str, Any]:
             )
     return {
         "operation_id": state.operation_id,
+        "legacy_endpoint": True,
+        "legacy_tg": True,
+        "replacement_endpoints": {
+            "graph": f"/operations/{state.operation_id}/graph",
+            "findings": f"/operations/{state.operation_id}/findings",
+            "evidence": f"/operations/{state.operation_id}/evidence",
+            "control_cycles": f"/operations/{state.operation_id}/control-cycles",
+            "audit_report": f"/operations/{state.operation_id}/audit-report",
+            "llm_decisions": f"/operations/{state.operation_id}/llm-decisions",
+        },
         "nodes": list(graph_payload.get("nodes", [])),
         "edges": list(graph_payload.get("edges", [])),
         "runtime_tasks": runtime_tasks,

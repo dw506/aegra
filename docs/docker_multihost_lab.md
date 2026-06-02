@@ -4,6 +4,11 @@ This lab runs one Aegra control-plane container, three target web-service
 containers, and one simulated internal-only service. It is intended for
 repeatable local end-to-end smoke testing of the orchestrator flow.
 
+Use this lab only for authorized, local, controlled validation. It is not a
+template for unauthorized scanning, destructive exploitation, persistence,
+reverse shells, brute force, stealthy execution, or activity outside the Docker
+scope and policy files.
+
 ## Layout
 
 - `aegra`: FastAPI control API at `http://localhost:8000`.
@@ -21,6 +26,21 @@ AEGRA_MCP_ENABLED=1
 AEGRA_MCP_CONFIG_PATH=/app/configs/mcp.lab.docker.json
 AEGRA_LAB_MODE=1
 ```
+
+LLM configuration is injected from `.env`:
+
+```text
+AEGRA_LLM_API_KEY=
+AEGRA_LLM_BASE_URL=
+AEGRA_LLM_MODEL=
+AEGRA_LLM_TIMEOUT_SEC=180
+```
+
+Do not commit populated `.env` files or real API keys.
+
+The current multihost compose file includes a DMZ network (`10.20.0.0/24`), an
+internal network (`10.30.0.0/24`), a pivot SSH host at `10.20.0.30` /
+`10.30.0.30`, and an internal web service at `10.30.0.40`.
 
 ## Build And Start
 
@@ -97,6 +117,13 @@ Pass `-KeepRunning` if you want the containers to remain up after the smoke run:
 Successful smoke tests prove that planning, execution, feedback, runtime audit,
 and KG evidence deltas work against three Docker-hosted targets and one
 internal-only Docker service.
+
+Graph-driven smoke tests should verify the Planner-centered loop:
+`PlannerAgent` dispatches stage agents, `ResultApplier` records KG/AG/Runtime
+facts, `AccessPivotAgent` records sessions and pivot routes, `GoalAgent` records
+`goal_satisfied=true`, and only the next `PlannerAgent` `stop_success` completes
+the operation. Tests that require this lab must be skipped by default unless
+`AEGRA_RUN_DOCKER_MULTIHOST_TEST=1` is set.
 
 ## Stop The Lab
 

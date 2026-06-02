@@ -2,6 +2,7 @@ const state = {
   workspaceId: null,
   workspaces: [],
   evidence: [],
+  legacyTg: new URLSearchParams(window.location.search).get("legacy_tg") === "1",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -31,7 +32,7 @@ async function refreshAll() {
   await Promise.all([
     refreshAssets(),
     refreshPolicy(),
-    refreshTasks(),
+    state.legacyTg ? refreshTasks() : Promise.resolve(),
     refreshGraph(),
     refreshFindings(),
     refreshApprovals(),
@@ -167,6 +168,10 @@ function escapeHtml(value) {
 }
 
 document.querySelectorAll(".tabs button").forEach((button) => {
+  if (button.dataset.view === "tasks" && !state.legacyTg) {
+    button.hidden = true;
+    return;
+  }
   button.addEventListener("click", () => {
     document.querySelectorAll(".tabs button, .view").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");

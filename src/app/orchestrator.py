@@ -602,14 +602,20 @@ class AppOrchestrator:
                 final_output=stage_output,
                 logs=[stage_result.summary],
             )
-            stopped = self._goal_satisfied(state) or stage_result.status in {"failed", "blocked"}
-            stop_reason = (
-                "goal satisfied by stage result"
-                if self._goal_satisfied(state)
-                else stage_result.summary
-                if stopped
-                else None
-            )
+            if self._goal_satisfied(state):
+                state.execution.metadata["goal_satisfied"] = True
+            if stage_result.status in {"failed", "blocked"}:
+                stop_reason = stage_result.summary
+                state.execution.metadata["needs_replan"] = True
+                state.execution.metadata["last_stage_stop_reason"] = {
+                    "status": stage_result.status,
+                    "summary": stage_result.summary,
+                    "stage_task_id": stage_result.stage_task_id,
+                    "recorded_at": utc_now().isoformat(),
+                }
+            else:
+                stop_reason = None
+            stopped = False
 
         feedback = PipelineCycleResult(
             cycle_name="feedback_disabled",
@@ -634,7 +640,14 @@ class AppOrchestrator:
         history.append(summary)
         state.execution.metadata["last_control_cycle"] = summary
         state.execution.summary = f"control cycle {cycle_index} completed"
-        state.operation_status = RuntimeStatus.COMPLETED if stopped else RuntimeStatus.READY
+        if decision.decision == "stop_success":
+            state.operation_status = RuntimeStatus.COMPLETED
+        elif decision.decision == "stop_failed":
+            state.operation_status = RuntimeStatus.FAILED
+        elif decision.decision == "pause_for_review":
+            state.operation_status = RuntimeStatus.PAUSED
+        else:
+            state.operation_status = RuntimeStatus.READY
         state.execution.status = state.operation_status
         state.last_updated = utc_now()
         self._log_operation_event(

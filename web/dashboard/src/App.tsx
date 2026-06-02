@@ -3,15 +3,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchSnapshot, graphWsUrl, listOperations } from "./api";
 import { CytoscapeGraph } from "./components/CytoscapeGraph";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
-import { TaskGraph } from "./components/TaskGraph";
+import { LegacyTaskGraph } from "./components/TaskGraph";
 import { applyDelta, emptyDashboardGraphs, filteredGraph, snapshotToGraphs, type DashboardGraphs } from "./graphState";
 import type { GraphName, OperationSummary, ServerMessage, VisualNode } from "./types";
 
+const legacyTaskGraphEnabled = import.meta.env.VITE_AEGRA_LEGACY_TG === "1";
 const tabs: { id: GraphName; label: string }[] = [
   { id: "kg", label: "KG" },
   { id: "ag", label: "AG" },
-  { id: "tg", label: "TG" },
   { id: "runtime", label: "Runtime" },
+  ...(legacyTaskGraphEnabled ? [{ id: "tg" as GraphName, label: "LegacyTaskGraph" }] : []),
 ];
 
 export default function App() {
@@ -150,7 +151,7 @@ export default function App() {
 
           <div className="graphViewport">
             {activeGraph === "tg" ? (
-              <TaskGraph graph={visibleState} onSelectNode={setSelectedNode} />
+              <LegacyTaskGraph graph={visibleState} onSelectNode={setSelectedNode} />
             ) : (
               <CytoscapeGraph graph={visibleState} onSelectNode={setSelectedNode} />
             )}

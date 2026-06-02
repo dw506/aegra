@@ -15,6 +15,12 @@ User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispa
 the next stage and `selected_agent`; it does not contain shell commands,
 payloads, or concrete tool invocations.
 
+Only `PlannerAgent` may end an operation with `stop_success` or `stop_failed`.
+`GoalAgent` can record `runtime_hints.goal_satisfied=true` and supporting
+evidence, but the current stage cycle returns to `READY`; the next planner cycle
+must verify the recorded `GoalCheck`, evidence refs, and AG process nodes before
+emitting `stop_success`.
+
 `ResultApplier` is the only write boundary for `KG`, `AG`, `Runtime`, and the
 audit log. Planner decisions, stage results, tool traces, extracted attack
 events, evidence, findings, session updates, pivot updates, and credential
@@ -85,6 +91,8 @@ stores.
   are legacy compatibility only.
 - Legacy compatibility code must not be used as the default planner,
   dispatcher, scheduling, merge, or persistence path for new operation cycles.
+- Handoff suggestions are recorded as AG/runtime facts only. They do not trigger
+  another stage unless the next `PlannerAgent` decision accepts them.
 - JSON schema validation, MCP policy enforcement, Runtime session, pivot, and
   credential managers, audit logging, and evidence/finding normalization remain
   mandatory.

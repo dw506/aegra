@@ -69,6 +69,11 @@ It must not output shell commands, payloads, or concrete MCP tool calls. It also
 must not rely on a fixed stage order. The next agent is selected from current
 state and policy, not from a hard-coded sequence.
 
+`PlannerAgent` is also the only global controller that may output
+`stop_success` or `stop_failed`. A `stop_success` decision requires recorded
+goal evidence: a `GoalAgent` `StageResult`, a `GoalCheck` finding, evidence
+refs, and AG process nodes for the goal check and stage result.
+
 ## StageDispatcher
 
 `StageDispatcher` is deterministic routing. It reads
@@ -93,6 +98,11 @@ authorized MCP tools through the policy-enforced tool boundary. It returns:
 
 Stage agents cannot directly write `KG`, `AG`, `Runtime`, or audit logs. Their
 outputs are validated and applied later by `ResultApplier`.
+
+`GoalAgent` follows the same boundary. It verifies goal evidence and returns
+`runtime_hints.goal_satisfied`, `goal_summary`, and `goal_evidence_refs`; it
+does not complete the operation. The next planner cycle decides whether those
+facts justify `stop_success`.
 
 ## MCP Layer
 
@@ -128,7 +138,8 @@ or decision, not an environment fact.
 
 The applier performs schema validation, merge rules, provenance tracking,
 confidence handling, and policy-compatible writeback. It does not call an LLM
-for core judgment.
+for core judgment, dispatch another agent, alter a planner decision, or mark an
+operation completed.
 
 ## Legacy Compatibility
 

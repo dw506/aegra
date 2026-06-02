@@ -12,4 +12,6 @@ compare*
 *.tmp
 tmp-orchestrator-*/
 .env
+.env.*
+!.env.example
 *.log

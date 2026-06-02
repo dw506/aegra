@@ -7,7 +7,7 @@ interface Props {
   onSelectNode: (node: VisualNode) => void;
 }
 
-export function TaskGraph({ graph, onSelectNode }: Props) {
+export function LegacyTaskGraph({ graph, onSelectNode }: Props) {
   const visualNodes = Object.values(graph.nodes);
   const nodes: Node[] = visualNodes.map((node, index) => ({
     id: node.id,
