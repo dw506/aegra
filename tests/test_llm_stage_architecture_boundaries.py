@@ -13,7 +13,7 @@ from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.planning.mission_planner_agent import MissionPlannerAgent, MissionPlannerResult
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.agents import ExploitAgent, ReconAgent
+from src.core.stage.agents import ExploitValidationAgent, ReconAgent
 from src.core.stage.base_stage_agent import StageAgentDecision, StageToolCall
 from src.core.stage.models import PlannerResult, StageResult, StageTask, StageType
 
@@ -117,7 +117,7 @@ class MCP:
 def test_planner_agent_is_llm_owned_and_result_applier_writes_tg() -> None:
     advisor = PlannerAdvisor()
     planner = MissionPlannerAgent(advisor=advisor)
-    result = planner.run(
+    result = planner.run_legacy_stage_tasks(
         goal="validate goal",
         graph_context={"operation_id": "op-arch", "kg_summary": {}, "tg_summary": {}},
         policy_context={"authorized": True},
@@ -226,7 +226,7 @@ def test_sensitive_tool_policy_denial_becomes_blocked_tool_trace() -> None:
             ]
         }
     }
-    result = ExploitAgent(advisor=StaticAdvisor(), mcp_client=MCP()).run(
+    result = ExploitValidationAgent(advisor=StaticAdvisor(), mcp_client=MCP()).run(
         task=StageTask(task_id="stage-exploit-1", stage_type=StageType.EXPLOIT, objective="Verify exploit"),
         graph_context={"operation_id": "op-arch"},
         runtime_context={"operation_id": "op-arch"},

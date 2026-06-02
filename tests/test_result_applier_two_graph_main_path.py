@@ -8,7 +8,7 @@ from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.planning.models import PlannerDecision
 from src.core.runtime.attack_log_extractor import AttackLogExtractor
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import StageResult, StageType, ToolTrace
+from src.core.stage.models import StageResult, ToolTrace
 
 
 def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
@@ -28,12 +28,12 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         max_steps=2,
         confidence=0.9,
     )
-    planner_apply = applier.apply(decision, state, kg_store=kg, attack_graph=ag)
+    planner_apply = applier.apply_planner_decision(decision, state, kg, ag)
 
     stage_result = StageResult(
         operation_id="op-two-graph",
         stage_task_id="stage-op-two-graph-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        stage_type="RECON_STAGE",
         agent_name="recon_agent",
         status="succeeded",
         summary="host discovered",
@@ -42,12 +42,12 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         ],
         tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
     )
-    stage_apply = applier.apply(stage_result, state, kg_store=kg, attack_graph=ag)
-    log_apply = applier.apply(AttackLogExtractor().extract(stage_result), state, attack_graph=ag)
+    stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
+    log_apply = applier.apply_log_extraction(AttackLogExtractor().extract(stage_result), state, ag)
 
-    assert planner_apply.tg_graph is None
-    assert stage_apply.tg_graph is None
-    assert log_apply.tg_graph is None
+    assert not hasattr(planner_apply, "tg_graph")
+    assert not hasattr(stage_apply, "tg_graph")
+    assert not hasattr(log_apply, "tg_graph")
     assert state.execution.metadata["last_planner_decision"]["decision"] == "dispatch_agent"
     assert kg.get_node("host-1").label == "host 1"
     assert any(node.node_type.value == "STAGE_RESULT" for node in ag.find_process_nodes())

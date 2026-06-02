@@ -8,7 +8,7 @@ their side effects through the existing ownership boundaries:
 - projection requests -> Graph Projection
 - runtime requests / hints -> Runtime managers and runtime event queue
 
-Workers remain unable to write KG / AG / TG stores directly.
+Workers remain unable to write KG / AG stores directly.
 """
 
 from __future__ import annotations
@@ -22,15 +22,12 @@ from src.core.agents.agent_protocol import (
     AgentContext,
     AgentExecutionResult,
     AgentInput,
-    AgentKind,
-    AgentOutput,
     GraphRef,
     GraphScope,
 )
 from src.core.agents.graph_projection import GraphProjectionAgent
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.state_writer import StateWriterAgent
-from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import (
@@ -54,11 +51,10 @@ from src.core.models.events import (
     RuntimeControlType,
 )
 from src.core.models.finding import EvidenceArtifactRecord, Finding
-from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntime, TaskRuntimeStatus, WorkerStatus
+from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.planning.models import PlannerDecision
 from src.core.runtime.attack_log_models import AttackLogExtraction
-from src.core.scheduling.llm_scheduler_models import ScheduleDecision
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -80,9 +76,8 @@ from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
-from src.core.runtime.worker_result_adapter import WorkerResultAdapter
 from src.core.stage.adapters import StageResultAdapter
-from src.core.stage.models import PlannerResult, StageResult, ToolTrace
+from src.core.stage.models import StageResult, ToolTrace
 from src.core.visualization.graph_event import VisualGraphDelta
 from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
@@ -97,9 +92,6 @@ class PhaseTwoApplyResult(BaseModel):
     ag_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
     kg_apply_result: dict[str, Any] | None = None
     ag_graph: dict[str, Any] | None = None
-    tg_graph: dict[str, Any] | None = None
-    tg_task_candidates: list[dict[str, Any]] = Field(default_factory=list)
-    tg_created_task_ids: list[str] = Field(default_factory=list)
     kg_event_batch: KGEventBatch | None = None
     state_writer_result: AgentExecutionResult | None = None
     graph_projection_result: AgentExecutionResult | None = None
@@ -122,14 +114,10 @@ class PhaseTwoResultApplier:
         budget_manager: RuntimeBudgetManager | None = None,
         checkpoint_manager: RuntimeCheckpointManager | None = None,
         lock_manager: RuntimeLockManager | None = None,
-        attack_graph_projector: AttackGraphProjector | None = None,
-        task_graph_builder: Any | None = None,
         reachability_propagator: ReachabilityPropagator | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
         self._graph_projection = graph_projection or GraphProjectionAgent()
-        self._attack_graph_projector = attack_graph_projector or AttackGraphProjector()
-        self._task_graph_builder = task_graph_builder
         self._session_manager = session_manager or RuntimeSessionManager()
         self._credential_manager = credential_manager or RuntimeCredentialManager()
         self._lease_manager = lease_manager or RuntimeLeaseManager()
@@ -138,220 +126,6 @@ class PhaseTwoResultApplier:
         self._budget_manager = budget_manager or RuntimeBudgetManager()
         self._checkpoint_manager = checkpoint_manager or RuntimeCheckpointManager()
         self._lock_manager = lock_manager or RuntimeLockManager()
-
-    def apply(
-        self,
-        result: AgentTaskResult | AgentExecutionResult | AgentOutput | PlannerResult | PlannerDecision | StageResult | AttackLogExtraction | ScheduleDecision,
-        state: RuntimeState,
-        *,
-        agent_input: AgentInput | None = None,
-        agent_name: str | None = None,
-        agent_kind: AgentKind | None = None,
-        kg_ref: GraphRef | None = None,
-        kg_store: KnowledgeGraph | None = None,
-        attack_graph: AttackGraph | None = None,
-        task_graph: TaskGraph | None = None,
-        goal_context: dict[str, Any] | None = None,
-        policy_context: dict[str, Any] | None = None,
-    ) -> PhaseTwoApplyResult:
-        """Apply one planner/stage/worker result through runtime, KG and AG ownership paths.
-
-        中文注释：
-        这里统一接受 worker 的多种运行时返回形态，但会在入口立即收敛为
-        `AgentTaskResult`。这样 result applier 内部不再关心 `AgentOutput`
-        还是 `AgentExecutionResult`，只处理 canonical result。
-        """
-
-        if isinstance(result, PlannerDecision):
-            if kg_store is None:
-                raise ValueError("kg_store is required to apply PlannerDecision")
-            if attack_graph is None:
-                raise ValueError("attack_graph is required to apply PlannerDecision")
-            return self.apply_planner_decision(result, state, kg_store, attack_graph)
-        if isinstance(result, AttackLogExtraction):
-            if attack_graph is None:
-                raise ValueError("attack_graph is required to apply AttackLogExtraction")
-            return self.apply_log_extraction(result, state, attack_graph)
-        if isinstance(result, StageResult):
-            if kg_store is None:
-                raise ValueError("kg_store is required to apply StageResult")
-            if attack_graph is None:
-                raise ValueError("attack_graph is required to apply StageResult")
-            return self.apply_stage_result(result, state, kg_store, attack_graph)
-        if isinstance(result, PlannerResult):
-            return self._apply_planner_result(result=result, state=state, task_graph=task_graph)
-        if isinstance(result, ScheduleDecision):
-            return self._apply_schedule_decision(result=result, state=state, task_graph=task_graph)
-        if isinstance(result, StageResult):
-            result = StageResultAdapter.to_task_result(result)
-
-        canonical_result = WorkerResultAdapter.to_task_result(
-            result,
-            agent_input=agent_input,
-            agent_name=agent_name,
-            agent_kind=agent_kind,
-        )
-
-        if canonical_result.operation_id != state.operation_id:
-            raise ValueError("result.operation_id must match RuntimeState.operation_id")
-
-        resolved_kg_ref = kg_ref or self._resolve_kg_ref(canonical_result)
-        apply_result = PhaseTwoApplyResult()
-        legacy_tg_generation_enabled = bool(state.execution.metadata.get("enable_legacy_tg_generation") or task_graph is not None)
-
-        runtime_event_refs = self._apply_runtime_effects(result=canonical_result, state=state)
-        apply_result.runtime_event_refs.extend(runtime_event_refs)
-        self._sync_runtime_views_from_result(state=state, result=canonical_result)
-        self._apply_capability_hints(state=state, result=canonical_result)
-        self._apply_failed_hypotheses(state=state, result=canonical_result)
-        self._apply_task_lifecycle(state=state, result=canonical_result)
-        if task_graph is None:
-            apply_result.logs.append(
-                f"TG lifecycle sync skipped: task_graph is None "
-                f"result_id={canonical_result.result_id} "
-                f"tg_node_id={canonical_result.tg_node_id} "
-                f"task_id={canonical_result.task_id} "
-                f"status={canonical_result.status}"
-        )
-        else:
-            synced_tg = self._sync_task_graph_lifecycle(
-                task_graph=task_graph,
-                result=canonical_result,
-    )
-
-        apply_result.logs.append(
-             f"TG lifecycle sync result={synced_tg} "
-             f"result_id={canonical_result.result_id} "
-             f"tg_node_id={canonical_result.tg_node_id} "
-             f"task_id={canonical_result.task_id} "
-             f"status={canonical_result.status}"
-    )
-
-        if synced_tg:
-            apply_result.tg_graph = task_graph.to_dict()
-            apply_result.logs.append(
-                f"synced TG task {canonical_result.tg_node_id or canonical_result.task_id} "
-                f"lifecycle from runtime result"
-        )
-        self._record_recent_outcome(state=state, result=canonical_result)
-        self._audit_stage_result(state=state, result=canonical_result)
-        self._audit_tool_invocations(state=state, result=canonical_result)
-        self._audit_tool_execution_from_result(state=state, result=canonical_result)
-        self._audit_stage_tool_trace(state=state, result=canonical_result)
-        self._record_evidence_and_findings(state=state, result=canonical_result)
-
-        state_writer_input: AgentInput | None = None
-        state_writer_result, state_writer_input = self._run_state_writer(result=canonical_result, state=state, kg_ref=resolved_kg_ref)
-        if state_writer_result is not None:
-            apply_result.state_writer_result = state_writer_result
-            apply_result.kg_state_deltas.extend(state_writer_result.output.state_deltas)
-            apply_result.logs.extend(state_writer_result.output.logs)
-
-        fact_deltas = self._fact_state_deltas(result=canonical_result)
-        apply_result.kg_state_deltas.extend(fact_deltas)
-        if fact_deltas:
-            self._audit_fact_writes(state=state, result=canonical_result)
-            apply_result.logs.append(f"converted {len(fact_deltas)} fact write request(s) into KG state delta(s)")
-
-        if apply_result.kg_state_deltas:
-            apply_result.kg_state_deltas = self._order_kg_state_deltas(apply_result.kg_state_deltas)
-            if kg_store is not None:
-                apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
-                    kg_store=kg_store,
-                    kg_ref=resolved_kg_ref,
-                    state=state,
-                    state_deltas=apply_result.kg_state_deltas,
-                    state_writer_input=state_writer_input,
-                )
-                apply_result.logs.append(
-                    f"applied {len(apply_result.kg_state_deltas)} KG state delta(s) to KG version "
-                    f"{apply_result.kg_apply_result['kg_version']}"
-                )
-            batch = self._kg_batch(state_deltas=apply_result.kg_state_deltas)
-            apply_result.kg_event_batch = batch
-            apply_result.logs.append(f"built KG event batch with {len(batch.events)} event(s)")
-
-            if canonical_result.projection_requests:
-                projection_result = self._run_graph_projection(
-                    state=state,
-                    kg_ref=resolved_kg_ref,
-                    batch=batch,
-                    goal_context=goal_context,
-                    policy_context=policy_context,
-                    projection_requests=canonical_result.projection_requests,
-                )
-                apply_result.graph_projection_result = projection_result
-                apply_result.ag_state_deltas.extend(projection_result.output.state_deltas)
-                apply_result.logs.extend(projection_result.output.logs)
-
-            if kg_store is not None:
-                projected_ag = self._project_attack_graph(
-                    kg_store=kg_store,
-                    existing_graph=attack_graph,
-                    state_deltas=apply_result.kg_state_deltas,
-                    goal_context=goal_context,
-                    policy_context=policy_context,
-                )
-                apply_result.ag_graph = projected_ag.to_dict()
-                apply_result.logs.append(
-                    f"re-projected AG from KG version {kg_store.version} into AG version {projected_ag.version}"
-                )
-                if legacy_tg_generation_enabled:
-                    generated_tg = self._legacy_generate_candidate_task_graph(projected_ag)
-                    apply_result.tg_task_candidates = [
-                        candidate.model_dump(mode="json") for candidate in generated_tg.candidates
-                    ]
-                    apply_result.tg_created_task_ids = list(generated_tg.created_task_ids)
-                    if generated_tg.task_graph is not None and generated_tg.candidates:
-                        from src.core.graph.tg_merge import merge_task_graphs
-                        from src.core.models.tg import TaskGraph
-
-                        generated_task_graph = TaskGraph.from_dict(generated_tg.task_graph)
-                        merged_task_graph = merge_task_graphs(task_graph, generated_task_graph)
-                        self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
-                        apply_result.tg_graph = merged_task_graph.to_dict()
-                        apply_result.logs.append(
-                            f"generated {len(apply_result.tg_task_candidates)} legacy TG candidate task(s) from updated AG"
-                        )
-                    elif task_graph is not None:
-                        apply_result.tg_graph = task_graph.to_dict()
-                        apply_result.logs.append("updated AG produced no legacy TG candidates; kept existing TG snapshot")
-                    else:
-                        apply_result.logs.append("updated AG produced no legacy TG candidates")
-                elif task_graph is not None:
-                    apply_result.tg_graph = task_graph.to_dict()
-                    apply_result.logs.append("legacy TG candidate generation disabled; kept existing TG snapshot")
-
-        worker_generated_tg = self._legacy_generate_worker_candidate_task_graph(canonical_result) if legacy_tg_generation_enabled else None
-        if worker_generated_tg is not None and worker_generated_tg.task_graph is not None and worker_generated_tg.candidates:
-            from src.core.graph.tg_merge import merge_task_graphs
-            from src.core.models.tg import TaskGraph
-
-            existing_task_graph = TaskGraph.from_dict(apply_result.tg_graph) if apply_result.tg_graph is not None else task_graph
-            generated_task_graph = TaskGraph.from_dict(worker_generated_tg.task_graph)
-            merged_task_graph = merge_task_graphs(existing_task_graph, generated_task_graph)
-            self._sync_task_graph_lifecycle(task_graph=merged_task_graph, result=canonical_result)
-            apply_result.tg_graph = merged_task_graph.to_dict()
-            apply_result.tg_task_candidates.extend(
-                candidate.model_dump(mode="json") for candidate in worker_generated_tg.candidates
-            )
-            apply_result.tg_created_task_ids.extend(worker_generated_tg.created_task_ids)
-            apply_result.logs.append(
-                f"generated {len(worker_generated_tg.candidates)} TG candidate task(s) from worker result"
-            )
-
-        apply_result.visual_graph_deltas.extend(
-            self._visual_graph_deltas(
-                operation_id=state.operation_id,
-                state=state,
-                kg_store=kg_store,
-                ag_graph=apply_result.ag_graph,
-                tg_graph=apply_result.tg_graph,
-                include_kg=bool(apply_result.kg_apply_result),
-                include_runtime=bool(runtime_event_refs or canonical_result.tg_node_id or canonical_result.task_id),
-            )
-        )
-        return apply_result
 
     def apply_planner_decision(
         self,
@@ -451,7 +225,6 @@ class PhaseTwoResultApplier:
                 state=state,
                 kg_store=None,
                 ag_graph=apply_result.ag_graph,
-                tg_graph=None,
                 include_kg=False,
                 include_runtime=True,
             )
@@ -517,7 +290,6 @@ class PhaseTwoResultApplier:
                 state=state,
                 kg_store=kg_store,
                 ag_graph=apply_result.ag_graph,
-                tg_graph=None,
                 include_kg=bool(apply_result.kg_apply_result),
                 include_runtime=True,
             )
@@ -557,126 +329,6 @@ class PhaseTwoResultApplier:
                 state=state,
                 kg_store=None,
                 ag_graph=apply_result.ag_graph,
-                tg_graph=None,
-                include_kg=False,
-                include_runtime=True,
-            )
-        )
-        return apply_result
-
-    def _apply_schedule_decision(
-        self,
-        *,
-        result: ScheduleDecision,
-        state: RuntimeState,
-        task_graph: TaskGraph | None,
-    ) -> PhaseTwoApplyResult:
-        apply_result = PhaseTwoApplyResult()
-        state.execution.metadata["last_schedule_decision"] = result.model_dump(mode="json")
-        self._append_audit_log(
-            state,
-            {
-                "event_type": "schedule_decision_applied",
-                "schedule_decision": result.model_dump(mode="json"),
-            },
-        )
-        if result.decision != "dispatch" or result.task_id is None:
-            state.execution.metadata["scheduler_blocked_reason"] = result.rationale
-            apply_result.logs.append(f"recorded scheduler decision {result.decision}: {result.rationale}")
-            return apply_result
-
-        task_id = result.task_id
-        now = utc_now()
-        runtime_task = state.execution.tasks.get(task_id)
-        if runtime_task is None:
-            runtime_task = TaskRuntime(task_id=task_id, tg_node_id=task_id)
-            state.register_task(runtime_task)
-        runtime_task.status = TaskRuntimeStatus.RUNNING
-        runtime_task.assigned_worker = result.worker_id
-        runtime_task.queued_at = runtime_task.queued_at or now
-        runtime_task.started_at = now
-        runtime_task.metadata["schedule_decision"] = result.model_dump(mode="json")
-        runtime_task.metadata["scheduled_task"] = (
-            result.scheduled_task.model_dump(mode="json") if result.scheduled_task is not None else {}
-        )
-        if result.worker_id and result.worker_id in state.workers:
-            worker = state.workers[result.worker_id]
-            worker.status = WorkerStatus.BUSY
-            worker.current_task_id = task_id
-        if task_graph is not None and task_id in task_graph._nodes:
-            from src.core.models.tg import TaskStatus
-
-            task_graph.mark_task_status(task_id, TaskStatus.RUNNING, reason="scheduled by llm SchedulerAgent")
-            apply_result.tg_graph = task_graph.to_dict()
-        apply_result.logs.append(f"marked scheduled task {task_id} running")
-        apply_result.visual_graph_deltas.extend(
-            self._visual_graph_deltas(
-                operation_id=state.operation_id,
-                state=state,
-                kg_store=None,
-                ag_graph=None,
-                tg_graph=apply_result.tg_graph,
-                include_kg=False,
-                include_runtime=True,
-            )
-        )
-        return apply_result
-
-    def _apply_planner_result(
-        self,
-        *,
-        result: PlannerResult,
-        state: RuntimeState,
-        task_graph: TaskGraph | None,
-    ) -> PhaseTwoApplyResult:
-        apply_result = PhaseTwoApplyResult()
-        from src.core.models.tg import TaskGraph
-        from src.core.planning.stage_task_builder import StageTaskGraphBuilder
-
-        graph = task_graph or TaskGraph()
-        dependencies = list(getattr(result, "dependencies", []) or [])
-        created_ids = StageTaskGraphBuilder().upsert_stage_tasks(
-            graph,
-            list(result.new_stage_tasks),
-            dependencies=dependencies,
-        )
-        selected_id = result.selected_next_task.task_id if result.selected_next_task is not None else None
-        state.execution.metadata["task_graph"] = graph.to_dict()
-        state.execution.metadata["stage_planning"] = result.model_dump(mode="json")
-        self._append_audit_log(
-            state,
-            {
-                "event_type": "planner_result_applied",
-                "planner_result": {
-                    "operation_id": result.operation_id,
-                    "created_task_ids": created_ids,
-                    "selected_next_task_id": selected_id,
-                    "replan_needed": result.replan_needed,
-                    "stop_condition": result.stop_condition,
-                    "confidence": result.confidence,
-                },
-                "graph_update_intents": [intent.model_dump(mode="json") for intent in result.graph_update_intents],
-            },
-        )
-        if result.replan_needed and result.stop_condition != "planner_llm_unavailable":
-            state.replan_requests.append(
-                ReplanRequest(
-                    request_id=f"replan::{result.operation_id}::{len(state.replan_requests) + 1}",
-                    reason=result.stop_condition or result.reasoning_summary or "planner requested replan",
-                    task_ids=[selected_id] if selected_id else [],
-                    metadata={"planner_result": result.model_dump(mode="json")},
-                )
-            )
-        apply_result.tg_graph = graph.to_dict()
-        apply_result.tg_created_task_ids = created_ids
-        apply_result.logs.append(f"applied PlannerResult with {len(created_ids)} TG stage task(s)")
-        apply_result.visual_graph_deltas.extend(
-            self._visual_graph_deltas(
-                operation_id=state.operation_id,
-                state=state,
-                kg_store=None,
-                ag_graph=None,
-                tg_graph=apply_result.tg_graph,
                 include_kg=False,
                 include_runtime=True,
             )
@@ -690,18 +342,14 @@ class PhaseTwoResultApplier:
         state: RuntimeState,
         kg_store: KnowledgeGraph | None,
         ag_graph: dict[str, Any] | None,
-        tg_graph: dict[str, Any] | None,
         include_kg: bool,
         include_runtime: bool,
-        include_legacy_tg: bool = False,
     ) -> list[VisualGraphDelta]:
         deltas: list[VisualGraphDelta] = []
         if include_kg and kg_store is not None:
             deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="kg", payload=kg_store.to_dict()))
         if ag_graph is not None:
             deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="ag", payload=ag_graph))
-        if include_legacy_tg and tg_graph is not None:
-            deltas.append(graph_payload_to_delta(operation_id=operation_id, graph="tg", payload=tg_graph))
         if include_runtime:
             deltas.append(runtime_to_delta(operation_id=operation_id, runtime_state=state))
         return deltas
@@ -763,7 +411,7 @@ class PhaseTwoResultApplier:
                 operation_id=stage_result.operation_id,
                 cycle_index=cycle_index,
                 agent_name=stage_result.agent_name,
-                stage_type=stage_result.stage_type.value,
+                stage_type=stage_result.stage_type,
                 status=stage_result.status,
                 summary=stage_result.summary,
                 properties={"stage_task_id": stage_result.stage_task_id},
@@ -773,11 +421,11 @@ class PhaseTwoResultApplier:
             attack_graph,
             StageResultNode(
                 id=result_node_id,
-                label=f"{stage_result.stage_type.value} result",
+                label=f"{stage_result.stage_type} result",
                 operation_id=stage_result.operation_id,
                 cycle_index=cycle_index,
                 agent_name=stage_result.agent_name,
-                stage_type=stage_result.stage_type.value,
+                stage_type=stage_result.stage_type,
                 status=stage_result.status,
                 summary=stage_result.summary,
                 evidence_refs=list(stage_result.evidence_refs),
@@ -816,7 +464,7 @@ class PhaseTwoResultApplier:
                     operation_id=stage_result.operation_id,
                     cycle_index=cycle_index,
                     agent_name=stage_result.agent_name,
-                    stage_type=stage_result.stage_type.value,
+                    stage_type=stage_result.stage_type,
                     status="succeeded" if trace.success else "failed",
                     summary=trace.summary or trace.input_summary or trace.tool_name,
                     evidence_refs=list(trace.evidence_refs),
@@ -852,7 +500,7 @@ class PhaseTwoResultApplier:
                     operation_id=stage_result.operation_id,
                     cycle_index=cycle_index,
                     agent_name=stage_result.agent_name,
-                    stage_type=stage_result.stage_type.value,
+                    stage_type=stage_result.stage_type,
                     status="suggested",
                     summary=stage_result.handoff_suggestion.reason,
                     properties=handoff_payload,
@@ -1039,114 +687,6 @@ class PhaseTwoResultApplier:
             base_kg_version=kg_store.version,
         )
         return self._state_writer.apply_to_store(store=kg_store, apply_request=apply_request)
-
-    def _project_attack_graph(
-        self,
-        *,
-        kg_store: KnowledgeGraph,
-        existing_graph: AttackGraph | None,
-        state_deltas: list[dict[str, Any]],
-        goal_context: dict[str, Any] | None,
-        policy_context: dict[str, Any] | None,
-    ) -> AttackGraph:
-        changed_refs = [
-            GraphRef.model_validate(delta["target_ref"]).ref_id
-            for delta in state_deltas
-            if isinstance(delta, dict) and isinstance(delta.get("target_ref"), dict)
-        ]
-        return self._attack_graph_projector.project_incremental(
-            kg_store,
-            existing_graph=existing_graph,
-            changed_refs=changed_refs,
-            goal_context=goal_context,
-            policy_context=policy_context,
-        )
-
-    def _legacy_generate_candidate_task_graph(self, attack_graph: AttackGraph) -> TaskGenerationResult:
-        from src.core.graph.tg_builder import TaskGenerationRequest, TaskGenerationResult
-        from src.core.models.ag import ActionNode
-
-        if self._task_graph_builder is None:
-            from src.core.graph.tg_builder import AttackGraphTaskBuilder
-
-            self._task_graph_builder = AttackGraphTaskBuilder()
-        action_ids = [
-            action.id
-            for action in attack_graph.find_actions(activatable_only=True)
-            if isinstance(action, ActionNode)
-        ]
-        if not action_ids:
-            action_ids = [action.id for action in attack_graph.find_actions() if isinstance(action, ActionNode)]
-        return self._task_graph_builder.build_candidates(
-            attack_graph,
-            TaskGenerationRequest(
-                action_ids=sorted(action_ids),
-                include_evidence_tasks=False,
-                group_label="Updated Candidate Tasks",
-            ),
-        )
-
-    @staticmethod
-    def _legacy_generate_worker_candidate_task_graph(result: AgentTaskResult) -> TaskGenerationResult:
-        from src.core.graph.attack_chain_rules import generate_followup_task_candidates_from_result
-        from src.core.graph.tg_builder import TaskCandidate, TaskGenerationRequest, TaskGenerationResult, TaskGraphBuilder
-
-        raw_candidates = []
-        payload_candidates = result.outcome_payload.get("task_candidates")
-        if isinstance(payload_candidates, list):
-            raw_candidates.extend(payload_candidates)
-        nested_payload = result.outcome_payload.get("payload")
-        if isinstance(nested_payload, dict) and isinstance(nested_payload.get("task_candidates"), list):
-            raw_candidates.extend(nested_payload["task_candidates"])
-        metadata_candidates = result.metadata.get("task_candidates")
-        if isinstance(metadata_candidates, list):
-            raw_candidates.extend(metadata_candidates)
-        candidates: list[TaskCandidate] = []
-        seen: set[str] = set()
-        for proposal in result.task_candidate_proposals:
-            candidate = TaskCandidate(
-                source_action_id=f"{proposal.source_task_id}:{proposal.candidate_id}",
-                task_type=proposal.task_type,
-                input_bindings=dict(proposal.input_bindings),
-                target_refs=list(proposal.target_refs),
-                resource_keys=set(proposal.resource_keys),
-                estimated_cost=0.1,
-                estimated_risk=0.5,
-                estimated_noise=0.2,
-                goal_relevance=0.8,
-            )
-            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append(candidate)
-        for candidate in generate_followup_task_candidates_from_result(result):
-            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append(candidate)
-        for raw in raw_candidates:
-            if not isinstance(raw, dict):
-                continue
-            try:
-                candidate = TaskCandidate.model_validate(raw)
-            except Exception:
-                continue
-            key = f"{candidate.source_action_id}:{candidate.task_type.value}:{candidate.input_bindings}"
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append(candidate)
-        if not candidates:
-            return TaskGenerationResult()
-        return TaskGraphBuilder().build_from_candidates(
-            TaskGenerationRequest(
-                candidates=candidates,
-                include_evidence_tasks=False,
-                group_label="Worker Proposed Tasks",
-            )
-        )
 
     def _run_graph_projection(
         self,
@@ -1638,51 +1178,6 @@ class PhaseTwoResultApplier:
                     reason=result.error_message or result.summary or f"task_{task.status.value}",
                     close_routes=False,
                 )
-
-    def _sync_task_graph_lifecycle(self, *, task_graph: TaskGraph, result: AgentTaskResult) -> bool:
-        from src.core.models.tg import BaseTaskNode, TaskStatus
-
-        raw_status = getattr(result, "status", None)
-        status = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "").lower()
-
-        task_ids = [
-            task_id
-            for task_id in (getattr(result, "tg_node_id", None), getattr(result, "task_id", None))
-            if task_id
-        ]
-
-        if not task_ids:
-           return False
-
-        if status in {"succeeded", "success", "completed", "complete"}:
-            target_status = TaskStatus.SUCCEEDED
-            reason = result.summary or "worker result succeeded"
-        elif status in {"failed", "failure", "error"}:
-            target_status = TaskStatus.FAILED
-            reason = result.summary or "worker result failed"
-        elif status in {"blocked", "deferred", "wait"}:
-            target_status = TaskStatus.BLOCKED
-            reason = result.summary or f"worker result {status}"
-        else:
-            return False
-
-        for task_id in task_ids:
-            if task_id not in task_graph._nodes:
-                continue
-
-            node = task_graph.get_node(task_id)
-            if not isinstance(node, BaseTaskNode):
-                continue
-
-            updated = task_graph.mark_task_status(
-                task_id,
-                target_status,
-                reason=reason,
-            )   
-            updated.last_outcome_ref = f"runtime://results/{result.result_id}"
-            return True
-
-        return False
 
     def _sync_runtime_views_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         self._sync_credential_view(state=state, result=result)

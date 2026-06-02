@@ -120,10 +120,10 @@ def test_attack_graph_finds_and_sorts_process_nodes() -> None:
     graph.add_process_node(
         id="process-agent-2",
         node_type=AttackProcessNodeType.AGENT_EXECUTION,
-        label="Exploit agent execution",
+        label="Exploit validation agent execution",
         operation_id="op-2",
         cycle_index=2,
-        agent_name="ExploitAgent",
+        agent_name="ExploitValidationAgent",
         created_at=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
     )
 

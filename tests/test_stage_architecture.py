@@ -58,7 +58,7 @@ def test_stage_result_adapter_and_applier_write_runtime_stage_effects() -> None:
         operation_id="op-1",
         stage_task_id="stage-exploit-1",
         stage_type=StageType.EXPLOIT_STAGE,
-        agent_name="exploit_agent",
+        agent_name="exploit_validation_agent",
         status="succeeded",
         summary="Established controlled access",
         capabilities_gained=[

@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
-from src.core.workers.llm_worker import LLMWorkerAgent
-
-
 class WorkerNotFoundError(LookupError):
     """Raised when no primary worker supports a task spec."""
 
@@ -25,7 +22,7 @@ class WorkerRegistry:
 
     @classmethod
     def default(cls) -> "WorkerRegistry":
-        return cls([LLMWorkerAgent()])
+        return cls([])
 
     def register(self, worker: BaseWorkerAgent) -> BaseWorkerAgent:
         if not isinstance(worker, BaseWorkerAgent):

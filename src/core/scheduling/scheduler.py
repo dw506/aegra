@@ -11,10 +11,17 @@ from typing import Any, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.agent_protocol import AgentOutput, GraphRef
-from src.core.agents.scheduler_agent import SchedulingContext
 from src.core.models.runtime import RuntimeState
 from src.core.models.tg import TaskGraph
 from src.core.runtime.scheduler import RuntimeScheduler
+
+
+class SchedulingContext(BaseModel):
+    """Small compatibility context for deterministic runtime scheduling."""
+
+    model_config = ConfigDict(extra="allow", validate_assignment=True)
+
+    max_tasks: int | None = None
 
 
 class SchedulingResult(BaseModel):

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.events import utc_now
-from src.core.stage.models import StageExecutionRequest, StageResult, StageTask, StageType, ToolTrace
+from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
 
 
 class StageToolCall(BaseModel):
@@ -40,7 +40,7 @@ class StageAgentAdvisor(Protocol):
         self,
         *,
         agent_name: str,
-        stage_type: StageType,
+        stage_type: StageName,
         request: StageExecutionRequest,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
@@ -59,7 +59,7 @@ class BaseStageAgent:
     StageResult later adapted into the canonical AgentTaskResult protocol.
     """
 
-    stage_type: StageType
+    stage_type: StageName
     agent_name: str
     tool_categories: frozenset[str] = frozenset()
 
@@ -76,26 +76,10 @@ class BaseStageAgent:
 
     def run(
         self,
-        request: StageExecutionRequest | None = None,
-        *,
-        task: StageTask | None = None,
-        graph_context: dict[str, Any] | None = None,
-        runtime_context: dict[str, Any] | None = None,
-        tool_catalog: dict[str, Any] | None = None,
-        policy_context: dict[str, Any] | None = None,
+        request: StageExecutionRequest,
     ) -> StageResult:
-        if request is None:
-            if task is None:
-                raise ValueError("StageExecutionRequest is required")
-            request = self._request_from_legacy_task(
-                task=task,
-                graph_context=dict(graph_context or {}),
-                runtime_context=dict(runtime_context or {}),
-                tool_catalog=dict(tool_catalog or {}),
-                policy_context=dict(policy_context or {}),
-            )
-        if request.stage_type.canonical != self.stage_type.canonical:
-            raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type.value}")
+        if normalize_stage_name(request.stage_type) != normalize_stage_name(self.stage_type):
+            raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type}")
         if request.agent_name != self.agent_name:
             raise ValueError(f"{self.agent_name} cannot execute request for {request.agent_name}")
 
@@ -236,7 +220,7 @@ class BaseStageAgent:
             raw = self._advisor.decide(
                 agent_name=self.agent_name,
                 stage_type=self.stage_type,
-                task=self._legacy_task_from_request(request),
+                request=request,
                 graph_context=graph_context,
                 runtime_context=runtime_context,
                 policy_context=policy_context,
@@ -420,9 +404,9 @@ class BaseStageAgent:
         allow_servers = {str(item) for item in policy_context.get("mcp_server_allowlist", [])}
         if allow_servers and call.server_id not in allow_servers:
             return {"allowed": False, "reason": f"MCP server '{call.server_id}' is not allowlisted by policy"}
-        strict = category in {"exploit", "access", "credential", "pivot"} or request.stage_type.canonical in {
-            StageType.EXPLOIT,
-            StageType.ACCESS_PIVOT,
+        strict = category in {"exploit", "access", "credential", "pivot"} or normalize_stage_name(request.stage_type) in {
+            "EXPLOIT_STAGE",
+            "ACCESS_PIVOT_STAGE",
         }
         if strict and bool(tool_metadata.get("requires_authorization", True)):
             authorized = bool(policy_context.get("authorized") or policy_context.get("authorization_confirmed"))
@@ -430,47 +414,6 @@ class BaseStageAgent:
             if not authorized:
                 return {"allowed": False, "reason": f"{category or 'sensitive'} tool requires explicit authorization context"}
         return {"allowed": True, "reason": "policy allowed MCP tool call"}
-
-    def _request_from_legacy_task(
-        self,
-        *,
-        task: StageTask,
-        graph_context: dict[str, Any],
-        runtime_context: dict[str, Any],
-        tool_catalog: dict[str, Any],
-        policy_context: dict[str, Any],
-    ) -> StageExecutionRequest:
-        operation_id = str(runtime_context.get("operation_id") or graph_context.get("operation_id") or "operation")
-        return StageExecutionRequest(
-            operation_id=operation_id,
-            cycle_index=int(runtime_context.get("cycle_index") or graph_context.get("cycle_index") or 0),
-            agent_name=self.agent_name,
-            stage_type=task.stage_type,
-            objective=task.objective,
-            target_refs=list(task.target_refs),
-            required_context=dict(task.required_context),
-            success_criteria=list(task.success_criteria),
-            risk_level=str(task.risk_level),
-            max_steps=task.max_steps,
-            kg_snapshot=dict(graph_context.get("kg_snapshot") or graph_context.get("kg_summary") or graph_context.get("kg") or {}),
-            ag_process_history=dict(graph_context.get("ag_process_history") or graph_context.get("ag_summary") or graph_context.get("ag") or {}),
-            runtime_context=dict(runtime_context),
-            policy_context=dict(policy_context or graph_context.get("policy_context") or graph_context.get("policy") or {}),
-            mcp_tool_catalog=dict(tool_catalog),
-        )
-
-    def _legacy_task_from_request(self, request: StageExecutionRequest) -> StageTask:
-        return StageTask(
-            task_id=self._request_id(request),
-            stage_type=request.stage_type,
-            objective=request.objective,
-            target_refs=list(request.target_refs),
-            required_context=dict(request.required_context),
-            success_criteria=list(request.success_criteria),
-            max_steps=request.max_steps,
-            risk_level=request.risk_level,  # type: ignore[arg-type]
-            metadata={"operation_id": request.operation_id, "cycle_index": request.cycle_index},
-        )
 
     @staticmethod
     def _graph_context_from_request(request: StageExecutionRequest) -> dict[str, Any]:

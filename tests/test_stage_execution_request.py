@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from src.core.models.ag import GraphRef
+from src.core.planning.models import PlannerDecision
 from src.core.stage.agents import ReconAgent
+from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.base_stage_agent import StageAgentDecision
-from src.core.stage.models import StageExecutionRequest, StageResult, StageType
+from src.core.stage.models import StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
 
 
@@ -38,11 +40,32 @@ class FinishAdvisor:
 def test_stage_agent_registry_still_registers_five_agents() -> None:
     registry = StageAgentRegistry.default()
 
-    assert registry.resolve(StageType.RECON_STAGE).agent_name == "recon_agent"
-    assert registry.resolve(StageType.VULN_ANALYSIS_STAGE).agent_name == "vuln_analysis_agent"
-    assert registry.resolve(StageType.EXPLOIT_STAGE).agent_name == "exploit_agent"
-    assert registry.resolve(StageType.ACCESS_PIVOT_STAGE).agent_name == "access_pivot_agent"
-    assert registry.resolve(StageType.GOAL_STAGE).agent_name == "goal_agent"
+    assert registry.resolve("RECON_STAGE").agent_name == "recon_agent"
+    assert registry.resolve("VULN_ANALYSIS_STAGE").agent_name == "vuln_analysis_agent"
+    assert registry.resolve("EXPLOIT_STAGE").agent_name == "exploit_validation_agent"
+    assert registry.resolve("ACCESS_PIVOT_STAGE").agent_name == "access_pivot_agent"
+    assert registry.resolve("GOAL_STAGE").agent_name == "goal_agent"
+
+
+def test_exploit_validation_agent_name_matches_planner_and_dispatcher() -> None:
+    registry = StageAgentRegistry.default()
+    agent = registry.resolve("EXPLOIT_STAGE")
+    decision = PlannerDecision(
+        operation_id="op-1",
+        cycle_index=0,
+        decision="dispatch_agent",
+        selected_agent="exploit_validation_agent",
+        selected_stage="EXPLOIT_STAGE",
+        objective="Validate exploitability",
+        risk_level="medium",
+        max_steps=2,
+        confidence=0.8,
+    )
+
+    assert agent.agent_name == "exploit_validation_agent"
+    assert StageDispatcher.AGENT_STAGE_MAP["exploit_validation_agent"] == "EXPLOIT_STAGE"
+    assert "_".join(["exploit", "agent"]) not in StageDispatcher.AGENT_STAGE_MAP
+    assert decision.selected_agent == agent.agent_name
 
 
 def test_base_stage_agent_runs_stage_execution_request_main_path() -> None:
@@ -51,7 +74,7 @@ def test_base_stage_agent_runs_stage_execution_request_main_path() -> None:
         operation_id="op-1",
         cycle_index=2,
         agent_name="recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        stage_type="RECON_STAGE",
         objective="Collect service evidence",
         target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
         required_context={"scope": "authorized"},

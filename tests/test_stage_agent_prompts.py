@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.stage.llm_stage_advisor import LLMStageAdvisor
-from src.core.stage.models import StageExecutionRequest, StageType
+from src.core.stage.models import StageExecutionRequest
 
 
 class FakePackyClient:
@@ -57,7 +57,7 @@ def test_llm_stage_advisor_uses_common_and_agent_specific_prompt() -> None:
         operation_id="op-1",
         cycle_index=1,
         agent_name="goal_agent",
-        stage_type=StageType.GOAL_STAGE,
+        stage_type="GOAL_STAGE",
         objective="Verify goal",
         risk_level="low",
         max_steps=1,
@@ -65,7 +65,7 @@ def test_llm_stage_advisor_uses_common_and_agent_specific_prompt() -> None:
 
     advisor.decide(
         agent_name="goal_agent",
-        stage_type=StageType.GOAL_STAGE,
+        stage_type="GOAL_STAGE",
         request=request,
         graph_context={},
         runtime_context={},

@@ -6,13 +6,12 @@ from src.core.stage.llm_stage_advisor import LLMStageAdvisor, LLMStageAdvisorCon
 from src.core.stage.models import (
     GraphStateSnapshot,
     GraphUpdateIntent,
-    PlannerResult,
+    StageName,
     StageExecutionRequest,
     StageHandoffSuggestion,
     StageResult,
-    StageTask,
-    StageType,
     ToolTrace,
+    normalize_stage_name,
 )
 from src.core.stage.registry import StageAgentRegistry
 from src.core.stage.dispatcher import StageDispatcher
@@ -23,17 +22,16 @@ __all__ = [
     "GraphUpdateIntent",
     "LLMStageAdvisor",
     "LLMStageAdvisorConfig",
-    "PlannerResult",
     "StageAgentAdvisor",
     "StageAgentDecision",
     "StageAgentRegistry",
     "StageDispatcher",
     "StageExecutionRequest",
     "StageHandoffSuggestion",
+    "StageName",
     "StageResult",
     "StageResultAdapter",
-    "StageTask",
     "StageToolCall",
-    "StageType",
     "ToolTrace",
+    "normalize_stage_name",
 ]

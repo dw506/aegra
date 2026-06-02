@@ -22,11 +22,8 @@ from src.core.agents.packy_critic_advisor import PackyCriticAdvisor
 from src.core.agents.packy_planner_advisor import PackyPlannerAdvisor
 from src.core.agents.packy_supervisor_advisor import PackySupervisorAdvisor
 from src.core.agents.planner import GraphLLMPlannerAdvisorProtocol, PlannerAgent, PlannerLLMAdvisor
-from src.core.agents.scheduler_agent import SchedulerAgent
-from src.core.scheduling.llm_scheduler_advisor import LLMSchedulerAdvisor
 from src.core.agents.supervisor import SupervisorAgent, SupervisorLLMAdvisor
 from src.core.agents.task_builder import TaskBuilderAgent
-from src.core.workers.llm_worker import LLMWorkerAgent
 from src.core.workers.recon_worker import ReconWorker
 
 
@@ -38,11 +35,9 @@ class AgentPipelineAssemblyOptions(BaseModel):
     enable_packy_critic_advisor: bool = False
     enable_packy_supervisor_advisor: bool = False
     include_task_builder: bool = True
-    include_scheduler: bool = True
     include_critic: bool = False
     include_supervisor: bool = False
     include_recon_worker: bool = False
-    include_llm_worker: bool = True
     extra_agents: list[BaseAgent] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True, arbitrary_types_allowed=True)
@@ -55,8 +50,6 @@ def build_optional_agent_pipeline(
     graph_llm_planner_advisor: GraphLLMPlannerAdvisorProtocol | None = None,
     critic_llm_advisor: CriticLLMAdvisor | None = None,
     supervisor_llm_advisor: SupervisorLLMAdvisor | None = None,
-    scheduler_llm_advisor: LLMSchedulerAdvisor | None = None,
-    llm_worker_agent: LLMWorkerAgent | None = None,
     llm_client_config: PackyLLMConfig | None = None,
     event_sink: Callable[[list[dict[str, Any]]], None] | None = None,
     state_delta_sink: Callable[[list[dict[str, Any]]], None] | None = None,
@@ -64,7 +57,6 @@ def build_optional_agent_pipeline(
     """Build a standard agent pipeline with optional Packy planner advice.
 
     中文注释：
-    - 默认情况下，这个 builder 只注册 LLM worker 作为任务执行 worker。
     - 旧图级 critic 与 recon worker 只在显式启用时注册。
     - 只有显式传入 `enable_packy_planner_advisor=True`，或者直接传入
       `planner_llm_advisor`，才会启用可选的规划建议层。
@@ -108,8 +100,6 @@ def build_optional_agent_pipeline(
     ]
     if resolved_options.include_task_builder:
         agents.append(TaskBuilderAgent())
-    if resolved_options.include_scheduler:
-        agents.append(SchedulerAgent(advisor=scheduler_llm_advisor))
     if (
         resolved_options.include_critic
         or resolved_options.enable_packy_critic_advisor
@@ -124,8 +114,6 @@ def build_optional_agent_pipeline(
         agents.append(SupervisorAgent(llm_advisor=resolved_supervisor_advisor))
     if resolved_options.include_recon_worker:
         agents.append(ReconWorker())
-    if resolved_options.include_llm_worker:
-        agents.append(llm_worker_agent or LLMWorkerAgent())
     agents.extend(resolved_options.extra_agents)
 
     return AgentPipeline(

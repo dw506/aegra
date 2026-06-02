@@ -11,29 +11,23 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.stage.base_stage_agent import StageAgentDecision
-from src.core.stage.models import StageExecutionRequest, StageTask, StageType
+from src.core.stage.models import StageExecutionRequest, StageName, normalize_stage_name
 
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 PROMPT_BY_AGENT: dict[str, str] = {
     "recon_agent": "recon_agent.md",
     "vuln_analysis_agent": "vuln_analysis_agent.md",
-    "exploit_agent": "exploit_validation_agent.md",
     "exploit_validation_agent": "exploit_validation_agent.md",
     "access_pivot_agent": "access_pivot_agent.md",
     "goal_agent": "goal_agent.md",
 }
-PROMPT_BY_STAGE: dict[StageType, str] = {
-    StageType.RECON: "recon_agent.md",
-    StageType.RECON_STAGE: "recon_agent.md",
-    StageType.VULN_ANALYSIS: "vuln_analysis_agent.md",
-    StageType.VULN_ANALYSIS_STAGE: "vuln_analysis_agent.md",
-    StageType.EXPLOIT: "exploit_validation_agent.md",
-    StageType.EXPLOIT_STAGE: "exploit_validation_agent.md",
-    StageType.ACCESS_PIVOT: "access_pivot_agent.md",
-    StageType.ACCESS_PIVOT_STAGE: "access_pivot_agent.md",
-    StageType.GOAL: "goal_agent.md",
-    StageType.GOAL_STAGE: "goal_agent.md",
+PROMPT_BY_STAGE: dict[str, str] = {
+    "RECON_STAGE": "recon_agent.md",
+    "VULN_ANALYSIS_STAGE": "vuln_analysis_agent.md",
+    "EXPLOIT_STAGE": "exploit_validation_agent.md",
+    "ACCESS_PIVOT_STAGE": "access_pivot_agent.md",
+    "GOAL_STAGE": "goal_agent.md",
 }
 
 
@@ -63,9 +57,8 @@ class LLMStageAdvisor:
         self,
         *,
         agent_name: str,
-        stage_type: StageType,
+        stage_type: StageName,
         request: StageExecutionRequest | None = None,
-        task: StageTask | None = None,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         memory: list[dict[str, Any]],
@@ -76,7 +69,6 @@ class LLMStageAdvisor:
             agent_name=agent_name,
             stage_type=stage_type,
             request=request,
-            task=task,
             graph_context=graph_context,
             runtime_context=runtime_context,
             policy_context=dict(policy_context or {}),
@@ -124,9 +116,8 @@ class LLMStageAdvisor:
         self,
         *,
         agent_name: str,
-        stage_type: StageType,
+        stage_type: StageName,
         request: StageExecutionRequest | None = None,
-        task: StageTask | None = None,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
         policy_context: dict[str, Any],
@@ -134,12 +125,10 @@ class LLMStageAdvisor:
         available_tools: dict[str, Any],
     ) -> str:
         request_payload = request.model_dump(mode="json") if request is not None else None
-        task_payload = task.model_dump(mode="json") if task is not None else None
         payload = {
             "agent_name": agent_name,
-            "stage_type": stage_type.value,
+            "stage_type": normalize_stage_name(stage_type),
             "stage_execution_request": request_payload,
-            "legacy_task": task_payload,
             "graph_state_snapshot": graph_context,
             "runtime_context": runtime_context,
             "policy_context": policy_context,
@@ -198,7 +187,7 @@ class LLMStageAdvisor:
             f"{_truncate_json(payload, self._config.max_context_chars)}"
         )
 
-    def _build_system_prompt(self, *, agent_name: str, stage_type: StageType) -> str:
+    def _build_system_prompt(self, *, agent_name: str, stage_type: StageName) -> str:
         return f"{COMMON_SYSTEM_RULES}\n\n{_load_agent_prompt(agent_name=agent_name, stage_type=stage_type)}"
 
     def _repair_decision(
@@ -251,10 +240,11 @@ COMMON_SYSTEM_RULES = (
 )
 
 
-def _load_agent_prompt(*, agent_name: str, stage_type: StageType) -> str:
-    filename = PROMPT_BY_AGENT.get(agent_name) or PROMPT_BY_STAGE.get(stage_type)
+def _load_agent_prompt(*, agent_name: str, stage_type: StageName) -> str:
+    normalized_stage = normalize_stage_name(stage_type)
+    filename = PROMPT_BY_AGENT.get(agent_name) or PROMPT_BY_STAGE.get(normalized_stage)
     if filename is None:
-        filename = PROMPT_BY_STAGE.get(stage_type.canonical, "recon_agent.md")
+        filename = PROMPT_BY_STAGE.get(normalized_stage, "recon_agent.md")
     return (PROMPT_DIR / filename).read_text(encoding="utf-8")
 
 

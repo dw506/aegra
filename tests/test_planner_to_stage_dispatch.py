@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from src.core.planning.models import PlannerDecision
 from src.core.stage.dispatcher import StageDispatcher
-from src.core.stage.models import StageExecutionRequest, StageResult, StageType
+from src.core.stage.models import StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
 
 
 class RecordingReconAgent:
     agent_name = "recon_agent"
-    stage_type = StageType.RECON_STAGE
+    stage_type = "RECON_STAGE"
 
     def __init__(self) -> None:
         self.requests: list[StageExecutionRequest] = []
@@ -44,4 +44,4 @@ def test_planner_decision_dispatches_selected_recon_agent() -> None:
 
     assert result.agent_name == "recon_agent"
     assert recon_agent.requests[0].agent_name == "recon_agent"
-    assert recon_agent.requests[0].stage_type == StageType.RECON_STAGE
+    assert recon_agent.requests[0].stage_type == "RECON_STAGE"

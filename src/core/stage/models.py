@@ -1,64 +1,53 @@
-"""Stage-level task and result contracts."""
+"""Stage-level execution and result contracts."""
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.models.ag import GraphRef, stable_node_id
 from src.core.models.events import utc_now
-from src.core.models.tg import BaseTaskNode, TaskType
 
 
-class StageType(str, Enum):
-    """Stage categories executed by dedicated Stage Agents."""
+StageName: TypeAlias = Literal[
+    "RECON_STAGE",
+    "VULN_ANALYSIS_STAGE",
+    "EXPLOIT_STAGE",
+    "ACCESS_PIVOT_STAGE",
+    "GOAL_STAGE",
+]
 
-    RECON = "recon"
-    VULN_ANALYSIS = "vuln_analysis"
-    EXPLOIT = "exploit"
-    ACCESS_PIVOT = "access_pivot"
-    GOAL = "goal"
+STAGE_NAMES: tuple[str, ...] = get_args(StageName)
 
-    RECON_STAGE = "RECON_STAGE"
-    VULN_ANALYSIS_STAGE = "VULN_ANALYSIS_STAGE"
-    EXPLOIT_STAGE = "EXPLOIT_STAGE"
-    ACCESS_PIVOT_STAGE = "ACCESS_PIVOT_STAGE"
-    GOAL_STAGE = "GOAL_STAGE"
+CANONICAL_STAGE_BY_ALIAS: dict[str, str] = {
+    "recon": "RECON_STAGE",
+    "RECON": "RECON_STAGE",
+    "RECON_STAGE": "RECON_STAGE",
+    "vuln_analysis": "VULN_ANALYSIS_STAGE",
+    "VULN_ANALYSIS": "VULN_ANALYSIS_STAGE",
+    "VULN_ANALYSIS_STAGE": "VULN_ANALYSIS_STAGE",
+    "exploit": "EXPLOIT_STAGE",
+    "EXPLOIT": "EXPLOIT_STAGE",
+    "EXPLOIT_STAGE": "EXPLOIT_STAGE",
+    "access_pivot": "ACCESS_PIVOT_STAGE",
+    "ACCESS_PIVOT": "ACCESS_PIVOT_STAGE",
+    "ACCESS_PIVOT_STAGE": "ACCESS_PIVOT_STAGE",
+    "goal": "GOAL_STAGE",
+    "GOAL": "GOAL_STAGE",
+    "GOAL_STAGE": "GOAL_STAGE",
+}
 
-    @property
-    def task_type(self) -> TaskType:
-        legacy = {
-            StageType.RECON: TaskType.RECON_STAGE,
-            StageType.VULN_ANALYSIS: TaskType.VULN_ANALYSIS_STAGE,
-            StageType.EXPLOIT: TaskType.EXPLOIT_STAGE,
-            StageType.ACCESS_PIVOT: TaskType.ACCESS_PIVOT_STAGE,
-            StageType.GOAL: TaskType.GOAL_STAGE,
-        }
-        if self in legacy:
-            return legacy[self]
-        return TaskType(self.value)
 
-    @property
-    def canonical(self) -> "StageType":
-        return {
-            StageType.RECON_STAGE: StageType.RECON,
-            StageType.VULN_ANALYSIS_STAGE: StageType.VULN_ANALYSIS,
-            StageType.EXPLOIT_STAGE: StageType.EXPLOIT,
-            StageType.ACCESS_PIVOT_STAGE: StageType.ACCESS_PIVOT,
-            StageType.GOAL_STAGE: StageType.GOAL,
-        }.get(self, self)
+def normalize_stage_name(value: Any) -> StageName:
+    """Return the canonical stage name accepted by the new stage pipeline."""
 
-    @property
-    def legacy(self) -> "StageType":
-        return {
-            StageType.RECON: StageType.RECON_STAGE,
-            StageType.VULN_ANALYSIS: StageType.VULN_ANALYSIS_STAGE,
-            StageType.EXPLOIT: StageType.EXPLOIT_STAGE,
-            StageType.ACCESS_PIVOT: StageType.ACCESS_PIVOT_STAGE,
-            StageType.GOAL: StageType.GOAL_STAGE,
-        }.get(self, self)
+    raw = getattr(value, "value", value)
+    text = str(raw)
+    normalized = CANONICAL_STAGE_BY_ALIAS.get(text)
+    if normalized is None:
+        raise ValueError(f"unsupported stage_type: {text}")
+    return normalized  # type: ignore[return-value]
 
 
 class GraphUpdateIntent(BaseModel):
@@ -66,7 +55,7 @@ class GraphUpdateIntent(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    target_graph: Literal["KG", "AG", "TG", "Runtime"]
+    target_graph: Literal["KG", "AG", "Runtime"]
     operation: Literal["add", "update", "link", "mark_status", "append_evidence"]
     entity_type: str = ""
     entity_ref: str | None = None
@@ -83,7 +72,6 @@ class GraphStateSnapshot(BaseModel):
 
     kg_summary: dict[str, Any] = Field(default_factory=dict)
     ag_summary: dict[str, Any] = Field(default_factory=dict)
-    tg_summary: dict[str, Any] = Field(default_factory=dict)
     runtime_summary: dict[str, Any] = Field(default_factory=dict)
     policy_summary: dict[str, Any] = Field(default_factory=dict)
     recent_evidence: list[dict[str, Any]] = Field(default_factory=list)
@@ -120,51 +108,6 @@ class ToolTrace(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class StageTask(BaseModel):
-    """TaskGraph stage task: complete a stage objective, not one tool call."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    task_id: str = Field(min_length=1)
-    stage_type: StageType
-    objective: str = Field(min_length=1)
-    target_scope: dict[str, Any] = Field(default_factory=dict)
-    prerequisites: list[str] = Field(default_factory=list)
-    input_refs: list[GraphRef] = Field(default_factory=list)
-    expected_outputs: list[str] = Field(default_factory=list)
-    constraints: list[str] = Field(default_factory=list)
-    status: str = "draft"
-    target_refs: list[GraphRef] = Field(default_factory=list)
-    required_context: dict[str, Any] = Field(default_factory=dict)
-    success_criteria: list[str] = Field(default_factory=list)
-    max_steps: int = Field(default=8, ge=1)
-    risk_level: Literal["low", "medium", "high", "critical"] = "medium"
-    priority: int = Field(default=50, ge=0, le=100)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def from_task_node(cls, task: BaseTaskNode) -> "StageTask":
-        stage_type = StageType(task.task_type.value)
-        return cls(
-            task_id=task.id,
-            stage_type=stage_type,
-            objective=str(task.input_bindings.get("objective") or task.label),
-            target_refs=list(task.target_refs),
-            required_context=dict(task.input_bindings.get("required_context") or {}),
-            success_criteria=[
-                str(item) for item in task.input_bindings.get("success_criteria", []) if item is not None
-            ],
-            max_steps=int(task.input_bindings.get("max_steps") or task.max_attempts or 8),
-            risk_level=str(task.input_bindings.get("risk_level") or "medium"),  # type: ignore[arg-type]
-            priority=task.priority,
-            metadata={
-                **dict(task.input_bindings.get("metadata") or {}),
-                "source_action_id": task.source_action_id,
-                "tags": sorted(task.tags),
-            },
-        )
-
-
 class StageExecutionRequest(BaseModel):
     """PlannerDecision-derived request consumed by a StageAgent."""
 
@@ -173,7 +116,7 @@ class StageExecutionRequest(BaseModel):
     operation_id: str = Field(min_length=1)
     cycle_index: int = Field(ge=0)
     agent_name: str = Field(min_length=1)
-    stage_type: StageType
+    stage_type: StageName
     objective: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     required_context: dict[str, Any] = Field(default_factory=dict)
@@ -186,6 +129,11 @@ class StageExecutionRequest(BaseModel):
     policy_context: dict[str, Any] = Field(default_factory=dict)
     mcp_tool_catalog: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("stage_type", mode="before")
+    @classmethod
+    def normalize_stage_type(cls, value: Any) -> StageName:
+        return normalize_stage_name(value)
+
 
 class StageHandoffSuggestion(BaseModel):
     """Suggested next agent/stage handoff emitted by a StageResult."""
@@ -193,10 +141,15 @@ class StageHandoffSuggestion(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     suggested_agent: str = Field(min_length=1)
-    suggested_stage: str = Field(min_length=1)
+    suggested_stage: StageName
     reason: str = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
     required_context_refs: list[Any] = Field(default_factory=list)
+
+    @field_validator("suggested_stage", mode="before")
+    @classmethod
+    def normalize_suggested_stage(cls, value: Any) -> StageName:
+        return normalize_stage_name(value)
 
 
 class StageResult(BaseModel):
@@ -207,7 +160,7 @@ class StageResult(BaseModel):
     result_id: str = Field(default_factory=lambda: stable_node_id("stage-result", {"ts": utc_now().isoformat()}))
     operation_id: str = Field(default="operation", min_length=1)
     stage_task_id: str = Field(min_length=1)
-    stage_type: StageType
+    stage_type: StageName
     agent_name: str = Field(min_length=1)
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
     summary: str = Field(min_length=1)
@@ -242,6 +195,11 @@ class StageResult(BaseModel):
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
+    @field_validator("stage_type", mode="before")
+    @classmethod
+    def normalize_stage_type(cls, value: Any) -> StageName:
+        return normalize_stage_name(value)
+
     def model_post_init(self, __context: Any) -> None:
         if self.tool_traces and not self.tool_trace:
             self.tool_trace = list(self.tool_traces)
@@ -249,35 +207,15 @@ class StageResult(BaseModel):
             self.tool_traces = list(self.tool_trace)
 
 
-class PlannerResult(BaseModel):
-    """Legacy compatibility planner output consumed only by ResultApplier."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    operation_id: str = Field(default="operation", min_length=1)
-    reasoning_summary: str = ""
-    new_stage_tasks: list[StageTask] = Field(default_factory=list)
-    selected_next_task: StageTask | None = None
-    task_updates: list[dict[str, Any]] = Field(default_factory=list)
-    replan_needed: bool = False
-    stop_condition: str | None = None
-    graph_update_intents: list[GraphUpdateIntent] = Field(default_factory=list)
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @property
-    def stage_tasks(self) -> list[StageTask]:
-        return self.new_stage_tasks
-
-
 __all__ = [
+    "CANONICAL_STAGE_BY_ALIAS",
     "GraphStateSnapshot",
     "GraphUpdateIntent",
-    "PlannerResult",
+    "STAGE_NAMES",
     "StageExecutionRequest",
     "StageHandoffSuggestion",
+    "StageName",
     "StageResult",
-    "StageTask",
-    "StageType",
     "ToolTrace",
+    "normalize_stage_name",
 ]
