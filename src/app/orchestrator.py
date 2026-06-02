@@ -36,7 +36,6 @@ from src.core.runtime.llm_history import (
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.attack_log_extractor import AttackLogExtractor
-from src.core.stage.llm_stage_advisor import LLMStageAdvisor
 from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
@@ -145,9 +144,8 @@ class AppOrchestrator:
             if llm_client_config is not None and self._planner_llm_enabled(self.settings)
             else None
         )
-        stage_advisor = LLMStageAdvisor(client=stage_llm_client) if stage_llm_client is not None else None
         self.stage_registry = StageAgentRegistry.default(
-            advisor=stage_advisor,
+            llm_client=stage_llm_client,
             mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )

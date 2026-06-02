@@ -11,6 +11,101 @@ from src.core.models.events import utc_now
 from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
 
 
+_AGENT_TOOL_ALLOWLISTS: dict[str, frozenset[str]] = {
+    "recon_agent": frozenset(
+        {
+            "nmap_scan",
+            "http_probe",
+            "web_fingerprint",
+            "web_discover",
+            "dns_lookup",
+            "tls_probe",
+            "tcp_connect_probe",
+        }
+    ),
+    "vuln_analysis_agent": frozenset(
+        {
+            "vuln_profile_match",
+            "validation_precheck",
+            "whatweb_fingerprint",
+            "nuclei_scan",
+            "http_probe",
+        }
+    ),
+    "exploit_validation_agent": frozenset(
+        {
+            "validation_precheck",
+            "safe_vuln_validate",
+            "http_probe",
+            "artifact_store",
+            "nuclei_scan",
+        }
+    ),
+    "access_pivot_agent": frozenset(
+        {
+            "credential_check",
+            "session_probe",
+            "session_open_lab",
+            "identity_context_probe",
+            "privilege_context_probe",
+            "pivot_route_probe",
+            "internal_service_discover",
+            "tcp_connect_probe",
+            "http_probe",
+        }
+    ),
+    "goal_agent": frozenset(
+        {
+            "goal_check",
+            "chain_goal_check",
+            "internal_service_discover",
+            "http_probe",
+            "artifact_store",
+        }
+    ),
+}
+
+_AGENT_TOOL_DENYLISTS: dict[str, frozenset[str]] = {
+    "recon_agent": frozenset(
+        {
+            "run_command",
+            "safe_vuln_validate",
+            "credential_check",
+            "session_open_lab",
+            "pivot_route_probe",
+        }
+    ),
+    "vuln_analysis_agent": frozenset(
+        {
+            "run_command",
+            "safe_vuln_validate",
+            "credential_check",
+            "session_open_lab",
+            "pivot_route_probe",
+        }
+    ),
+    "exploit_validation_agent": frozenset(
+        {
+            "run_command",
+            "credential_check",
+            "session_open_lab",
+            "pivot_route_probe",
+            "internal_service_discover",
+        }
+    ),
+    "access_pivot_agent": frozenset({"safe_vuln_validate", "nuclei_scan", "run_command"}),
+    "goal_agent": frozenset(
+        {
+            "safe_vuln_validate",
+            "credential_check",
+            "session_open_lab",
+            "pivot_route_probe",
+            "run_command",
+        }
+    ),
+}
+
+
 class StageToolCall(BaseModel):
     """One MCP tool call requested by a Stage Agent advisor."""
 
@@ -33,14 +128,23 @@ class StageAgentDecision(BaseModel):
     finish: dict[str, Any] = Field(default_factory=dict)
 
 
-class StageAgentAdvisor(Protocol):
-    """Planner/LLM decision hook for stage agents."""
+class BaseStageAdvisor(Protocol):
+    """Stage-specific advisor hook for one concrete StageAgent."""
+
+    def build_context(
+        self,
+        request: StageExecutionRequest,
+        graph_context: dict[str, Any],
+        runtime_context: dict[str, Any],
+        policy_context: dict[str, Any],
+        memory: list[dict[str, Any]],
+        available_tools: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return the agent-specific context supplied to decide()."""
 
     def decide(
         self,
         *,
-        agent_name: str,
-        stage_type: StageName,
         request: StageExecutionRequest,
         graph_context: dict[str, Any],
         runtime_context: dict[str, Any],
@@ -61,12 +165,15 @@ class BaseStageAgent:
 
     stage_type: StageName
     agent_name: str
+    allowed_tool_names: frozenset[str] = frozenset()
+    denied_tool_names: frozenset[str] = frozenset()
     tool_categories: frozenset[str] = frozenset()
+    context_builder_name: str = "base_stage_context_builder"
 
     def __init__(
         self,
         *,
-        advisor: StageAgentAdvisor | None = None,
+        advisor: BaseStageAdvisor | None = None,
         mcp_client: MCPClient | None = None,
         default_timeout_seconds: int = 60,
     ) -> None:
@@ -87,9 +194,18 @@ class BaseStageAgent:
         tool_trace: list[ToolTrace] = []
         operation_id = request.operation_id
         policy = dict(request.policy_context)
-        graph_context = self._graph_context_from_request(request)
+        graph_context = self.build_graph_context(request)
         runtime_context = dict(request.runtime_context)
         available_tools = self.filter_tool_catalog(request.mcp_tool_catalog)
+        if self._advisor is not None and hasattr(self._advisor, "build_context"):
+            graph_context = self._advisor.build_context(
+                request,
+                graph_context,
+                runtime_context,
+                policy,
+                memory,
+                available_tools,
+            )
 
         for step in range(request.max_steps):
             decision = self._decide(
@@ -171,7 +287,7 @@ class BaseStageAgent:
         )
 
     def filter_tool_catalog(self, tool_catalog: dict[str, Any]) -> dict[str, Any]:
-        if not self.tool_categories:
+        if not self.allowed_tool_names and not self.tool_categories:
             return dict(tool_catalog)
         filtered: dict[str, Any] = {}
         for server_id, payload in tool_catalog.items():
@@ -187,6 +303,21 @@ class BaseStageAgent:
             if selected:
                 filtered[server_id] = {**payload, "tools": selected}
         return filtered
+
+    def build_graph_context(self, request: StageExecutionRequest) -> dict[str, Any]:
+        """Build the read-only context passed to this StageAgent's advisor.
+
+        Subclasses own the stage-specific shape. The default keeps all
+        Planner-provided graph/runtime/policy inputs but marks which builder
+        produced the context for auditability.
+        """
+
+        return {
+            **self._graph_context_from_request(request),
+            "stage_context_builder": self.context_builder_name,
+            "stage_agent": self.agent_name,
+            "stage_type": normalize_stage_name(self.stage_type),
+        }
 
     def _decide(
         self,
@@ -205,8 +336,6 @@ class BaseStageAgent:
             )
         try:
             raw = self._advisor.decide(
-                agent_name=self.agent_name,
-                stage_type=self.stage_type,
                 request=request,
                 graph_context=graph_context,
                 runtime_context=runtime_context,
@@ -215,7 +344,7 @@ class BaseStageAgent:
                 available_tools=available_tools,
             )
         except TypeError as exc:
-            if "request" not in str(exc):
+            if "agent_name" not in str(exc) and "stage_type" not in str(exc):
                 raise
             raw = self._advisor.decide(
                 agent_name=self.agent_name,
@@ -364,6 +493,10 @@ class BaseStageAgent:
             return any(category in str(tool).lower() for category in self.tool_categories)
         category = str(tool.get("category") or "").lower()
         name = str(tool.get("name") or tool.get("tool_name") or "").lower()
+        if name in self.denied_tool_names:
+            return False
+        if self.allowed_tool_names:
+            return name in self.allowed_tool_names
         tags = " ".join(str(item).lower() for item in tool.get("policy_tags", []) if item is not None)
         return any(item in {category} or item in name or item in tags for item in self.tool_categories)
 
@@ -391,6 +524,12 @@ class BaseStageAgent:
         name = call.tool_name
         if not tool_metadata:
             return {"allowed": False, "reason": f"tool {call.server_id}.{name} is not in the supplied MCP catalog"}
+        agent_allowlist = _AGENT_TOOL_ALLOWLISTS.get(request.agent_name, frozenset())
+        agent_denylist = _AGENT_TOOL_DENYLISTS.get(request.agent_name, frozenset())
+        if name in agent_denylist:
+            return {"allowed": False, "reason": f"MCP tool '{name}' is denied for {request.agent_name}"}
+        if agent_allowlist and name not in agent_allowlist:
+            return {"allowed": False, "reason": f"MCP tool '{name}' is not allowlisted for {request.agent_name}"}
         deny_tools = {str(item) for item in policy_context.get("mcp_tool_denylist", [])}
         deny_tools.update(str(item) for item in policy_context.get("disabled_tools", []))
         if name in deny_tools:
@@ -404,6 +543,14 @@ class BaseStageAgent:
         allow_servers = {str(item) for item in policy_context.get("mcp_server_allowlist", [])}
         if allow_servers and call.server_id not in allow_servers:
             return {"allowed": False, "reason": f"MCP server '{call.server_id}' is not allowlisted by policy"}
+        denied_risk = BaseStageAgent._denied_risk_pattern(
+            name=name,
+            category=category,
+            tool_metadata=tool_metadata,
+            arguments=call.arguments,
+        )
+        if denied_risk is not None:
+            return {"allowed": False, "reason": f"high-risk action is not allowed for StageAgent execution: {denied_risk}"}
         strict = category in {"exploit", "access", "credential", "pivot"} or normalize_stage_name(request.stage_type) in {
             "EXPLOIT_STAGE",
             "ACCESS_PIVOT_STAGE",
@@ -413,7 +560,78 @@ class BaseStageAgent:
             authorized = authorized or bool(policy_context.get("authorized_hosts") or policy_context.get("engagement"))
             if not authorized:
                 return {"allowed": False, "reason": f"{category or 'sensitive'} tool requires explicit authorization context"}
+        stage = normalize_stage_name(request.stage_type)
+        if stage == "EXPLOIT_STAGE" and not BaseStageAgent._is_safe_validation_tool(tool_metadata):
+            return {"allowed": False, "reason": "ExploitValidationAgent can only call safe validation tools"}
+        if stage == "ACCESS_PIVOT_STAGE" and not BaseStageAgent._is_access_pivot_validation_tool(tool_metadata):
+            return {"allowed": False, "reason": "AccessPivotAgent can only validate authorized session, credential, pivot route, or reachability state"}
         return {"allowed": True, "reason": "policy allowed MCP tool call"}
+
+    @staticmethod
+    def _denied_risk_pattern(
+        *,
+        name: str,
+        category: str,
+        tool_metadata: dict[str, Any],
+        arguments: dict[str, Any],
+    ) -> str | None:
+        text = " ".join(
+            [
+                name,
+                category,
+                str(tool_metadata.get("description") or ""),
+                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
+                " ".join(str(key) for key in arguments.keys()),
+            ]
+        ).lower()
+        denied_terms = {
+            "reverse_shell": "reverse shell",
+            "reverse shell": "reverse shell",
+            "bind_shell": "bind shell",
+            "bind shell": "bind shell",
+            "persistence": "persistence",
+            "persist": "persistence",
+            "evasion": "evasion",
+            "bypass": "bypass",
+            "stealth": "stealth",
+            "bruteforce": "credential brute force",
+            "brute_force": "credential brute force",
+            "brute force": "credential brute force",
+            "password_spray": "credential spraying",
+            "spray": "credential spraying",
+            "destructive": "destructive action",
+            "delete": "destructive action",
+            "wipe": "destructive action",
+            "ransom": "destructive action",
+        }
+        for term, reason in denied_terms.items():
+            if term in text:
+                return reason
+        return None
+
+    @staticmethod
+    def _is_safe_validation_tool(tool_metadata: dict[str, Any]) -> bool:
+        text = " ".join(
+            [
+                str(tool_metadata.get("name") or tool_metadata.get("tool_name") or ""),
+                str(tool_metadata.get("category") or ""),
+                str(tool_metadata.get("description") or ""),
+                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
+            ]
+        ).lower()
+        return any(term in text for term in ("safe", "validate", "validation", "precheck", "fingerprint", "probe", "artifact"))
+
+    @staticmethod
+    def _is_access_pivot_validation_tool(tool_metadata: dict[str, Any]) -> bool:
+        text = " ".join(
+            [
+                str(tool_metadata.get("name") or tool_metadata.get("tool_name") or ""),
+                str(tool_metadata.get("category") or ""),
+                str(tool_metadata.get("description") or ""),
+                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
+            ]
+        ).lower()
+        return any(term in text for term in ("validate", "validation", "session", "credential", "pivot", "route", "reachability", "identity", "privilege"))
 
     @staticmethod
     def _graph_context_from_request(request: StageExecutionRequest) -> dict[str, Any]:
@@ -450,4 +668,7 @@ class BaseStageAgent:
         return f"stage-{request.operation_id}-{request.cycle_index}-{request.agent_name}"
 
 
-__all__ = ["BaseStageAgent", "StageAgentAdvisor", "StageAgentDecision", "StageToolCall"]
+StageAgentAdvisor = BaseStageAdvisor
+
+
+__all__ = ["BaseStageAgent", "BaseStageAdvisor", "StageAgentAdvisor", "StageAgentDecision", "StageToolCall"]

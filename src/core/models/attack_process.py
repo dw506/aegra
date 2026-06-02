@@ -22,6 +22,7 @@ class AttackProcessNodeType(str, Enum):
     HANDOFF_SUGGESTION = "HANDOFF_SUGGESTION"
     BLOCKED_REASON = "BLOCKED_REASON"
     GOAL_CHECK = "GOAL_CHECK"
+    STOP_DECISION = "STOP_DECISION"
 
 
 class AttackProcessEdgeType(str, Enum):
@@ -104,6 +105,18 @@ class BlockedReasonNode(AttackProcessNode):
     node_type: Literal[AttackProcessNodeType.BLOCKED_REASON] = AttackProcessNodeType.BLOCKED_REASON
 
 
+class GoalCheckNode(AttackProcessNode):
+    """A goal-verification result recorded as an attack-process node."""
+
+    node_type: Literal[AttackProcessNodeType.GOAL_CHECK] = AttackProcessNodeType.GOAL_CHECK
+
+
+class StopDecisionNode(AttackProcessNode):
+    """A planner stop decision recorded as an attack-process node."""
+
+    node_type: Literal[AttackProcessNodeType.STOP_DECISION] = AttackProcessNodeType.STOP_DECISION
+
+
 class AttackProcessEdge(BaseModel):
     """An AG edge connecting attack-process nodes."""
 
@@ -127,9 +140,11 @@ __all__ = [
     "AgentExecutionNode",
     "BlockedReasonNode",
     "GraphRef",
+    "GoalCheckNode",
     "HandoffSuggestionNode",
     "PlannerDecisionNode",
     "StageResultNode",
+    "StopDecisionNode",
     "stable_node_id",
     "ToolCallNode",
 ]

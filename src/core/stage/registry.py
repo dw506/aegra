@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.mcp_client import MCPClient
 from src.core.stage.agents import AccessPivotAgent, ExploitValidationAgent, GoalAgent, ReconAgent, VulnAnalysisAgent
 from src.core.stage.base_stage_agent import BaseStageAgent, StageAgentAdvisor
@@ -20,22 +23,29 @@ class StageAgentRegistry:
     def default(
         cls,
         *,
+        llm_client: PackyLLMClient | None = None,
         advisor: StageAgentAdvisor | None = None,
+        advisors: Mapping[str, StageAgentAdvisor | None] | None = None,
         mcp_client: MCPClient | None = None,
         default_timeout_seconds: int = 60,
     ) -> "StageAgentRegistry":
-        kwargs = {
-            "advisor": advisor,
-            "mcp_client": mcp_client,
-            "default_timeout_seconds": default_timeout_seconds,
-        }
+        advisor_map = dict(advisors or {})
+
+        def kwargs_for(agent_name: str) -> dict[str, object]:
+            return {
+                "advisor": advisor_map.get(agent_name, advisor),
+                "llm_client": None if advisor_map.get(agent_name, advisor) is not None else llm_client,
+                "mcp_client": mcp_client,
+                "default_timeout_seconds": default_timeout_seconds,
+            }
+
         return cls(
             [
-                ReconAgent(**kwargs),
-                VulnAnalysisAgent(**kwargs),
-                ExploitValidationAgent(**kwargs),
-                AccessPivotAgent(**kwargs),
-                GoalAgent(**kwargs),
+                ReconAgent(**kwargs_for("recon_agent")),
+                VulnAnalysisAgent(**kwargs_for("vuln_analysis_agent")),
+                ExploitValidationAgent(**kwargs_for("exploit_validation_agent")),
+                AccessPivotAgent(**kwargs_for("access_pivot_agent")),
+                GoalAgent(**kwargs_for("goal_agent")),
             ]
         )
 

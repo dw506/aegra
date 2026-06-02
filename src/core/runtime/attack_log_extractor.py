@@ -11,9 +11,11 @@ from src.core.models.attack_process import (
     AttackProcessEdgeType,
     BlockedReasonNode,
     GraphRef,
+    GoalCheckNode,
     HandoffSuggestionNode,
     PlannerDecisionNode,
     StageResultNode,
+    StopDecisionNode,
     ToolCallNode,
     stable_node_id,
 )
@@ -104,6 +106,17 @@ class AttackLogExtractor:
                         label="dispatched to",
                     )
                 )
+            if decision.decision in {"stop_success", "stop_failed"}:
+                stop_id = self._stop_decision_id(decision)
+                nodes.append(self._stop_decision_node(decision, stop_id))
+                edges.append(
+                    self._edge(
+                        edge_type=AttackProcessEdgeType.PRODUCED_RESULT,
+                        source=planner_id,
+                        target=stop_id,
+                        label="produced stop decision",
+                    )
+                )
 
         if stage_result is not None:
             if execution_id is None:
@@ -162,6 +175,20 @@ class AttackLogExtractor:
                         source=result_id,
                         target=handoff_id,
                         label="suggested handoff",
+                    )
+                )
+
+            goal_node = self._goal_check_node(stage_result, cycle_index)
+            if goal_node is not None:
+                nodes.append(goal_node)
+                edges.append(
+                    self._edge(
+                        edge_type=AttackProcessEdgeType.SATISFIED_GOAL
+                        if stage_result.runtime_hints.get("goal_satisfied") is True
+                        else AttackProcessEdgeType.PRODUCED_RESULT,
+                        source=result_id,
+                        target=goal_node.id,
+                        label="goal check",
                     )
                 )
 
@@ -285,6 +312,18 @@ class AttackLogExtractor:
         )
 
     @staticmethod
+    def _stop_decision_id(decision: PlannerDecision) -> str:
+        return stable_node_id(
+            "stop-decision",
+            {
+                "operation_id": decision.operation_id,
+                "cycle_index": decision.cycle_index,
+                "decision": decision.decision,
+                "stop_condition": decision.stop_condition,
+            },
+        )
+
+    @staticmethod
     def _tool_id(operation_id: str, cycle_index: int, stage_result: StageResult, trace: ToolTrace) -> str:
         return stable_node_id(
             "tool-call",
@@ -330,6 +369,26 @@ class AttackLogExtractor:
                 "risk_level": decision.risk_level,
                 "max_steps": decision.max_steps,
                 "handoff_acceptance": decision.handoff_acceptance,
+                "stop_condition": decision.stop_condition,
+                "confidence": decision.confidence,
+                "metadata": decision.metadata,
+            },
+        )
+
+    @staticmethod
+    def _stop_decision_node(decision: PlannerDecision, node_id: str) -> StopDecisionNode:
+        return StopDecisionNode(
+            id=node_id,
+            label=f"Planner stop: {decision.decision}",
+            operation_id=decision.operation_id,
+            cycle_index=decision.cycle_index,
+            agent_name="planner_agent",
+            stage_type=decision.selected_stage,
+            status=decision.decision,
+            summary=decision.stop_condition or decision.reasoning_summary or decision.objective,
+            evidence_refs=[str(ref) for ref in decision.metadata.get("evidence_refs", [])] if isinstance(decision.metadata.get("evidence_refs"), list) else [],
+            properties={
+                "decision": decision.decision,
                 "stop_condition": decision.stop_condition,
                 "confidence": decision.confidence,
                 "metadata": decision.metadata,
@@ -463,6 +522,50 @@ class AttackLogExtractor:
             summary=handoff.reason,
             evidence_refs=[str(ref) for ref in handoff.required_context_refs],
             properties=handoff.model_dump(mode="json"),
+        )
+
+    @classmethod
+    def _goal_check_node(cls, stage_result: StageResult, cycle_index: int) -> GoalCheckNode | None:
+        goal_finding = None
+        for finding in stage_result.findings:
+            if isinstance(finding, dict) and str(finding.get("kind") or finding.get("type")) in {
+                "GoalCheck",
+                "GoalNotSatisfied",
+                "GoalBlocked",
+                "GoalNeedsMoreEvidence",
+            }:
+                goal_finding = finding
+                break
+        if stage_result.stage_type != "GOAL_STAGE" and goal_finding is None and "goal_satisfied" not in stage_result.runtime_hints:
+            return None
+        satisfied = bool(stage_result.runtime_hints.get("goal_satisfied")) if "goal_satisfied" in stage_result.runtime_hints else bool((goal_finding or {}).get("goal_satisfied"))
+        node_id = stable_node_id(
+            "goal-check",
+            {
+                "operation_id": stage_result.operation_id,
+                "cycle_index": cycle_index,
+                "stage_result_id": stage_result.result_id,
+                "goal_satisfied": satisfied,
+            },
+        )
+        evidence_refs = list(stage_result.evidence_refs)
+        if isinstance(stage_result.runtime_hints.get("goal_evidence_refs"), list):
+            evidence_refs.extend(str(item) for item in stage_result.runtime_hints["goal_evidence_refs"] if item)
+        return GoalCheckNode(
+            id=node_id,
+            label="Goal check",
+            operation_id=stage_result.operation_id,
+            cycle_index=cycle_index,
+            agent_name=stage_result.agent_name,
+            stage_type=stage_result.stage_type,
+            status="satisfied" if satisfied else "not_satisfied",
+            summary=str(stage_result.runtime_hints.get("goal_summary") or stage_result.summary),
+            evidence_refs=sorted(set(evidence_refs)),
+            properties={
+                "goal_satisfied": satisfied,
+                "finding": cls._sanitize_event(goal_finding or {}),
+                "runtime_hints": cls._sanitize_event(stage_result.runtime_hints),
+            },
         )
 
     @staticmethod

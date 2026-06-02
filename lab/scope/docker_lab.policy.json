@@ -51,16 +51,28 @@
     "pentest-tools"
   ],
   "mcp_tool_allowlist": [
-    "run_command",
     "nmap_scan",
     "http_probe",
     "web_fingerprint",
     "web_discover",
     "dns_lookup",
+    "tls_probe",
     "tcp_connect_probe",
-    "nuclei_scan",
+    "vuln_profile_match",
+    "validation_precheck",
+    "safe_vuln_validate",
     "whatweb_fingerprint",
-    "ffuf_discover"
+    "nuclei_scan",
+    "credential_check",
+    "session_probe",
+    "session_open_lab",
+    "identity_context_probe",
+    "privilege_context_probe",
+    "pivot_route_probe",
+    "internal_service_discover",
+    "goal_check",
+    "chain_goal_check",
+    "artifact_store"
   ],
   "max_concurrent_per_host": {
     "10.20.0.0/24": 2,

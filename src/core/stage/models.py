@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal, TypeAlias, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -19,6 +20,21 @@ StageName: TypeAlias = Literal[
 ]
 
 STAGE_NAMES: tuple[str, ...] = get_args(StageName)
+
+
+class StageType(str, Enum):
+    """Compatibility enum for canonical stage names."""
+
+    RECON = "RECON_STAGE"
+    RECON_STAGE = "RECON_STAGE"
+    VULN_ANALYSIS = "VULN_ANALYSIS_STAGE"
+    VULN_ANALYSIS_STAGE = "VULN_ANALYSIS_STAGE"
+    EXPLOIT = "EXPLOIT_STAGE"
+    EXPLOIT_STAGE = "EXPLOIT_STAGE"
+    ACCESS_PIVOT = "ACCESS_PIVOT_STAGE"
+    ACCESS_PIVOT_STAGE = "ACCESS_PIVOT_STAGE"
+    GOAL = "GOAL_STAGE"
+    GOAL_STAGE = "GOAL_STAGE"
 
 CANONICAL_STAGE_BY_ALIAS: dict[str, str] = {
     "recon": "RECON_STAGE",
@@ -216,6 +232,7 @@ __all__ = [
     "StageHandoffSuggestion",
     "StageName",
     "StageResult",
+    "StageType",
     "ToolTrace",
     "normalize_stage_name",
 ]

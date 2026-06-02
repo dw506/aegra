@@ -17,9 +17,11 @@ from src.core.models.attack_process import (
     AttackProcessNode,
     AttackProcessNodeType,
     BlockedReasonNode,
+    GoalCheckNode,
     HandoffSuggestionNode,
     PlannerDecisionNode,
     StageResultNode,
+    StopDecisionNode,
     ToolCallNode,
 )
 from src.core.models.graph_common import GraphRef, stable_node_id, utc_now
@@ -631,6 +633,8 @@ def parse_ag_node(data: dict[str, Any]) -> AGNode:
             AttackProcessNodeType.STAGE_RESULT.value: StageResultNode,
             AttackProcessNodeType.HANDOFF_SUGGESTION.value: HandoffSuggestionNode,
             AttackProcessNodeType.BLOCKED_REASON.value: BlockedReasonNode,
+            AttackProcessNodeType.GOAL_CHECK.value: GoalCheckNode,
+            AttackProcessNodeType.STOP_DECISION.value: StopDecisionNode,
         }
         model = process_node_map.get(node_type_key, AttackProcessNode)
         return model.model_validate(node_data)

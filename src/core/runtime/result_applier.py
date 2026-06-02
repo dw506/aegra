@@ -97,6 +97,7 @@ class PhaseTwoApplyResult(BaseModel):
     graph_projection_result: AgentExecutionResult | None = None
     visual_graph_deltas: list[VisualGraphDelta] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
+    tg_graph: dict[str, Any] | None = None
 
 
 class PhaseTwoResultApplier:
@@ -249,6 +250,7 @@ class PhaseTwoResultApplier:
         runtime_event_refs = self._apply_runtime_effects(result=canonical_result, state=state)
         apply_result.runtime_event_refs.extend(runtime_event_refs)
         self._sync_runtime_views_from_result(state=state, result=canonical_result)
+        self._apply_stage_runtime_hints(state=state, result=canonical_result)
         self._apply_capability_hints(state=state, result=canonical_result)
         self._apply_failed_hypotheses(state=state, result=canonical_result)
         self._record_recent_outcome(state=state, result=canonical_result)
@@ -1216,6 +1218,22 @@ class PhaseTwoResultApplier:
                 bucket.append(payload)
             else:
                 bucket[index] = payload
+
+    def _apply_stage_runtime_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
+        for hints in self._runtime_hints(result):
+            if "goal_satisfied" in hints:
+                goal_state = state.execution.metadata.setdefault("goal_state", {})
+                goal_state["goal_satisfied"] = bool(hints.get("goal_satisfied"))
+                goal_state["goal_summary"] = self._string(hints.get("goal_summary")) or result.summary
+                goal_state["goal_evidence_refs"] = [
+                    str(item) for item in hints.get("goal_evidence_refs", []) if item is not None
+                ] if isinstance(hints.get("goal_evidence_refs"), list) else []
+                goal_state["source_task_id"] = result.task_id
+                goal_state["updated_at"] = utc_now().isoformat()
+            if hints.get("active_sessions") is not None:
+                state.execution.metadata["active_sessions"] = hints.get("active_sessions")
+            if hints.get("pivot_routes") is not None:
+                state.execution.metadata["pivot_routes"] = hints.get("pivot_routes")
 
     def _apply_failed_hypotheses(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         failed = self._stage_result_items(result, "failed_hypotheses")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -11,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.planning.models import PlannerDecision
 from src.core.stage.models import normalize_stage_name
+
+
+PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+PLANNER_GLOBAL_CONTROL_PROMPT = PROMPT_DIR / "planner_global_control.md"
 
 
 class LLMMissionPlannerAdvisorConfig(BaseModel):
@@ -193,13 +198,11 @@ class LLMMissionPlannerAdvisor:
             f"{context}"
         )
 
-SYSTEM_PROMPT = (
-    "You are Aegra's PlannerAgent. You own global goal understanding, graph-state analysis, "
-    "policy-aware next-agent selection, and stop/replan decisions. Code only assembles context "
-    "and validates your JSON; do not rely on hard-coded stage ordering. "
-    "Policy must constrain every decision. Do not output shell commands or MCP tool arguments. "
-    "Output strict JSON only, with no chain-of-thought."
-)
+def _load_planner_global_control_prompt() -> str:
+    return PLANNER_GLOBAL_CONTROL_PROMPT.read_text(encoding="utf-8")
+
+
+SYSTEM_PROMPT = _load_planner_global_control_prompt()
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:

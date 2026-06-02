@@ -9,6 +9,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -732,7 +733,27 @@ def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
             continue
         item = profile.model_dump(mode="json")
         matches.append(item)
-        parsed["entities"].append({"type": "vulnerability_profile", **item})
+        candidate_id = f"vuln-candidate::{profile.vulnerability_id}::{_string(arguments.get('target_url')) or service or 'unknown'}"
+        parsed["entities"].append(
+            {
+                "type": "VulnerabilityCandidate",
+                "candidate_id": candidate_id,
+                "vulnerability_id": profile.vulnerability_id,
+                "matched_profile_id": profile.vulnerability_id,
+                "affected_products": list(profile.affected_products),
+                "target_url": _string(arguments.get("target_url")),
+                "confidence": 0.75,
+            }
+        )
+        parsed["findings"].append(
+            {
+                "kind": "VulnerabilityCandidate",
+                "candidate_id": candidate_id,
+                "matched_profile_id": profile.vulnerability_id,
+                "evidence_refs": [],
+                "confidence": 0.75,
+            }
+        )
     parsed["writeback_hints"] = {"observation_category": "vulnerability_profile_match"}
     return _payload(success=True, stdout=json.dumps(matches, ensure_ascii=True, sort_keys=True), parsed=parsed)
 
@@ -916,8 +937,19 @@ def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
             error = str(exc)
     route_id = _string(arguments.get("route_id")) or f"route::{_string(arguments.get('source_host')) or 'unknown-source'}::{host}:{port}"
     parsed = _default_parsed()
-    entity = {"type": "pivot_route", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable}
+    entity = {
+        "type": "PivotRoute",
+        "route_id": route_id,
+        "source_host": _string(arguments.get("source_host")),
+        "via_host": _string(arguments.get("via_host")),
+        "destination_host": host,
+        "port": port,
+        "protocol": protocol,
+        "status": "validated" if reachable else "unreachable",
+        "confidence": 0.85 if reachable else 0.25,
+    }
     parsed["entities"].append(entity)
+    parsed["evidence"].append({"kind": "reachability evidence", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable})
     parsed["runtime_hints"] = {
         "register_pivot_route": True,
         "route_id": route_id,
@@ -939,7 +971,7 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     port = _int(arguments.get("port"), 0)
     protocol = (_string(arguments.get("protocol")) or "tcp").lower()
     if protocol in {"http", "https"}:
-        return _http_probe(
+        result = _http_probe(
             {
                 "target": host,
                 "port": port,
@@ -948,7 +980,22 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
                 "timeout_seconds": arguments.get("timeout_seconds"),
             }
         )
-    return _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
+    else:
+        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
+    parsed = result.get("parsed") if isinstance(result.get("parsed"), dict) else _default_parsed()
+    parsed["entities"].append(
+        {
+            "type": "InternalService",
+            "host": host,
+            "port": port,
+            "protocol": protocol,
+            "via_pivot_route": _string(arguments.get("route_id")),
+            "confidence": 0.75 if result.get("success") else 0.25,
+        }
+    )
+    parsed["evidence"].append({"kind": "reachability evidence", "host": host, "port": port, "via_pivot_route": _string(arguments.get("route_id"))})
+    result["parsed"] = parsed
+    return result
 
 
 def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -972,8 +1019,10 @@ def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
         checks.append({"type": "body_contains", "expected": needle, "passed": needle in response["body_excerpt"]})
     passed = all(item["passed"] for item in checks) if checks else int(response["status"]) < 400
     parsed = _parsed_http(url=url, response=response)
-    finding = {"kind": "goal_condition", "url": url, "passed": passed, "checks": checks}
+    finding = {"kind": "GoalCheck", "url": url, "goal_satisfied": passed, "checks": checks, "evidence_refs": []}
     parsed["findings"].append(finding)
+    parsed["evidence"].append({"kind": "goal verification evidence", "url": url, "goal_satisfied": passed})
+    parsed["runtime_hints"] = {"goal_satisfied": passed, "goal_summary": "goal check passed" if passed else "goal check did not pass", "goal_evidence_refs": []}
     parsed["writeback_hints"] = {"observation_category": "goal_check", "url": url, "goal_satisfied": passed}
     return _payload(
         success=passed,
@@ -1067,21 +1116,32 @@ def _ffuf_discover(arguments: dict[str, Any]) -> dict[str, Any]:
 def _parse_nmap_output(target: str, stdout: str) -> dict[str, Any]:
     parsed = _default_parsed()
     parsed["writeback_hints"] = {"observation_category": "service_discovery", "target": target}
-    parsed["entities"].append({"type": "host", "address": target})
+    host_id = f"host::{target}"
+    parsed["entities"].append({"type": "Host", "id": host_id, "address": target, "confidence": 0.9})
     for line in stdout.splitlines():
-        match = re.search(r"(?P<port>\d+)/(?:tcp|udp)\s+open\s+(?P<service>\S+)(?:\s+(?P<banner>.*))?", line)
+        match = re.search(r"(?P<port>\d+)/(?P<protocol>tcp|udp)\s+open\s+(?P<service>\S+)(?:\s+(?P<banner>.*))?", line)
         if not match:
             continue
+        banner = (match.group("banner") or "").strip()
+        product = banner.split()[0] if banner else ""
+        version = banner.split()[1] if len(banner.split()) > 1 else ""
+        service_id = f"service::{target}:{match.group('port')}/{match.group('protocol')}"
         entity = {
-            "type": "service",
+            "type": "Service",
+            "id": service_id,
             "host": target,
             "port": int(match.group("port")),
+            "protocol": match.group("protocol"),
             "service": match.group("service"),
-            "banner": (match.group("banner") or "").strip(),
+            "product": product,
+            "version": version,
+            "banner": banner,
             "state": "open",
+            "confidence": 0.85,
         }
         parsed["entities"].append(entity)
-        parsed["relations"].append({"type": "HOSTS", "source": target, "target": f"{target}:{entity['port']}"})
+        parsed["relations"].append({"type": "HOSTS_SERVICE", "source_ref": {"graph": "kg", "ref_id": host_id, "ref_type": "Host"}, "target_ref": {"graph": "kg", "ref_id": service_id, "ref_type": "Service"}})
+        parsed["evidence"].append({"kind": "scan evidence", "summary": line, "target": target, "confidence": 0.85})
     return parsed
 
 
@@ -1117,13 +1177,22 @@ def _validation_payload(*, validation: ValidationResult, target_url: str, succes
     validation_payload = validation.model_dump(mode="json")
     parsed = _default_parsed()
     finding = {
-        "kind": "vulnerability_validation",
+        "kind": "ValidatedVulnerability" if validation.status == "validated" else "RejectedVulnerabilityCandidate",
         "vulnerability_id": validation.vulnerability_id,
+        "candidate_id": validation.vulnerability_id,
         "status": validation.status,
         "confidence": validation.confidence,
         "evidence_refs": [],
     }
     parsed["findings"].append(finding)
+    parsed["evidence"].append(
+        {
+            "kind": "validation evidence",
+            "candidate_id": validation.vulnerability_id,
+            "summary": validation.safe_payload_summary,
+            "confidence": validation.confidence,
+        }
+    )
     parsed["runtime_hints"] = {
         "validated": validation.status == "validated",
         "requires_auth": False,
@@ -1143,15 +1212,21 @@ def _validation_payload(*, validation: ValidationResult, target_url: str, succes
 
 def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
     parsed = _default_parsed()
+    body_excerpt = response.get("body_excerpt") or ""
+    body_hash = hashlib.sha256(body_excerpt.encode("utf-8", errors="replace")).hexdigest()
     parsed["entities"].append(
         {
-            "type": "http_endpoint",
+            "type": "WebEndpoint",
             "url": url,
-            "status": response["status"],
-            "server": response["headers"].get("server"),
+            "status_code": response["status"],
+            "title": _extract_title(body_excerpt),
+            "server_header": response["headers"].get("server"),
             "content_type": response["headers"].get("content-type"),
+            "body_excerpt_sha256": body_hash,
+            "confidence": 0.8,
         }
     )
+    parsed["evidence"].append({"kind": "http_probe", "url": url, "status_code": response["status"], "body_excerpt_sha256": body_hash})
     parsed["writeback_hints"] = {"observation_category": "http_probe", "url": url}
     return parsed
 
@@ -1284,9 +1359,11 @@ def _default_parsed() -> dict[str, Any]:
     return {
         "entities": [],
         "relations": [],
+        "observations": [],
+        "evidence": [],
         "findings": [],
-        "writeback_hints": {},
         "runtime_hints": {},
+        "writeback_hints": {},
     }
 
 

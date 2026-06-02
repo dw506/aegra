@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.planning.models import PlannerDecision
-from src.core.stage.models import StageExecutionRequest, StageName, StageResult, normalize_stage_name
+from src.core.stage.models import StageExecutionRequest, StageName, StageResult, StageType, normalize_stage_name
 from src.core.stage.registry import StageAgentRegistry
 
 
@@ -13,11 +13,11 @@ class StageDispatcher:
     """Resolve the planner-selected agent and run the matching StageAgent."""
 
     AGENT_STAGE_MAP = {
-        "recon_agent": "RECON_STAGE",
-        "vuln_analysis_agent": "VULN_ANALYSIS_STAGE",
-        "exploit_validation_agent": "EXPLOIT_STAGE",
-        "access_pivot_agent": "ACCESS_PIVOT_STAGE",
-        "goal_agent": "GOAL_STAGE",
+        "recon_agent": StageType.RECON_STAGE,
+        "vuln_analysis_agent": StageType.VULN_ANALYSIS_STAGE,
+        "exploit_validation_agent": StageType.EXPLOIT_STAGE,
+        "access_pivot_agent": StageType.ACCESS_PIVOT_STAGE,
+        "goal_agent": StageType.GOAL_STAGE,
     }
 
     def __init__(self, registry: StageAgentRegistry) -> None:
@@ -45,10 +45,10 @@ class StageDispatcher:
             raise ValueError(f"unsupported selected_agent: {decision.selected_agent}")
 
         selected_stage: StageName = normalize_stage_name(decision.selected_stage)
-        if selected_stage != expected_stage:
+        if selected_stage != normalize_stage_name(expected_stage):
             raise ValueError(
                 f"selected_agent {decision.selected_agent} requires selected_stage "
-                f"{expected_stage}, got {selected_stage}"
+                f"{expected_stage.value}, got {selected_stage}"
             )
 
         agent = self._registry.resolve(selected_stage)
