@@ -130,7 +130,7 @@ class AppOrchestrator:
         self.runtime_store = runtime_store or self._build_runtime_store(self.settings)
         self.graph_memory_store = graph_memory_store or GraphMemoryStore(self.settings.runtime_store_dir)
         self.pipeline = pipeline or self._build_default_pipeline(self.settings)
-        self.result_applier = result_applier or PhaseTwoResultApplier(attack_graph_projector=graph_projector)
+        self.result_applier = result_applier or PhaseTwoResultApplier()
         self.mcp_client = (
             ConfiguredMCPClient.from_sources(
                 config_path=self.settings.mcp_config_path,
