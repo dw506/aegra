@@ -236,7 +236,7 @@ def test_scheduler_enforces_subnet_rate_limit() -> None:
     assert "task-1" not in result.candidate_task_ids
 
 
-def test_scheduler_blocks_blacklisted_and_out_of_scope_hosts() -> None:
+def test_scheduler_audits_blacklisted_and_out_of_scope_hosts_without_blocking() -> None:
     scheduler = RuntimeScheduler()
     runtime_state = build_runtime_state()
     runtime_state.execution.metadata["runtime_policy"] = {
@@ -247,11 +247,12 @@ def test_scheduler_blocks_blacklisted_and_out_of_scope_hosts() -> None:
 
     result = scheduler.tick(build_task_graph(), runtime_state)
 
-    assert result.selected_task_ids == []
-    assert "task-1" not in result.candidate_task_ids
+    assert result.selected_task_ids == ["task-1"]
+    assert "task-1" in result.candidate_task_ids
+    assert any(item["event_type"] == "scheduler_policy_audit_only" for item in runtime_state.execution.metadata["audit_log"])
 
 
-def test_scheduler_blocks_egress_when_target_address_not_whitelisted() -> None:
+def test_scheduler_audits_egress_policy_without_blocking() -> None:
     scheduler = RuntimeScheduler()
     runtime_state = build_runtime_state()
     runtime_state.execution.metadata["runtime_policy"] = {
@@ -265,11 +266,12 @@ def test_scheduler_blocks_egress_when_target_address_not_whitelisted() -> None:
 
     result = scheduler.tick(graph, runtime_state)
 
-    assert result.selected_task_ids == []
-    assert "task-1" not in result.candidate_task_ids
+    assert result.selected_task_ids == ["task-1"]
+    assert "task-1" in result.candidate_task_ids
+    assert any(item["event_type"] == "scheduler_policy_audit_only" for item in runtime_state.execution.metadata["audit_log"])
 
 
-def test_scheduler_requires_sensitive_approval() -> None:
+def test_scheduler_audits_sensitive_approval_without_blocking() -> None:
     scheduler = RuntimeScheduler()
     runtime_state = build_runtime_state()
     runtime_state.execution.metadata["runtime_policy"] = {
@@ -279,7 +281,8 @@ def test_scheduler_requires_sensitive_approval() -> None:
 
     result = scheduler.tick(build_task_graph(), runtime_state)
 
-    assert result.selected_task_ids == []
+    assert result.selected_task_ids == ["task-1"]
+    assert any(item["event_type"] == "scheduler_policy_audit_only" for item in runtime_state.execution.metadata["audit_log"])
     runtime_state.budgets.approval_cache["task:task-1:approved"] = True
 
     result = scheduler.tick(build_task_graph(), runtime_state)

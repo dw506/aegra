@@ -204,7 +204,7 @@ def test_orchestrator_passes_stage_output_back_to_planner() -> None:
     assert advisor.recent_stage_results[0]["task_candidates"][0]["input_bindings"]["objective"] == "Analyze discovered HTTP service"
 
 
-def test_sensitive_tool_policy_denial_becomes_blocked_tool_trace() -> None:
+def test_sensitive_tool_policy_denial_is_audit_only_tool_trace() -> None:
     advisor = StageAgentDecision(
         action="call_tool",
         rationale="verify exploit",
@@ -234,9 +234,11 @@ def test_sensitive_tool_policy_denial_becomes_blocked_tool_trace() -> None:
         tool_catalog=tool_catalog,
     )
 
-    assert result.status == "blocked"
-    assert result.tool_traces[0].policy_check["allowed"] is False
-    assert result.tool_traces[0].exit_code == "policy_denied"
+    assert result.status != "blocked"
+    assert result.tool_traces[0].policy_check["allowed"] is True
+    assert result.tool_traces[0].policy_check["metadata"]["policy_audit_only"] is True
+    assert result.tool_traces[0].policy_check["metadata"]["original_allowed"] is False
+    assert result.tool_traces[0].exit_code != "policy_denied"
 
 
 def test_planner_and_stage_layers_do_not_import_graph_mutation_owners() -> None:

@@ -1,6 +1,7 @@
 import cytoscape, { type Core } from "cytoscape";
 import { useEffect, useMemo, useRef } from "react";
 import type { GraphState } from "../graphState";
+import { buildDisplayName } from "../graphTransforms";
 import type { VisualNode } from "../types";
 
 interface Props {
@@ -31,13 +32,14 @@ export function CytoscapeGraph({ graph, onSelectNode }: Props) {
             "border-width": "2px",
             color: "#1f2937",
             label: "data(label)",
-            "font-size": "11px",
-            "text-wrap": "wrap",
-            "text-max-width": "120px",
+            "font-size": "10px",
+            "font-weight": 600,
+            "text-wrap": "none",
+            "text-max-width": "78px",
             "text-valign": "bottom",
-            "text-margin-y": 8,
-            width: "36px",
-            height: "36px",
+            "text-margin-y": 7,
+            width: "34px",
+            height: "34px",
           },
         },
         {
@@ -87,7 +89,8 @@ export function CytoscapeGraph({ graph, onSelectNode }: Props) {
         const element = cy.getElementById(node.id);
         if (!element.length) continue;
         element.data({
-          label: node.label,
+          label: compactNodeLabel(node),
+          fullLabel: node.label,
           color: colorFor(node.type || node.status || ""),
           border: graph.highlighted[node.id] > freshCutoff ? "#f59e0b" : "#ffffff",
         });
@@ -108,7 +111,8 @@ export function CytoscapeGraph({ graph, onSelectNode }: Props) {
         group: "nodes" as const,
         data: {
           id: node.id,
-          label: node.label,
+          label: compactNodeLabel(node),
+          fullLabel: node.label,
           color: colorFor(node.type || node.status || ""),
           border: graph.highlighted[node.id] > freshCutoff ? "#f59e0b" : "#ffffff",
         },
@@ -142,4 +146,61 @@ function colorFor(value: string) {
   if (value.includes("GOAL") || value.includes("goal")) return "#dc2626";
   if (value.includes("CREDENTIAL")) return "#b45309";
   return "#64748b";
+}
+
+function compactNodeLabel(node: VisualNode) {
+  const displayName = buildDisplayName(node);
+  if (displayName && displayName !== node.type && displayName !== node.label) return compactText(displayName, 28);
+  const type = String(node.type || "").trim();
+  const props = node.properties || {};
+  const propLabel = firstString(
+    props.address,
+    props.hostname,
+    props.url,
+    props.service_name,
+    props.service,
+    props.action_type,
+    props.node_type,
+    props.evidence_kind,
+    props.tool_name,
+  );
+
+  if (type === "Host") return firstString(props.address, props.hostname, node.label, shortId(node.id));
+  if (type === "Service") {
+    const port = firstString(props.port);
+    const service = firstString(props.service_name, props.service, props.protocol, "svc");
+    return port ? `${service}:${port}` : service;
+  }
+  if (type === "Evidence") return "Evidence";
+  if (type === "Observation") return "Observation";
+  if (type === "Finding") return "Finding";
+  if (type === "ToolTrace") return firstString(props.tool_name, "Tool");
+  if (type === "Goal") return "Goal";
+  if (type === "NetworkZone") return "Scope";
+  if (type.toLowerCase() === "action") return compactActionLabel(propLabel || node.label);
+  if (type) return compactText(type, 18);
+  return compactText(propLabel || node.label || shortId(node.id), 18);
+}
+
+function compactActionLabel(value: string) {
+  return compactText(value.replace(/_/g, " ").toLowerCase(), 20);
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    return String(value);
+  }
+  return "";
+}
+
+function compactText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function shortId(id: string) {
+  const parts = id.split("::");
+  return compactText(parts[parts.length - 1] || id, 12);
 }

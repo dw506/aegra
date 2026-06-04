@@ -44,7 +44,7 @@ class PlannerDecision(BaseModel):
     risk_level: PlannerRiskLevel
     max_steps: int = Field(ge=1)
     reasoning_summary: str = ""
-    handoff_acceptance: dict[str, Any] | None = None
+    handoff_acceptance: dict[str, Any] | list[Any] | str | None = None
     stop_condition: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     metadata: dict[str, Any] = Field(default_factory=dict)

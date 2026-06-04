@@ -212,7 +212,14 @@ class PhaseTwoResultApplier:
                 cycle_index=decision.cycle_index,
                 status="running",
                 summary=f"cycle {decision.cycle_index}",
-                properties={"operation_id": decision.operation_id},
+                properties={
+                    "operation_id": decision.operation_id,
+                    "node_role": "ATTACK_CYCLE",
+                    "display_name": f"Cycle {decision.cycle_index}",
+                    "cycle_index": decision.cycle_index,
+                    "step_order": 1,
+                    "status": "running",
+                },
             ),
         )
         self._add_ag_node(
@@ -227,7 +234,18 @@ class PhaseTwoResultApplier:
                 status=decision.decision,
                 summary=decision.reasoning_summary or decision.objective,
                 refs=list(decision.target_refs),
-                properties=decision.model_dump(mode="json"),
+                properties={
+                    **decision.model_dump(mode="json"),
+                    "node_role": "PLANNER_DECISION",
+                    "display_name": f"规划决策：{decision.selected_stage or decision.decision}",
+                    "cycle_index": decision.cycle_index,
+                    "step_order": 2,
+                    "selected_stage": decision.selected_stage,
+                    "selected_agent": decision.selected_agent,
+                    "objective": decision.objective,
+                    "reasoning_summary": decision.reasoning_summary,
+                    "confidence": decision.confidence,
+                },
             ),
         )
         self._add_ag_edge(
@@ -258,7 +276,15 @@ class PhaseTwoResultApplier:
                     status="planned",
                     summary=decision.objective,
                     refs=list(decision.target_refs),
-                    properties={"planner_decision_id": decision_id},
+                    properties={
+                        "planner_decision_id": decision_id,
+                        "node_role": "AGENT_EXECUTION",
+                        "display_name": f"执行 Agent：{decision.selected_agent}",
+                        "cycle_index": decision.cycle_index,
+                        "step_order": 3,
+                        "selected_stage": decision.selected_stage,
+                        "selected_agent": decision.selected_agent,
+                    },
                 ),
             )
             self._add_ag_edge(
@@ -2183,6 +2209,9 @@ class PhaseTwoResultApplier:
         graph = getattr(ref, "graph", None)
         graph_value = graph.value if hasattr(graph, "value") else str(graph or "").lower()
         metadata = dict(getattr(ref, "metadata", {}) or {})
+        if graph_value == "query":
+            metadata.setdefault("original_graph", "query")
+            graph_value = GraphScope.AG.value
         label = getattr(ref, "label", None)
         if label is not None and "label" not in metadata:
             metadata["label"] = label

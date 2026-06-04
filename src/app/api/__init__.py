@@ -308,10 +308,7 @@ def create_app(
     if CORSMiddleware is not None and resolved_settings.control_api_cors_origins:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[
-                "http://127.0.0.1:5174",
-                "http://localhost:5174",
-            ],
+            allow_origins=resolved_settings.control_api_cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

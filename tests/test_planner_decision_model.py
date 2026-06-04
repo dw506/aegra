@@ -60,6 +60,52 @@ def test_planner_decision_allows_empty_agent_for_non_dispatch_decision() -> None
     assert decision.decision == "pause_for_review"
 
 
+def test_planner_decision_accepts_handoff_acceptance_checklist() -> None:
+    decision = PlannerDecision(
+        operation_id="op-1",
+        cycle_index=1,
+        decision="dispatch_agent",
+        selected_agent="recon_agent",
+        selected_stage="RECON_STAGE",
+        objective="Enumerate authorized target surface",
+        target_refs=[],
+        required_context={},
+        success_criteria=["host profile is current"],
+        risk_level="low",
+        max_steps=3,
+        reasoning_summary="Recon is the next required stage.",
+        handoff_acceptance=["evidence is recorded", "scope stays authorized"],
+        stop_condition=None,
+        confidence=0.8,
+        metadata={},
+    )
+
+    assert decision.handoff_acceptance == ["evidence is recorded", "scope stays authorized"]
+
+
+def test_planner_decision_accepts_handoff_acceptance_text() -> None:
+    decision = PlannerDecision(
+        operation_id="op-1",
+        cycle_index=1,
+        decision="dispatch_agent",
+        selected_agent="recon_agent",
+        selected_stage="RECON_STAGE",
+        objective="Enumerate authorized target surface",
+        target_refs=[],
+        required_context={},
+        success_criteria=["host profile is current"],
+        risk_level="low",
+        max_steps=3,
+        reasoning_summary="Recon is the next required stage.",
+        handoff_acceptance="evidence is recorded",
+        stop_condition=None,
+        confidence=0.8,
+        metadata={},
+    )
+
+    assert decision.handoff_acceptance == "evidence is recorded"
+
+
 def test_planner_decision_requires_agent_and_stage_for_dispatch() -> None:
     base_payload = {
         "operation_id": "op-1",

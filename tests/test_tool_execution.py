@@ -80,7 +80,7 @@ def test_tool_plan_uses_explicit_adapter_and_agent_ref() -> None:
     assert plan.target_agent_ref == "agent-1"
 
 
-def test_tool_executor_returns_blocked_result_for_out_of_scope_task() -> None:
+def test_tool_executor_audits_out_of_scope_task_without_policy_blocking() -> None:
     state = _state(
         {
             "engagement": Engagement(
@@ -93,8 +93,10 @@ def test_tool_executor_returns_blocked_result_for_out_of_scope_task() -> None:
 
     result = ToolExecutor().execute(build_tool_plan(task), state, task=task)
 
-    assert result.status.value == "blocked"
-    assert result.metadata["tool_policy"]["gate"] == "scope"
+    assert result.status.value != "blocked"
+    audit = state.execution.metadata["audit_log"][-1]["decision"]
+    assert audit["metadata"]["policy_audit_only"] is True
+    assert audit["metadata"]["original_allowed"] is False
 
 
 def test_tool_executor_reports_missing_adapter_after_policy_allows() -> None:
@@ -397,7 +399,7 @@ def test_adapter_policy_deny_overrides_explicit_adapter() -> None:
         executor.execute(plan)
 
 
-def test_tool_policy_blocks_unallowlisted_mcp_tool() -> None:
+def test_tool_policy_audits_unallowlisted_mcp_tool_without_policy_blocking() -> None:
     state = _state({"mcp_tool_allowlist": ["scan_ports"], "mcp_server_allowlist": ["pentest-tools"]})
     plan = ToolPlan(
         task_id="task-1",
@@ -408,5 +410,4 @@ def test_tool_policy_blocks_unallowlisted_mcp_tool() -> None:
 
     result = ToolExecutor().execute(plan, state)
 
-    assert result.status.value == "blocked"
-    assert result.metadata["tool_policy"]["gate"] == "mcp_policy"
+    assert result.status.value != "blocked"

@@ -120,6 +120,7 @@ def runtime_to_state(runtime_state: RuntimeState | dict[str, Any] | None) -> Vis
     )
     operation_id = str(payload.get("operation_id") or "runtime")
     execution = _mapping(payload.get("execution"))
+    metadata = _mapping(execution.get("metadata"))
     nodes: list[VisualNode] = [
         VisualNode(
             id=f"runtime:{operation_id}",
@@ -129,8 +130,13 @@ def runtime_to_state(runtime_state: RuntimeState | dict[str, Any] | None) -> Vis
             status=str(payload.get("operation_status") or execution.get("status") or ""),
             properties={
                 "operation_id": operation_id,
+                "operation_status": payload.get("operation_status") or execution.get("status"),
                 "last_updated": payload.get("last_updated"),
                 "summary": execution.get("summary"),
+                "target_count": len(payload.get("targets") or payload.get("scope_targets") or []),
+                "goal_satisfied": payload.get("goal_satisfied") or metadata.get("goal_satisfied"),
+                "needs_replan": bool(payload.get("replan_requests") or []),
+                "metadata": metadata,
             },
         )
     ]
@@ -165,7 +171,6 @@ def runtime_to_state(runtime_state: RuntimeState | dict[str, Any] | None) -> Vis
         )
         edges.append(_runtime_edge(f"runtime-edge:{operation_id}:worker:{worker_id}", f"runtime:{operation_id}", node_id, "has_worker"))
 
-    metadata = _mapping(execution.get("metadata"))
     for collection_name, node_type in (
         ("sessions", "SessionRuntime"),
         ("credentials", "CredentialRuntime"),

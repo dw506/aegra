@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from src.core.models.ag import GraphRef
-from src.core.agents.agent_protocol import AgentContext, AgentInput, GraphRef as AgentGraphRef, GraphScope
-from src.core.agents.scheduler_agent import SchedulerAgent
-from src.core.models.runtime import OperationRuntime, RuntimeState, WorkerRuntime, WorkerStatus
+from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.models.scope import Asset, Engagement
-from src.core.models.tg import TaskGraph, TaskNode, TaskStatus, TaskType
+from src.core.models.tg import TaskNode, TaskStatus, TaskType
 from src.core.runtime.policy_gate import PolicyGate, PolicyGateAction
 
 
@@ -30,7 +28,8 @@ def _task(*, host: str = "10.0.0.5", tool: str = "nmap", risk: float = 0.1) -> T
     )
 
 
-def test_policy_gate_denies_target_outside_scope() -> None:
+def test_policy_gate_audits_target_outside_scope_without_blocking(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
     state = _state(
         {
             "engagement": Engagement(
@@ -42,8 +41,13 @@ def test_policy_gate_denies_target_outside_scope() -> None:
 
     decision = PolicyGate().evaluate(_task(host="10.0.0.5"), runtime_state=state)
 
-    assert decision.action == PolicyGateAction.DENY
+    assert decision.action == PolicyGateAction.ALLOW
     assert decision.gate == "scope"
+    assert decision.metadata["policy_audit_only"] is True
+    assert decision.metadata["original_allowed"] is False
+    trace = tmp_path / "runs" / f"{state.operation_id}.run.txt"
+    assert trace.exists()
+    assert "【POLICY_DECISION】" in trace.read_text(encoding="utf-8")
 
 
 def test_policy_gate_allows_internal_kg_refs_under_scoped_policy() -> None:
@@ -63,50 +67,33 @@ def test_policy_gate_allows_internal_kg_refs_under_scoped_policy() -> None:
     assert decision.action == PolicyGateAction.ALLOW
 
 
-def test_policy_gate_denies_tool_outside_allowlist() -> None:
+def test_policy_gate_audits_tool_outside_allowlist_without_blocking() -> None:
     state = _state({"command_allowlist": ["nmap"]})
 
     decision = PolicyGate().evaluate(_task(tool="curl"), runtime_state=state)
 
-    assert decision.action == PolicyGateAction.DENY
+    assert decision.action == PolicyGateAction.ALLOW
     assert decision.gate == "tool"
+    assert decision.metadata["original_allowed"] is False
 
 
-def test_policy_gate_reports_approval_requirement() -> None:
+def test_policy_gate_audits_approval_requirement_without_blocking() -> None:
     task = _task()
     task.approval_required = True
 
     decision = PolicyGate().evaluate(task, runtime_state=_state())
 
-    assert decision.action == PolicyGateAction.NEED_APPROVAL
+    assert decision.action == PolicyGateAction.ALLOW
     assert decision.approval_id == f"task:{task.id}:approved"
+    assert decision.metadata["original_action"] == PolicyGateAction.NEED_APPROVAL.value
 
 
-def test_policy_gate_denies_when_budget_is_insufficient() -> None:
+def test_policy_gate_audits_insufficient_budget_without_blocking() -> None:
     state = _state()
     state.budgets.operation_budget_max = 0
 
     decision = PolicyGate().evaluate(_task(), runtime_state=state)
 
-    assert decision.action == PolicyGateAction.DENY
+    assert decision.action == PolicyGateAction.ALLOW
     assert decision.gate == "budget"
-
-
-def test_scheduler_agent_requires_llm_before_policy_bound_dispatch() -> None:
-    state = _state({"command_allowlist": ["nmap"]})
-    state.workers["worker-1"] = WorkerRuntime(worker_id="worker-1", status=WorkerStatus.IDLE)
-    graph = TaskGraph()
-    graph.add_node(_task(tool="curl"))
-
-    result = SchedulerAgent().run(
-        AgentInput(
-            graph_refs=[AgentGraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph")],
-            context=AgentContext(operation_id="op-policy-gate"),
-            raw_payload={"tg_graph": graph.to_dict(), "runtime_state": state.model_dump(mode="json")},
-        )
-    )
-
-    assert result.success is True
-    assert result.output.decisions[0]["action"] == "blocked"
-    assert not result.output.decisions[0]["accepted"]
-    assert result.output.decisions[0]["schedule_decision"]["metadata"]["accepted"] is False
+    assert decision.metadata["original_allowed"] is False

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.stage.base_stage_agent import StageAgentDecision
-from src.core.stage.models import StageExecutionRequest, StageName, normalize_stage_name
+from src.core.stage.models import GraphUpdateIntent, StageExecutionRequest, StageName, normalize_stage_name
 
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
@@ -98,7 +98,7 @@ class LLMStageAdvisor:
                 return repaired
             return StageAgentDecision(action="need_replan", rationale="llm stage advisor returned non-json decision")
         try:
-            return StageAgentDecision.model_validate(payload)
+            return StageAgentDecision.model_validate(_normalize_stage_decision_payload(payload))
         except ValidationError as exc:
             repaired = self._repair_decision(
                 original_text=response.text,
@@ -146,19 +146,29 @@ class LLMStageAdvisor:
                 "finish": {
                     "status": "succeeded | partial | failed | needs_replan",
                     "summary": "stage outcome",
-                    "observations": [],
+                    "observations": [{"summary": "structured observation", "category": "stage_observation", "confidence": 0.5}],
                     "evidence": [],
-                    "findings": [],
+                    "findings": [{"summary": "structured finding", "category": "stage_finding", "confidence": 0.5}],
                     "discovered_entities": [],
                     "discovered_relations": [],
                     "capabilities_gained": [],
                     "credentials": [],
                     "sessions": [],
                     "pivot_routes": [],
-                    "next_stage_candidates": [],
+                    "next_stage_candidates": [{"stage_type": "VULN_ANALYSIS_STAGE", "reason": "why this stage should run next", "confidence": 0.5}],
                     "runtime_hints": {},
                     "writeback_hints": {},
-                    "graph_update_intents": [],
+                    "graph_update_intents": [
+                        {
+                            "target_graph": "KG",
+                            "operation": "update",
+                            "entity_type": "Service",
+                            "entity_ref": "optional graph id",
+                            "payload": {},
+                            "confidence": 0.5,
+                            "source": "stage_agent",
+                        }
+                    ],
                     "evidence_refs": [],
                     "confidence": 0.0,
                     "risk_level": "low | medium | high | critical",
@@ -178,6 +188,9 @@ class LLMStageAdvisor:
         }
         return (
             "Return only JSON matching StageAgentDecision. "
+            "All finish.observations, finish.findings, finish.evidence, finish.next_stage_candidates, "
+            "and finish.discovered_* arrays must contain JSON objects, never strings. "
+            "All finish.graph_update_intents must contain target_graph and operation fields matching the schema. "
             "You are the complete LLM decision maker for this stage. Decide whether the stage can run, "
             "which MCP tool to call if any, why, and how prior tool results affect completion. "
             "Use only supplied graph state, policy, stage execution request, tool catalog and memory. "
@@ -217,7 +230,7 @@ class LLMStageAdvisor:
         if payload is None:
             return None
         try:
-            return StageAgentDecision.model_validate(payload)
+            return StageAgentDecision.model_validate(_normalize_stage_decision_payload(payload))
         except ValidationError:
             return None
 
@@ -271,6 +284,149 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _normalize_stage_decision_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize common LLM near-misses without weakening StageResult schema."""
+
+    normalized = dict(payload)
+    finish = normalized.get("finish")
+    if isinstance(finish, dict):
+        normalized["finish"] = _normalize_finish_payload(finish)
+    return normalized
+
+
+def _normalize_finish_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    for key in (
+        "observations",
+        "evidence",
+        "findings",
+        "discovered_entities",
+        "discovered_relations",
+        "capabilities_gained",
+        "credentials",
+        "sessions",
+        "pivot_routes",
+        "privilege_contexts",
+        "failed_hypotheses",
+    ):
+        if key in normalized:
+            normalized[key] = _coerce_object_list(normalized.get(key), default_category=key.rstrip("s"))
+    if "next_stage_candidates" in normalized:
+        normalized["next_stage_candidates"] = _coerce_next_stage_candidates(normalized.get("next_stage_candidates"))
+    if "graph_update_intents" in normalized:
+        normalized["graph_update_intents"] = _coerce_graph_update_intents(normalized.get("graph_update_intents"))
+    return normalized
+
+
+def _coerce_object_list(value: Any, *, default_category: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if isinstance(item, dict):
+            items.append(dict(item))
+        elif item is not None:
+            items.append(
+                {
+                    "summary": str(item),
+                    "category": default_category,
+                    "confidence": 0.5,
+                    "source_index": index,
+                }
+            )
+    return items
+
+
+def _coerce_next_stage_candidates(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    candidates: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            candidates.append(dict(item))
+            continue
+        if item is None:
+            continue
+        try:
+            stage_type = normalize_stage_name(item)
+        except ValueError:
+            stage_type = "RECON_STAGE"
+        candidates.append(
+            {
+                "stage_type": stage_type,
+                "reason": f"LLM suggested next stage {item}",
+                "confidence": 0.5,
+            }
+        )
+    return candidates
+
+
+def _coerce_graph_update_intents(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    intents: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        candidate = dict(item)
+        if "target_graph" not in candidate or "operation" not in candidate:
+            candidate = _legacy_graph_intent_to_schema(candidate)
+        candidate = _normalize_graph_intent_schema(candidate)
+        try:
+            intents.append(GraphUpdateIntent.model_validate(candidate).model_dump(mode="json"))
+        except ValidationError:
+            continue
+    return intents
+
+
+def _normalize_graph_intent_schema(intent: dict[str, Any]) -> dict[str, Any]:
+    candidate = dict(intent)
+    if str(candidate.get("target_graph") or "").upper() != "KG":
+        return candidate
+    entity_type = str(candidate.get("entity_type") or "")
+    payload = dict(candidate.get("payload") or {})
+    if entity_type == "WebEndpoint":
+        candidate["entity_type"] = "Service"
+        payload.setdefault("entity_kind", "WebEndpoint")
+    elif entity_type == "Fingerprint":
+        candidate["entity_type"] = "Observation"
+        payload.setdefault("entity_kind", "Fingerprint")
+    candidate["payload"] = payload
+    return candidate
+
+
+def _legacy_graph_intent_to_schema(intent: dict[str, Any]) -> dict[str, Any]:
+    legacy_name = str(intent.get("intent") or "update").lower()
+    entity_ref = intent.get("match") or intent.get("entity_ref")
+    attributes = intent.get("attributes") if isinstance(intent.get("attributes"), dict) else {}
+    payload = {key: value for key, value in intent.items() if key not in {"intent", "match", "attributes"}}
+    payload.update(attributes)
+    if "service" in legacy_name:
+        entity_type = "Service"
+    elif "host" in legacy_name:
+        entity_type = "Host"
+    elif "fingerprint" in legacy_name:
+        entity_type = "Observation"
+        payload["entity_kind"] = "Fingerprint"
+    elif "endpoint" in legacy_name:
+        entity_type = "Service"
+        payload["entity_kind"] = "WebEndpoint"
+    elif "finding" in legacy_name:
+        entity_type = "Finding"
+    else:
+        entity_type = str(intent.get("entity_type") or "")
+    operation = "add" if legacy_name.startswith(("add", "create", "upsert")) else "update"
+    return {
+        "target_graph": str(intent.get("target_graph") or "KG"),
+        "operation": operation,
+        "entity_type": entity_type,
+        "entity_ref": str(entity_ref) if entity_ref is not None else None,
+        "payload": payload,
+        "confidence": float(intent.get("confidence") or 0.5),
+        "source": "stage_agent",
+    }
 
 
 def _truncate_json(payload: dict[str, Any], max_chars: int) -> str:

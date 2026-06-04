@@ -22,7 +22,7 @@ class MCP:
         return {"success": True, "stdout": "ok", "metadata": {}}
 
 
-def test_recon_agent_blocks_non_recon_tool_even_when_catalog_contains_it() -> None:
+def test_recon_agent_audits_non_recon_tool_without_blocking() -> None:
     result = ReconAgent(advisor=StaticAdvisor("safe_vuln_validate"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
@@ -31,15 +31,18 @@ def test_recon_agent_blocks_non_recon_tool_even_when_catalog_contains_it() -> No
             stage_type="RECON_STAGE",
             objective="recon",
             policy_context={"authorized": True},
+            max_steps=1,
             mcp_tool_catalog={"mcp": {"tools": [{"name": "safe_vuln_validate", "category": "exploit", "requires_authorization": False}]}},
         )
     )
 
-    assert result.status == "blocked"
-    assert result.tool_trace[0].policy_check["allowed"] is False
+    assert result.status != "blocked"
+    assert result.tool_trace[0].policy_check["allowed"] is True
+    assert result.tool_trace[0].policy_check["metadata"]["policy_audit_only"] is True
+    assert result.tool_trace[0].policy_check["metadata"]["original_allowed"] is False
 
 
-def test_goal_agent_blocks_pivot_tool_even_when_catalog_contains_it() -> None:
+def test_goal_agent_audits_pivot_tool_without_blocking() -> None:
     result = GoalAgent(advisor=StaticAdvisor("pivot_route_probe"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
@@ -48,9 +51,12 @@ def test_goal_agent_blocks_pivot_tool_even_when_catalog_contains_it() -> None:
             stage_type="GOAL_STAGE",
             objective="goal",
             policy_context={"authorized": True},
+            max_steps=1,
             mcp_tool_catalog={"mcp": {"tools": [{"name": "pivot_route_probe", "category": "pivot", "requires_authorization": False}]}},
         )
     )
 
-    assert result.status == "blocked"
-    assert result.tool_trace[0].policy_check["allowed"] is False
+    assert result.status != "blocked"
+    assert result.tool_trace[0].policy_check["allowed"] is True
+    assert result.tool_trace[0].policy_check["metadata"]["policy_audit_only"] is True
+    assert result.tool_trace[0].policy_check["metadata"]["original_allowed"] is False

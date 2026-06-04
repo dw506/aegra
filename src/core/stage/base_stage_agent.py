@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.events import utc_now
+from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
 
 
@@ -216,6 +217,20 @@ class BaseStageAgent:
                 memory=memory,
                 available_tools=available_tools,
             )
+            TxtTraceLogger(operation_id).write_block(
+                "LLM_DECISION",
+                "stage agent decision",
+                {
+                    "agent": request.agent_name,
+                    "stage": request.stage_type,
+                    "selected_action": decision.action,
+                    "tool": decision.tool_call.tool_name if decision.tool_call is not None else None,
+                    "rationale_summary": decision.rationale,
+                    "confidence": self._decision_metadata(decision).get("confidence"),
+                    "assumptions": self._decision_metadata(decision).get("assumptions", []),
+                    "evidence_refs": self._decision_metadata(decision).get("evidence_refs", []),
+                },
+            )
 
             if decision.action == "call_tool":
                 if decision.tool_call is None:
@@ -235,23 +250,6 @@ class BaseStageAgent:
                 )
                 tool_trace.append(trace)
                 memory.append({"decision": decision.model_dump(mode="json"), "tool_trace": trace.model_dump(mode="json")})
-                if not trace.success and trace.policy_check.get("allowed") is False:
-                    return self._finish_result(
-                        operation_id=operation_id,
-                        request=request,
-                        decision=StageAgentDecision(
-                            action="finish",
-                            rationale="policy enforcement blocked requested tool call",
-                            finish={
-                                "status": "blocked",
-                                "summary": trace.summary,
-                                "policy_notes": [str(trace.policy_check.get("reason") or trace.summary)],
-                                "observations": memory,
-                            },
-                        ),
-                        memory=memory,
-                        tool_trace=tool_trace,
-                    )
                 continue
 
             if decision.action == "finish":
@@ -375,20 +373,43 @@ class BaseStageAgent:
             policy_context=policy_context,
             request=request,
         )
-        if not policy_check["allowed"]:
-            return ToolTrace(
-                step=step,
-                server_id=call.server_id,
-                tool_name=call.tool_name,
-                tool_category=str(tool_metadata.get("category") or ""),
-                arguments=dict(call.arguments),
-                success=False,
-                summary=f"policy denied {call.server_id}.{call.tool_name}: {policy_check['reason']}",
-                stderr=str(policy_check["reason"]),
-                exit_code="policy_denied",
-                ended_at=utc_now().isoformat(),
-                policy_check=policy_check,
-            )
+        TxtTraceLogger(request.operation_id).write_block(
+            "AGENT_ACTION",
+            "agent action",
+            {
+                "agent": request.agent_name,
+                "action": "tool_call",
+                "tool": call.tool_name,
+                "target": call.arguments.get("target") or call.arguments.get("url") or call.arguments.get("host"),
+            },
+        )
+        TxtTraceLogger(request.operation_id).write_block(
+            "POLICY_DECISION",
+            "policy evaluated but not enforced",
+            {
+                "agent": request.agent_name,
+                "stage": request.stage_type,
+                "server": call.server_id,
+                "tool": call.tool_name,
+                "target": call.arguments.get("target") or call.arguments.get("url") or call.arguments.get("host"),
+                "original_allowed": policy_check.get("metadata", {}).get("original_allowed", policy_check.get("allowed")),
+                "original_reason": policy_check.get("metadata", {}).get("original_reason", policy_check.get("reason")),
+                "original_risk_level": policy_context.get("risk_level") or request.risk_level,
+                "original_tags": tool_metadata.get("policy_tags", []),
+                "original_policy_name": "stage_agent_tool_policy",
+                "final_allowed": policy_check.get("allowed"),
+                "final_reason": policy_check.get("reason"),
+            },
+        )
+        TxtTraceLogger(request.operation_id).write_block(
+            "TOOL_CALL",
+            "mcp tool call",
+            {
+                "server": call.server_id,
+                "tool": call.tool_name,
+                "arguments": dict(call.arguments),
+            },
+        )
         raw = self._mcp_client.call_tool(
             server_id=call.server_id,
             tool_name=call.tool_name,
@@ -396,7 +417,7 @@ class BaseStageAgent:
             timeout_seconds=timeout,
         )
         result = raw if isinstance(raw, MCPToolCallResult) else MCPToolCallResult.model_validate(raw)
-        return ToolTrace(
+        trace = ToolTrace(
             step=step,
             server_id=call.server_id,
             tool_name=call.tool_name,
@@ -414,6 +435,24 @@ class BaseStageAgent:
             parsed_output=dict(result.metadata.get("parsed_output") or {}),
             metadata={**dict(result.metadata), "content": result.content},
         )
+        TxtTraceLogger(request.operation_id).write_block(
+            "TOOL_RESULT",
+            "mcp tool result",
+            {
+                "tool": call.tool_name,
+                "success": result.success,
+                "exit_code": result.exit_code,
+                "summary": result.stderr if not result.success else result.stdout[:200],
+                "stdout_excerpt": result.stdout[:2000] if result.stdout else "",
+                "stderr_excerpt": result.stderr[:2000] if result.stderr else "",
+            },
+        )
+        return trace
+
+    @staticmethod
+    def _decision_metadata(decision: StageAgentDecision) -> dict[str, Any]:
+        metadata = getattr(decision, "metadata", {})
+        return dict(metadata) if isinstance(metadata, dict) else {}
 
     def _finish_result(
         self,
@@ -512,8 +551,37 @@ class BaseStageAgent:
                 return dict(item)
         return {}
 
-    @staticmethod
+    @classmethod
     def _enforce_policy(
+        cls,
+        *,
+        call: StageToolCall,
+        tool_metadata: dict[str, Any],
+        policy_context: dict[str, Any],
+        request: StageExecutionRequest,
+    ) -> dict[str, Any]:
+        original = cls._original_policy_decision(
+            call=call,
+            tool_metadata=tool_metadata,
+            policy_context=policy_context,
+            request=request,
+        )
+        return {
+            "allowed": True,
+            "reason": "PolicyGate is audit-only; execution continued.",
+            "metadata": {
+                "policy_audit_only": True,
+                "original_allowed": bool(original.get("allowed")),
+                "original_reason": str(original.get("reason") or ""),
+                "original_risk_level": policy_context.get("risk_level") or request.risk_level,
+                "original_tags": list(tool_metadata.get("policy_tags", []) or []),
+                "original_policy_name": "stage_agent_tool_policy",
+                "original_policy_check": original,
+            },
+        }
+
+    @staticmethod
+    def _original_policy_decision(
         *,
         call: StageToolCall,
         tool_metadata: dict[str, Any],

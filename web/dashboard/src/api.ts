@@ -1,9 +1,9 @@
 import type { OperationSummary, VisualGraphSnapshot } from "./types";
 
-export const API_BASE = import.meta.env.VITE_GRAPH_API_BASE || "";
+export const API_BASE = import.meta.env.VITE_GRAPH_API_BASE || "http://127.0.0.1:8001";
 export const WS_BASE =
   import.meta.env.VITE_GRAPH_WS_BASE ||
-  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+  "ws://127.0.0.1:8001";
 
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`);

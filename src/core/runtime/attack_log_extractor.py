@@ -76,6 +76,11 @@ class AttackLogExtractor:
                 summary=f"cycle {cycle_index}",
                 evidence_refs=list(evidence_refs),
                 properties={
+                    "node_role": "ATTACK_CYCLE",
+                    "display_name": f"Cycle {cycle_index}",
+                    "cycle_index": cycle_index,
+                    "step_order": 1,
+                    "status": "completed" if stage_result is not None else "planned",
                     "runtime_event_count": len(runtime_events or []),
                     "policy_event_count": len(policy_events or []),
                 },
@@ -360,10 +365,15 @@ class AttackLogExtractor:
             summary=decision.reasoning_summary or decision.objective,
             refs=list(decision.target_refs),
             properties={
+                "node_role": "PLANNER_DECISION",
+                "display_name": f"规划决策：{decision.selected_stage or decision.decision}",
+                "cycle_index": decision.cycle_index,
+                "step_order": 2,
                 "decision": decision.decision,
                 "selected_agent": decision.selected_agent,
                 "selected_stage": decision.selected_stage,
                 "objective": decision.objective,
+                "reasoning_summary": decision.reasoning_summary,
                 "required_context": decision.required_context,
                 "success_criteria": list(decision.success_criteria),
                 "risk_level": decision.risk_level,
@@ -411,7 +421,17 @@ class AttackLogExtractor:
             status="planned",
             summary=decision.objective,
             refs=list(decision.target_refs),
-            properties={"planner_decision_id": planner_id},
+            properties={
+                "node_role": "AGENT_EXECUTION",
+                "display_name": f"执行 Agent：{decision.selected_agent}",
+                "cycle_index": decision.cycle_index,
+                "step_order": 3,
+                "planner_decision_id": planner_id,
+                "selected_agent": decision.selected_agent,
+                "selected_stage": decision.selected_stage,
+                "agent_name": decision.selected_agent,
+                "stage_type": decision.selected_stage,
+            },
         )
 
     @staticmethod
@@ -425,7 +445,16 @@ class AttackLogExtractor:
             stage_type=stage_result.stage_type,
             status=stage_result.status,
             summary=stage_result.summary,
-            properties={"stage_task_id": stage_result.stage_task_id, "stage_result_id": stage_result.result_id},
+            properties={
+                "node_role": "AGENT_EXECUTION",
+                "display_name": f"执行 Agent：{stage_result.agent_name}",
+                "cycle_index": cycle_index,
+                "step_order": 3,
+                "stage_task_id": stage_result.stage_task_id,
+                "stage_result_id": stage_result.result_id,
+                "agent_name": stage_result.agent_name,
+                "stage_type": stage_result.stage_type,
+            },
         )
 
     @classmethod
@@ -447,6 +476,10 @@ class AttackLogExtractor:
             summary=cls._tool_summary(trace),
             evidence_refs=list(trace.evidence_refs),
             properties={
+                "node_role": "TOOL_CALL",
+                "display_name": f"工具调用：{trace.tool_name}",
+                "cycle_index": cycle_index,
+                "step_order": 4,
                 "trace_id": trace.trace_id,
                 "step": trace.step,
                 "server_id": trace.server_id,
@@ -461,6 +494,8 @@ class AttackLogExtractor:
                 "argument_keys": sorted(str(key) for key in trace.arguments.keys()),
                 "success": trace.success,
                 "exit_code": trace.exit_code,
+                "policy_original_allowed": cls._policy_original_allowed(trace.policy_check),
+                "policy_original_reason": cls._policy_original_reason(trace.policy_check),
                 "started_at": trace.started_at,
                 "ended_at": trace.ended_at,
                 "policy_check": cls._sanitize_event(trace.policy_check),
@@ -487,9 +522,15 @@ class AttackLogExtractor:
             summary=stage_result.summary,
             evidence_refs=list(stage_result.evidence_refs),
             properties={
+                "node_role": "STAGE_RESULT",
+                "display_name": f"阶段结果：{stage_result.status}",
+                "cycle_index": cycle_index,
+                "step_order": 5,
                 "result_id": stage_result.result_id,
                 "stage_task_id": stage_result.stage_task_id,
                 "status": stage_result.status,
+                "summary": stage_result.summary,
+                "evidence_refs": list(stage_result.evidence_refs),
                 "observation_count": len(stage_result.observations),
                 "evidence_count": len(stage_result.evidence),
                 "finding_count": len(stage_result.findings),
@@ -521,7 +562,16 @@ class AttackLogExtractor:
             status="suggested",
             summary=handoff.reason,
             evidence_refs=[str(ref) for ref in handoff.required_context_refs],
-            properties=handoff.model_dump(mode="json"),
+            properties={
+                **handoff.model_dump(mode="json"),
+                "node_role": "HANDOFF_SUGGESTION",
+                "display_name": f"下一步建议：{handoff.suggested_stage}",
+                "cycle_index": cycle_index,
+                "step_order": 6,
+                "suggested_stage": handoff.suggested_stage,
+                "suggested_agent": handoff.suggested_agent,
+                "reason": handoff.reason,
+            },
         )
 
     @classmethod
@@ -611,6 +661,28 @@ class AttackLogExtractor:
             "item_count": len(parsed_output),
         }
 
+    @staticmethod
+    def _policy_original_allowed(policy_check: dict[str, Any]) -> bool | None:
+        metadata = policy_check.get("metadata") if isinstance(policy_check, dict) else None
+        if isinstance(metadata, dict) and "original_allowed" in metadata:
+            return bool(metadata.get("original_allowed"))
+        if isinstance(policy_check, dict) and "original_allowed" in policy_check:
+            return bool(policy_check.get("original_allowed"))
+        if isinstance(policy_check, dict) and "allowed" in policy_check:
+            return bool(policy_check.get("allowed"))
+        return None
+
+    @staticmethod
+    def _policy_original_reason(policy_check: dict[str, Any]) -> str | None:
+        metadata = policy_check.get("metadata") if isinstance(policy_check, dict) else None
+        if isinstance(metadata, dict) and metadata.get("original_reason") is not None:
+            return str(metadata.get("original_reason"))
+        if isinstance(policy_check, dict) and policy_check.get("original_reason") is not None:
+            return str(policy_check.get("original_reason"))
+        if isinstance(policy_check, dict) and policy_check.get("reason") is not None:
+            return str(policy_check.get("reason"))
+        return None
+
     @classmethod
     def _collect_evidence_refs(
         cls,
@@ -678,6 +750,11 @@ class AttackLogExtractor:
 
     @staticmethod
     def _policy_event_blocked(event: dict[str, Any]) -> bool:
+        metadata = event.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("policy_audit_only") is True:
+            return False
+        if event.get("policy_audit_only") is True or event.get("final_allowed") is True:
+            return False
         if event.get("allowed") is False:
             return True
         status = str(event.get("status") or event.get("decision") or event.get("result") or "").lower()

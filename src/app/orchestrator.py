@@ -36,6 +36,7 @@ from src.core.runtime.llm_history import (
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.attack_log_extractor import AttackLogExtractor
+from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
@@ -468,6 +469,21 @@ class AppOrchestrator:
             self._log_operation_event(state, event_type="operation_resumed", **resume_summary)
 
         cycle_index = self._next_cycle_index(state)
+        txt_logger = TxtTraceLogger(operation_id)
+        txt_logger.write_block(
+            "SYSTEM",
+            "operation cycle started",
+            {
+                "operation_id": operation_id,
+                "cycle": cycle_index,
+                "policy_gate": "audit_only_non_blocking",
+                "json_run_file": "disabled_or_secondary",
+                "txt_trace": True,
+                "graph_write": True,
+                "result_applier": "enabled",
+                "attack_log_extractor": "enabled",
+            },
+        )
         state.execution.metadata["graph_memory"] = {
             "kg_version": kg.version,
             "ag_version": ag.version,
@@ -479,12 +495,22 @@ class AppOrchestrator:
         state.execution.status = RuntimeStatus.RUNNING
         mark_unclean_shutdown(state, cycle_index=cycle_index)
         self._log_operation_event(state, event_type="cycle_started", cycle_index=cycle_index)
+        txt_logger.write("CYCLE", f"cycle={cycle_index} started")
         self._checkpoint_phase(state, cycle_index=cycle_index, phase="cycle_started", status="running")
 
         goal = self._mission_goal(planner_payload=planner_payload, context=context)
         policy_context = self._mapping(
             planner_payload.get("policy_context")
             or state.execution.metadata.get("runtime_policy")
+        )
+        txt_logger.write_block(
+            "MISSION",
+            "mission context",
+            {
+                "mission_goal": goal,
+                "targets": state.execution.metadata.get("target_inventory", []),
+                "scope": policy_context,
+            },
         )
         graph_snapshot = self._kg_ag_runtime_snapshot(
             operation_id=operation_id,
@@ -504,6 +530,21 @@ class AppOrchestrator:
         if decision.operation_id == "operation":
             decision.operation_id = operation_id
         decision.cycle_index = cycle_index
+        txt_logger.write_block(
+            "PLANNER",
+            "planner decision",
+            {
+                "cycle": cycle_index,
+                "selected_agent": decision.selected_agent,
+                "selected_stage": decision.selected_stage,
+                "objective": decision.objective,
+                "risk_level": decision.risk_level,
+                "confidence": decision.confidence,
+                "reasoning_summary": decision.reasoning_summary,
+                "success_criteria": list(decision.success_criteria),
+                "target_refs": list(decision.target_refs),
+            },
+        )
         planning_apply = self.result_applier.apply_planner_decision(decision, state, kg, ag)
         for delta in planning_apply.visual_graph_deltas:
             graph_delta_publisher.publish_nowait(delta)
@@ -561,6 +602,23 @@ class AppOrchestrator:
             )
             finished_at = utc_now()
             stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+            txt_logger.write_block(
+                "GRAPH_WRITE",
+                "graph write completed",
+                {
+                    "cycle": cycle_index,
+                    "stage": stage_result.stage_type,
+                    "agent": stage_result.agent_name,
+                    "stage_status": stage_result.status,
+                    "kg_delta_count": len(stage_apply.kg_state_deltas or []),
+                    "ag_delta_count": len(stage_apply.ag_state_deltas or []),
+                    "tg_delta_count": 0,
+                    "runtime_event_count": len(stage_apply.runtime_event_refs or []),
+                    "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
+                    "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
+                    "evidence_refs": list(stage_result.evidence_refs),
+                },
+            )
             extraction = AttackLogExtractor().extract(
                 decision,
                 stage_result,
@@ -569,6 +627,40 @@ class AppOrchestrator:
                 [],
             )
             log_apply = self.result_applier.apply_log_extraction(extraction, state, ag)
+            txt_logger.write_block(
+                "ATTACK_LOG_EXTRACT",
+                "attack graph extraction completed",
+                {
+                    "cycle": cycle_index,
+                    "stage": stage_result.stage_type,
+                    "agent": stage_result.agent_name,
+                    "status": stage_result.status,
+                    "ag_node_count": len(extraction.ag_nodes),
+                    "ag_edge_count": len(extraction.ag_edges),
+                    "node_roles": [
+                        getattr(node, "node_type", None).value if hasattr(getattr(node, "node_type", None), "value") else str(getattr(node, "node_type", ""))
+                        for node in extraction.ag_nodes
+                    ],
+                    "evidence_refs": list(extraction.evidence_refs),
+                },
+            )
+            txt_logger.write_block(
+                "GRAPH_WRITE",
+                "attack log graph write completed",
+                {
+                    "cycle": cycle_index,
+                    "stage": stage_result.stage_type,
+                    "agent": stage_result.agent_name,
+                    "stage_status": stage_result.status,
+                    "kg_delta_count": 0,
+                    "ag_delta_count": len(extraction.ag_nodes) + len(extraction.ag_edges),
+                    "tg_delta_count": 0,
+                    "runtime_event_count": len(log_apply.runtime_event_refs or []),
+                    "created_ag_nodes": len(extraction.ag_nodes),
+                    "created_ag_edges": len(extraction.ag_edges),
+                    "evidence_refs": list(extraction.evidence_refs),
+                },
+            )
             for applied in (stage_apply, log_apply):
                 for delta in applied.visual_graph_deltas:
                     graph_delta_publisher.publish_nowait(delta)
@@ -656,6 +748,17 @@ class AppOrchestrator:
             cycle_index=cycle_index,
             stopped=stopped,
             stop_reason=stop_reason,
+        )
+        txt_logger.write_block(
+            "CYCLE",
+            "cycle completed",
+            {
+                "cycle": cycle_index,
+                "selected_agent": decision.selected_agent,
+                "selected_stage": decision.selected_stage,
+                "status": state.operation_status.value,
+                "stop_reason": stop_reason,
+            },
         )
         mark_clean_shutdown(state, cycle_index=cycle_index)
         self._checkpoint_phase(

@@ -24,6 +24,7 @@ from src.core.runtime.policy import RuntimePolicy, policy_from_runtime_state
 from src.core.runtime.policy_engine import PolicyEngine
 from src.core.runtime.runtime_queries import RuntimeQueryService
 from src.core.runtime.session_manager import RuntimeSessionManager
+from src.core.runtime.txt_trace_logger import TxtTraceLogger
 
 
 class SchedulingDecision(BaseModel):
@@ -326,21 +327,20 @@ class RuntimeScheduler:
         policy_decision = self.policy_engine.evaluate_task_policy(task, runtime_state)
         self.policy_engine.audit(runtime_state, policy_decision)
         if policy_decision.decision != "allow":
-            self._record_policy_block(runtime_state, task, policy_decision)
-            return policy_decision.reason
+            self._audit_policy_only(runtime_state, task, policy_decision.reason, policy_decision.model_dump(mode="json"))
         target_hosts = self._task_host_ids(task)
         if policy.safety_stop:
-            return "runtime safety stop active"
+            self._audit_policy_only(runtime_state, task, "runtime safety stop active")
         if self._contains_blocked_host(task, target_hosts=target_hosts, policy=policy):
-            return "target host blacklisted"
+            self._audit_policy_only(runtime_state, task, "target host blacklisted")
         if self._violates_authorization_scope(target_hosts=target_hosts, policy=policy):
-            return "authorization scope denied"
+            self._audit_policy_only(runtime_state, task, "authorization scope denied")
         if self._violates_cidr_whitelist(task, policy=policy):
-            return "cidr whitelist denied"
+            self._audit_policy_only(runtime_state, task, "cidr whitelist denied")
         if self._violates_egress_policy(task, policy=policy):
-            return "egress denied by runtime policy"
+            self._audit_policy_only(runtime_state, task, "egress denied by runtime policy")
         if self._requires_sensitive_approval(task, runtime_state, policy=policy):
-            return "sensitive action approval required"
+            self._audit_policy_only(runtime_state, task, "sensitive action approval required")
         required_keys = self._required_lock_keys(runtime_state, task)
         if self.queries.is_task_blocked_by_runtime(
             runtime_state,
@@ -394,6 +394,35 @@ class RuntimeScheduler:
         )
         runtime_task.metadata["policy_decision"] = decision.model_dump(mode="json")
         runtime_task.metadata["runtime_blocked_reason"] = getattr(decision, "reason", "policy denied")
+
+    @staticmethod
+    def _audit_policy_only(
+        runtime_state: RuntimeState,
+        task: BaseTaskNode,
+        reason: str,
+        policy_decision: dict[str, Any] | None = None,
+    ) -> None:
+        RuntimeScheduler._audit(
+            runtime_state,
+            event_type="scheduler_policy_audit_only",
+            task_id=task.id,
+            accepted=True,
+            original_allowed=False,
+            reason=reason,
+            policy_decision=policy_decision or {},
+        )
+        TxtTraceLogger(runtime_state.operation_id).write_block(
+            "POLICY_DECISION",
+            "scheduler policy evaluated but not enforced",
+            {
+                "task_id": task.id,
+                "original_allowed": False,
+                "original_reason": reason,
+                "original_tags": list(getattr(task, "tags", []) or []),
+                "final_allowed": True,
+                "final_reason": "PolicyGate is audit-only; execution continued.",
+            },
+        )
 
     def _required_lock_keys(self, runtime_state: RuntimeState, task: BaseTaskNode) -> set[str]:
         return self.locks.expand_policy_lock_keys(

@@ -553,7 +553,7 @@ class KnowledgeGraph:
         """Apply one entity upsert patch emitted by StateWriter."""
 
         entity_id = str(patch["entity_id"])
-        entity_type = NodeType(str(patch["entity_type"]))
+        entity_type = self._normalize_node_type(str(patch["entity_type"]))
         node_cls = self._node_model(entity_type)
         model_attrs, property_attrs = self._split_patch_attributes(
             node_cls,
@@ -579,7 +579,7 @@ class KnowledgeGraph:
         """Apply one relation upsert patch emitted by StateWriter."""
 
         relation_id = str(patch["relation_id"])
-        relation_type = EdgeType(str(patch["relation_type"]))
+        relation_type = self._normalize_edge_type(str(patch["relation_type"]))
         edge_cls = EDGE_MODEL_BY_TYPE[relation_type]
         model_attrs, property_attrs = self._split_patch_attributes(
             edge_cls,
@@ -710,6 +710,28 @@ class KnowledgeGraph:
     @staticmethod
     def _node_type_key(value: str | NodeType) -> str:
         return value.value if isinstance(value, NodeType) else value
+
+    @staticmethod
+    def _normalize_node_type(value: str) -> NodeType:
+        aliases = {
+            "Fingerprint": NodeType.OBSERVATION,
+            "WebEndpoint": NodeType.SERVICE,
+        }
+        alias = aliases.get(value)
+        return alias if alias is not None else NodeType(value)
+
+    @staticmethod
+    def _normalize_edge_type(value: str) -> EdgeType:
+        aliases = {
+            "HOSTS_SERVICE": EdgeType.HOSTS,
+            "HOST_HAS_SERVICE": EdgeType.HOSTS,
+            "SERVICE_ON_HOST": EdgeType.HOSTS,
+            "HAS_SERVICE": EdgeType.HOSTS,
+            "HAS_FINGERPRINT": EdgeType.RELATED_TO,
+            "FINGERPRINTS": EdgeType.RELATED_TO,
+        }
+        alias = aliases.get(value)
+        return alias if alias is not None else EdgeType(value)
 
     @staticmethod
     def _edge_type_key(value: str | EdgeType) -> str:

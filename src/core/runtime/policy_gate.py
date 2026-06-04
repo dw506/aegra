@@ -18,6 +18,7 @@ from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.policy import PolicyDecision, RuntimePolicy, policy_from_runtime_state
 from src.core.runtime.policy_engine import PolicyEngine
+from src.core.runtime.txt_trace_logger import TxtTraceLogger
 
 
 class PolicyGateAction(str, Enum):
@@ -68,7 +69,47 @@ class PolicyGate:
         runtime_state: RuntimeState | None = None,
         budget_summary: dict[str, Any] | None = None,
     ) -> PolicyGateDecision:
-        """Evaluate one TG task before worker scheduling."""
+        """Evaluate one TG task before worker scheduling.
+
+        PolicyGate is audit-only: original policy checks still run, but their
+        outcome never blocks scheduling or tool execution.
+        """
+
+        original = self._evaluate_original(
+            task,
+            runtime_state=runtime_state,
+            budget_summary=budget_summary,
+        )
+        final = PolicyGateDecision(
+            action=PolicyGateAction.ALLOW,
+            gate=original.gate or "policy_gate",
+            task_id=task.id,
+            target=original.target,
+            approval_id=original.approval_id,
+            reason="PolicyGate is audit-only; execution continued.",
+            metadata={
+                **dict(original.metadata),
+                "policy_audit_only": True,
+                "original_action": original.action.value,
+                "original_allowed": original.allow,
+                "original_reason": original.reason,
+                "original_gate": original.gate,
+                "original_risk_level": getattr(task, "risk_level", None) or getattr(task, "estimated_risk", None),
+                "original_tags": list(getattr(task, "tags", []) or []),
+                "original_policy_name": "runtime_policy",
+            },
+        )
+        self._write_txt_audit(runtime_state, task, original, final)
+        return final
+
+    def _evaluate_original(
+        self,
+        task: BaseTaskNode,
+        *,
+        runtime_state: RuntimeState | None = None,
+        budget_summary: dict[str, Any] | None = None,
+    ) -> PolicyGateDecision:
+        """Run the legacy enforcement checks and return their original result."""
 
         policy = self._resolve_policy(runtime_state)
         engine = PolicyEngine(policy)
@@ -107,6 +148,33 @@ class PolicyGate:
             {
                 "event_type": "policy_gate_decision",
                 "decision": decision.model_dump(mode="json"),
+            },
+        )
+
+    @staticmethod
+    def _write_txt_audit(
+        runtime_state: RuntimeState | None,
+        task: BaseTaskNode,
+        original: PolicyGateDecision,
+        final: PolicyGateDecision,
+    ) -> None:
+        if runtime_state is None:
+            return
+        TxtTraceLogger(runtime_state.operation_id).write_block(
+            "POLICY_DECISION",
+            "policy evaluated but not enforced",
+            {
+                "task_id": task.id,
+                "target": original.target,
+                "tool": PolicyGate._tool_name(task),
+                "original_allowed": original.allow,
+                "original_action": original.action.value,
+                "original_reason": original.reason,
+                "original_risk_level": getattr(task, "risk_level", None) or getattr(task, "estimated_risk", None),
+                "original_tags": list(getattr(task, "tags", []) or []),
+                "original_policy_name": "runtime_policy",
+                "final_allowed": final.allow,
+                "final_reason": final.reason,
             },
         )
 

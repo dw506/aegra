@@ -1,7 +1,9 @@
 import { Download, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchSnapshot, graphWsUrl, listOperations } from "./api";
+import { AgTimelineView } from "./components/AgTimelineView";
 import { CytoscapeGraph } from "./components/CytoscapeGraph";
+import { KgAssetView } from "./components/KgAssetView";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
 import { LegacyTaskGraph } from "./components/TaskGraph";
 import { applyDelta, emptyDashboardGraphs, filteredGraph, snapshotToGraphs, type DashboardGraphs } from "./graphState";
@@ -24,6 +26,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [rawGraphView, setRawGraphView] = useState(false);
   const reconnectAttempt = useRef(0);
 
   useEffect(() => {
@@ -86,6 +89,10 @@ export default function App() {
   );
   const typeOptions = useMemo(() => unique(Object.values(activeState.nodes).map((node) => node.type || "")), [activeState]);
   const statusOptions = useMemo(() => unique(Object.values(activeState.nodes).map((node) => node.status || "")), [activeState]);
+  const selectedOperation = useMemo(
+    () => operations.find((operation) => operation.operation_id === operationId),
+    [operations, operationId],
+  );
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(activeState, null, 2)], { type: "application/json" });
@@ -146,16 +153,34 @@ export default function App() {
               <Download size={17} />
               JSON
             </button>
+            {(activeGraph === "kg" || activeGraph === "ag") && (
+              <label className="toggleControl">
+                <input type="checkbox" checked={rawGraphView} onChange={(event) => setRawGraphView(event.target.checked)} />
+                Raw Graph View
+              </label>
+            )}
             <div className="counts">{Object.keys(visibleState.nodes).length} nodes / {Object.keys(visibleState.edges).length} edges</div>
           </div>
 
-          <div className="graphViewport">
-            {activeGraph === "tg" ? (
-              <LegacyTaskGraph graph={visibleState} onSelectNode={setSelectedNode} />
-            ) : (
-              <CytoscapeGraph graph={visibleState} onSelectNode={setSelectedNode} />
-            )}
-          </div>
+          {activeGraph === "ag" && !rawGraphView ? (
+            <AgTimelineView
+              ag={activeState}
+              runtime={graphs.runtime}
+              operation={selectedOperation}
+              selectedNode={selectedNode}
+              onSelectNode={setSelectedNode}
+            />
+          ) : activeGraph === "kg" && !rawGraphView ? (
+            <KgAssetView kg={activeState} ag={graphs.ag} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
+          ) : (
+            <div className="graphViewport">
+              {activeGraph === "tg" ? (
+                <LegacyTaskGraph graph={visibleState} onSelectNode={setSelectedNode} />
+              ) : (
+                <CytoscapeGraph graph={visibleState} onSelectNode={setSelectedNode} />
+              )}
+            </div>
+          )}
         </section>
 
         <NodeDetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />

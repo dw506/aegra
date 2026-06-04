@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.ag import AttackGraph
+from src.core.agents.agent_protocol import GraphScope
+from src.core.models.ag import AttackGraph, GraphRef
 from src.core.models.attack_process import AttackProcessNodeType
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.planning.models import PlannerDecision
@@ -59,3 +60,13 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
     assert kg.get_node("svc-1") is not None
     assert kg.get_node("evidence-1") is not None
     assert "task_graph" not in state.execution.metadata
+
+
+def test_result_applier_maps_query_refs_to_ag_protocol_refs() -> None:
+    ref = PhaseTwoResultApplier._to_protocol_ref(
+        GraphRef(graph="query", ref_id="expected-output::svc", ref_type="ExpectedEvidence")
+    )
+
+    assert ref.graph == GraphScope.AG
+    assert ref.ref_id == "expected-output::svc"
+    assert ref.metadata["original_graph"] == "query"

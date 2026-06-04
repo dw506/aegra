@@ -789,6 +789,18 @@ class StateWriterAgent(BaseAgent):
         text = str(value).strip()
         if not text:
             return None
+        if enum_type is EdgeType:
+            edge_aliases = {
+                "HOSTS_SERVICE": EdgeType.HOSTS.value,
+                "HOST_HAS_SERVICE": EdgeType.HOSTS.value,
+                "SERVICE_ON_HOST": EdgeType.HOSTS.value,
+                "HAS_SERVICE": EdgeType.HOSTS.value,
+                "HAS_FINGERPRINT": EdgeType.RELATED_TO.value,
+                "FINGERPRINTS": EdgeType.RELATED_TO.value,
+            }
+            alias = edge_aliases.get(text.upper())
+            if alias is not None:
+                return alias
         for member in enum_type:
             if text == member.value or text.upper() == member.value.upper() or text.upper() == member.name:
                 return member.value
