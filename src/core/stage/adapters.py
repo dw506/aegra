@@ -234,7 +234,6 @@ class StageResultAdapter:
         return writes
 
     @classmethod
-    @classmethod
     def _runtime_requests(cls, stage_result: StageResult) -> list[RuntimeControlRequest]:
         requests: list[RuntimeControlRequest] = []
         for item in stage_result.sessions:
@@ -301,7 +300,6 @@ class StageResultAdapter:
                 hints.append({"register_pivot_route": True, **item})
         return [{key: value for key, value in hint.items() if value is not None} for hint in hints]
 
-    @staticmethod
     @classmethod
     def _refs(cls, value: Any) -> list[GraphRef]:
         if not isinstance(value, list):
