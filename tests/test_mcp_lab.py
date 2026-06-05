@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import sys
 import threading
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.integrations.mcp_lab.http_server import MCPHTTPHandler
@@ -42,6 +45,14 @@ def test_lab_tool_specs_include_v1_tools() -> None:
         "internal_service_discover",
         "chain_goal_check",
     }
+
+
+def test_goal_check_specs_expose_hidden_fixture_marker_id() -> None:
+    specs = {tool["name"]: tool for tool in LAB_TOOL_SPECS}
+
+    for name in ("goal_check", "chain_goal_check"):
+        properties = specs[name]["inputSchema"]["properties"]
+        assert properties["fixture_marker_id"] == {"type": "string"}
 
 
 def test_lab_tools_require_lab_mode(monkeypatch) -> None:
