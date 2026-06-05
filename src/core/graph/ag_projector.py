@@ -50,7 +50,7 @@ class AttackGraphProjector:
         self._connect_constraints(ag)
         self._refresh_goal_state_nodes(ag)
         self._refresh_action_activation(ag)
-        # 这里把 AG 快照显式锚定到来源 KG 版本，便于后续 TG 构建和 checkpoint 跟踪。
+        # 这里把 AG 快照显式锚定到来源 KG 版本，便于后续规划和 checkpoint 跟踪。
         ag.set_projection_metadata(
             source_kg_version=kg.version,
             projection_batch_id=kg.last_patch_batch_id,

@@ -1,0 +1,720 @@
+
+2026-06-04T12:47:21.474907+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:47:21.475907+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:47:21.514227+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:47:21.392295Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:47:21.524424+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:47:21.529005+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:47:21.532029+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:47:21.533096+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:47:21.535303+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:51:54.576509+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:51:54.577987+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:51:54.589581+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:51:54.544867Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:51:54.589581+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:51:54.591590+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:51:54.593589+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:51:54.593589+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:51:54.594589+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:52:46.280426+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:52:46.281659+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:52:46.296892+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:52:46.228805Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:52:46.298229+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:52:46.306264+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:52:46.308375+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:52:46.309992+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:52:46.311064+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:54:17.689274+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:54:17.689274+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:54:17.706917+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:54:17.639678Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:54:17.709561+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:54:17.713596+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:54:17.720518+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:54:17.721253+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:54:17.722337+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:55:57.031948+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:55:57.034947+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:55:57.060157+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:55:56.947816Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:55:57.062094+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:55:57.069509+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:55:57.073510+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:55:57.075511+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:55:57.078068+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:59:15.488034+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:59:15.489217+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:59:15.501708+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T12:59:15.442003Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:59:15.502709+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:59:15.506970+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:59:15.509165+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:59:15.510226+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T12:59:15.511226+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:15:00.912103+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:15:00.913104+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:15:00.929143+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T13:15:00.831813Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:15:00.931438+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:15:00.935971+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:15:00.938286+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:15:00.939285+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:15:00.940285+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:26:49.477472+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:26:49.479081+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:26:49.493728+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T13:26:49.437708Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:26:49.494995+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:26:49.499817+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:26:49.501925+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:26:49.502663+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:26:49.502856+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:27:33.943606+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:27:33.945410+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:27:33.958327+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T13:27:33.887459Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:27:33.960356+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:27:33.972951+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:27:33.978483+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:27:33.980273+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:27:33.983484+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:31:26.232483+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-goal-no-hint
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:31:26.233669+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:31:26.247622+00:00 【MISSION】 mission context
+  mission_goal: prove goal
+  targets: []
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "loaded_at": "2026-06-04T13:31:26.182066Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:31:26.249076+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  objective: verify goal evidence
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:31:26.252997+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 3
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:31:26.255702+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 4
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "STAGE_RESULT", "GOAL_CHECK"]
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:31:26.256203+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: GOAL_STAGE
+  agent: goal_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 9
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 4
+  evidence_refs: ["evidence::goal"]
+
+2026-06-04T13:31:26.258704+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: goal_agent
+  selected_stage: GOAL_STAGE
+  status: ready
+  stop_reason: None

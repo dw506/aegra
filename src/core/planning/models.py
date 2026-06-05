@@ -10,20 +10,6 @@ from src.core.models.ag import GraphRef
 
 
 PlannerDecisionType = Literal["dispatch_agent", "replan", "pause_for_review", "stop_success", "stop_failed"]
-PlannerSelectedAgent = Literal[
-    "recon_agent",
-    "vuln_analysis_agent",
-    "exploit_validation_agent",
-    "access_pivot_agent",
-    "goal_agent",
-]
-PlannerSelectedStage = Literal[
-    "RECON_STAGE",
-    "VULN_ANALYSIS_STAGE",
-    "EXPLOIT_STAGE",
-    "ACCESS_PIVOT_STAGE",
-    "GOAL_STAGE",
-]
 PlannerRiskLevel = Literal["low", "medium", "high", "critical"]
 
 
@@ -35,8 +21,8 @@ class PlannerDecision(BaseModel):
     operation_id: str = Field(min_length=1)
     cycle_index: int = Field(ge=0)
     decision: PlannerDecisionType
-    selected_agent: PlannerSelectedAgent | None = None
-    selected_stage: PlannerSelectedStage | None = None
+    selected_agent: str | None = None
+    selected_stage: str | None = None
     objective: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     required_context: dict[str, Any] = Field(default_factory=dict)
@@ -69,6 +55,4 @@ __all__ = [
     "PlannerDecision",
     "PlannerDecisionType",
     "PlannerRiskLevel",
-    "PlannerSelectedAgent",
-    "PlannerSelectedStage",
 ]

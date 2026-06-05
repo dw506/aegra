@@ -1,6 +1,6 @@
 """Compact graph context slices for LLM planning.
 
-The graph context builder is intentionally read-only. It turns AG/TG/runtime
+The graph context builder is intentionally read-only. It turns KG/AG/runtime
 state into a bounded, JSON-serializable snapshot that can be sent to an LLM
 without carrying raw tool output or long conversation history.
 """
@@ -27,10 +27,9 @@ from src.core.models.attack_process import AttackProcessEdge, AttackProcessNodeT
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.kg import Evidence, Finding, NetworkZone, Observation
 from src.core.models.runtime import RuntimeState, TaskRuntimeStatus
-from src.core.models.tg import BaseTaskNode, TaskGraph
 
 
-GraphContextRefScope = Literal["kg", "ag", "tg", "runtime", "query"]
+GraphContextRefScope = Literal["kg", "ag", "runtime", "query"]
 
 
 class GraphContextBuilderConfig(BaseModel):
@@ -120,7 +119,7 @@ class GraphContextAction(BaseModel):
 
 
 class GraphContextTask(BaseModel):
-    """Runtime/TG task summary."""
+    """Runtime task summary."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -128,7 +127,7 @@ class GraphContextTask(BaseModel):
     status: str
     task_type: str | None = None
     label: str | None = None
-    tg_node_id: str | None = None
+    execution_node_id: str | None = None
     source_action_id: str | None = None
     target_refs: list[GraphContextRef] = Field(default_factory=list)
     attempt_count: int = 0
@@ -262,7 +261,6 @@ class GraphContextBuilder:
         knowledge_graph: KnowledgeGraph | None = None,
         attack_graph: AttackGraph | None = None,
         runtime_state: RuntimeState | None = None,
-        task_graph: TaskGraph | None = None,
         policy_context: dict[str, Any] | None = None,
         findings: list[dict[str, Any]] | None = None,
         evidence: list[dict[str, Any]] | None = None,
@@ -277,7 +275,7 @@ class GraphContextBuilder:
         goals = self._build_goals(attack_graph)
         services = self._build_services(attack_graph)
         actions = self._build_frontier_actions(attack_graph)
-        tasks = self._build_tasks(runtime_state=runtime_state, task_graph=task_graph)
+        tasks = self._build_tasks(runtime_state=runtime_state)
         evidence_items = self._build_evidence(
             knowledge_graph=knowledge_graph,
             runtime_state=runtime_state,
@@ -295,7 +293,6 @@ class GraphContextBuilder:
             graph_versions=self._graph_versions(
                 knowledge_graph=knowledge_graph,
                 attack_graph=attack_graph,
-                task_graph=task_graph,
             ),
             goals=goals,
             known_services=services,
@@ -415,64 +412,32 @@ class GraphContextBuilder:
         self,
         *,
         runtime_state: RuntimeState | None,
-        task_graph: TaskGraph | None,
     ) -> dict[str, list[GraphContextTask]]:
         grouped: dict[str, list[GraphContextTask]] = {}
-        tg_nodes = self._task_graph_node_index(task_graph)
         if runtime_state is not None:
             for task in sorted(runtime_state.execution.tasks.values(), key=lambda item: item.task_id):
-                task_node = tg_nodes.get(task.tg_node_id)
+                task_metadata = dict(task.metadata)
                 summary = GraphContextTask(
                     ref=GraphContextRef(graph="runtime", ref_id=task.task_id, ref_type="TaskRuntime"),
                     status=task.status.value,
-                    task_type=task_node.task_type.value if task_node is not None else None,
-                    label=task_node.label if task_node is not None else None,
-                    tg_node_id=task.tg_node_id,
-                    source_action_id=task_node.source_action_id if task_node is not None else None,
-                    target_refs=[self._graph_ref(ref) for ref in task_node.target_refs] if task_node is not None else [],
+                    task_type=self._coerce_optional_str(task_metadata.get("task_type") or task_metadata.get("stage_type")),
+                    label=self._coerce_optional_str(task_metadata.get("label") or task_metadata.get("objective")),
+                    execution_node_id=task.execution_node_id,
+                    source_action_id=self._coerce_optional_str(task_metadata.get("source_action_id")),
+                    target_refs=[],
                     attempt_count=task.attempt_count,
                     max_attempts=task.max_attempts,
                     last_error=self._truncate(task.last_error, self.config.max_string_chars),
                     last_outcome_ref=task.last_outcome_ref,
                     resource_keys=sorted(task.resource_keys),
-                    metadata=self._sanitize_mapping(task.metadata),
+                    metadata=self._sanitize_mapping(task_metadata),
                 )
                 grouped.setdefault(task.status.value, []).append(summary)
-
-        if runtime_state is None and task_graph is not None:
-            for task_node in tg_nodes.values():
-                summary = self._task_node_summary(task_node)
-                grouped.setdefault(summary.status, []).append(summary)
 
         return {
             status: items[: self.config.max_tasks_per_status]
             for status, items in sorted(grouped.items())
         }
-
-    @staticmethod
-    def _task_graph_node_index(task_graph: TaskGraph | None) -> dict[str, BaseTaskNode]:
-        if task_graph is None:
-            return {}
-        return {
-            node.id: node
-            for node in task_graph.list_nodes()
-            if isinstance(node, BaseTaskNode)
-        }
-
-    def _task_node_summary(self, task_node: BaseTaskNode) -> GraphContextTask:
-        return GraphContextTask(
-            ref=GraphContextRef(graph="tg", ref_id=task_node.id, ref_type=type(task_node).__name__, label=task_node.label),
-            status=task_node.status.value,
-            task_type=task_node.task_type.value,
-            label=task_node.label,
-            tg_node_id=task_node.id,
-            source_action_id=task_node.source_action_id,
-            target_refs=[self._graph_ref(ref) for ref in task_node.target_refs],
-            attempt_count=task_node.attempt_count,
-            max_attempts=task_node.max_attempts,
-            resource_keys=sorted(task_node.resource_keys),
-            metadata=self._sanitize_mapping({"reason": task_node.reason, "tags": sorted(task_node.tags)}),
-        )
 
     def _build_evidence(
         self,
@@ -691,7 +656,6 @@ class GraphContextBuilder:
         *,
         knowledge_graph: KnowledgeGraph | None,
         attack_graph: AttackGraph | None,
-        task_graph: TaskGraph | None,
     ) -> dict[str, Any]:
         versions: dict[str, Any] = {}
         if knowledge_graph is not None:
@@ -701,10 +665,6 @@ class GraphContextBuilder:
             versions["ag_version"] = attack_graph.version
             versions["source_kg_version"] = attack_graph.source_kg_version
             versions["projection_batch_id"] = attack_graph.projection_batch_id
-        if task_graph is not None:
-            versions["tg_version"] = task_graph.version
-            versions["source_ag_version"] = task_graph.source_ag_version
-            versions["frontier_version"] = task_graph.frontier_version
         return versions
 
     def _stats(self, context: GraphContext) -> dict[str, Any]:

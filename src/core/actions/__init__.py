@@ -1,10 +1,3 @@
-"""Action templates that map AG actions into executable TG tasks."""
+"""Action helpers for AG-driven automation."""
 
-from src.core.actions.schemas import ActionTemplate, ActionTemplateInput, ActionTemplateOutput, build_task_from_action
-
-__all__ = [
-    "ActionTemplate",
-    "ActionTemplateInput",
-    "ActionTemplateOutput",
-    "build_task_from_action",
-]
+__all__: list[str] = []

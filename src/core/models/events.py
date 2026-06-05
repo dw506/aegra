@@ -1,14 +1,13 @@
 """Structured agent-layer protocol models.
 
 This module defines the input and output contracts exchanged between
-task-executing workers and the rest of the orchestration system.
+execution agents and the rest of the orchestration system.
 
 The protocol is intentionally ownership-aware:
-- Workers never write KG / AG / TG directly.
+- Execution agents never write KG / AG directly.
 - State Writer remains the only formal KG writer.
 - Graph Projection remains the only formal AG updater.
-- Task Builder / Scheduler remain the TG owners.
-- Planner and Critic communicate only through structured outputs.
+- Planner and execution agents communicate only through structured outputs.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from src.core.agents.agent_protocol import (
     GraphRef as ProtocolGraphRef,
 )
 from src.core.models.ag import GraphRef
-from src.core.models.tg import TaskType
 
 
 def utc_now() -> datetime:
@@ -54,7 +52,6 @@ class AgentRole(str, Enum):
     STATE_WRITER = "state_writer"
     GRAPH_PROJECTION = "graph_projection"
     TASK_BUILDER = "task_builder"
-    SCHEDULER = "scheduler"
     PLANNER = "planner"
     CRITIC = "critic"
     RECON_STAGE_AGENT = "recon_stage_agent"
@@ -142,16 +139,12 @@ class BaseProtocolModel(BaseModel):
 
 
 class AgentExecutionContext(BaseProtocolModel):
-    """Execution context passed to one worker.
-
-    This context links the worker request back to the current TG task and
-    Runtime State without embedding the full runtime snapshot.
-    """
+    """Execution context passed to one execution agent."""
 
     operation_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
-    task_type: TaskType
+    execution_node_id: str = Field(min_length=1)
+    task_type: str = Field(min_length=1)
     attempt_count: int = Field(default=0, ge=0)
     max_attempts: int = Field(default=1, ge=1)
     assigned_worker_id: str | None = None
@@ -213,24 +206,6 @@ class ProjectionRequest(BaseProtocolModel):
     reason: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     invalidated_ref_keys: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskCandidateProposal(BaseProtocolModel):
-    """Structured task candidate proposal for Task Builder / Scheduler.
-
-    Workers may suggest follow-up work, but they do not mutate TG directly.
-    """
-
-    candidate_id: str = Field(default_factory=lambda: new_protocol_id("task-candidate"))
-    source_task_id: str = Field(min_length=1)
-    task_type: TaskType
-    label: str = Field(min_length=1)
-    reason: str = Field(min_length=1)
-    input_bindings: dict[str, Any] = Field(default_factory=dict)
-    target_refs: list[GraphRef] = Field(default_factory=list)
-    resource_keys: set[str] = Field(default_factory=set)
-    priority_hint: int = Field(default=50, ge=0, le=100)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -319,7 +294,7 @@ class AgentTaskResult(BaseProtocolModel):
     agent_role: AgentRole
     operation_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     status: AgentResultStatus
     summary: str = Field(min_length=1)
     error_message: str | None = None
@@ -327,7 +302,6 @@ class AgentTaskResult(BaseProtocolModel):
     evidence: list[EvidenceArtifact] = Field(default_factory=list)
     fact_write_requests: list[FactWriteRequest] = Field(default_factory=list)
     projection_requests: list[ProjectionRequest] = Field(default_factory=list)
-    task_candidate_proposals: list[TaskCandidateProposal] = Field(default_factory=list)
     runtime_requests: list[RuntimeControlRequest] = Field(default_factory=list)
     checkpoint_hints: list[CheckpointHint] = Field(default_factory=list)
     replan_hints: list[ReplanHint] = Field(default_factory=list)
@@ -449,7 +423,7 @@ class AgentResultAdapter:
             agent_role=cls._agent_role(agent_input),
             operation_id=agent_input.context.operation_id,
             task_id=task_id,
-            tg_node_id=str(agent_input.raw_payload.get("tg_node_id") or task_id),
+            execution_node_id=str(agent_input.raw_payload.get("execution_node_id") or task_id),
             status=status,
             summary=summary,
             error_message="\n".join(agent_output.errors) or None,
@@ -631,7 +605,6 @@ __all__ = [
     "RuntimeBudgetDelta",
     "RuntimeControlRequest",
     "RuntimeControlType",
-    "TaskCandidateProposal",
     "new_protocol_id",
     "utc_now",
 ]

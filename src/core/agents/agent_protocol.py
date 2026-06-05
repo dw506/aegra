@@ -4,7 +4,7 @@ This module defines the common input/output envelope used across the agent
 layer. The protocol is intentionally generic and ownership-aware so that each
 agent can operate within a clear permission boundary:
 
-- KG / AG / TG / Runtime writes are permission-gated.
+    - KG / AG / Runtime writes are permission-gated.
 - Agents communicate through structured inputs and outputs.
 - Concrete business agents are expected to subclass :class:`BaseAgent`.
 """
@@ -33,8 +33,6 @@ class AgentKind(str, Enum):
     STATE_WRITER = "state_writer"
     GRAPH_PROJECTION = "graph_projection"
     PLANNER = "planner"
-    TASK_BUILDER = "task_builder"
-    SCHEDULER = "scheduler"
     WORKER = "worker"
     CRITIC = "critic"
     SUPERVISOR = "supervisor"
@@ -45,7 +43,6 @@ class GraphScope(str, Enum):
 
     KG = "kg"
     AG = "ag"
-    TG = "tg"
     RUNTIME = "runtime"
 
 
@@ -151,8 +148,8 @@ class AgentInput(BaseModel):
 
     Attributes:
         graph_refs: Graph objects or runtime refs that the agent may inspect.
-        task_ref: Optional TG task identifier associated with the invocation.
-        decision_ref: Optional planner or scheduler decision identifier.
+        task_ref: Optional execution task identifier associated with the invocation.
+        decision_ref: Optional planner decision identifier.
         context: Shared execution context for this invocation.
         raw_payload: Free-form structured payload reserved for agent-specific
             data that does not justify a dedicated top-level field yet.
@@ -166,11 +163,11 @@ class AgentInput(BaseModel):
     )
     task_ref: str | None = Field(
         default=None,
-        description="Associated TG task identifier, when applicable.",
+        description="Associated execution task identifier, when applicable.",
     )
     decision_ref: str | None = Field(
         default=None,
-        description="Associated planner or scheduler decision identifier.",
+        description="Associated planner decision identifier.",
     )
     context: AgentContext = Field(
         description="Execution context shared across the invocation.",
@@ -188,7 +185,7 @@ class AgentOutput(BaseModel):
         observations: Non-authoritative observations produced by the agent.
         evidence: Evidence references or summaries emitted by the agent.
         outcomes: Structured outcome records intended for downstream consumers.
-        decisions: Planner, scheduler or critic-style structured decisions.
+        decisions: Planner or critic-style structured decisions.
         state_deltas: Proposed state deltas gated by agent permissions.
         replan_requests: Structured replanning requests for downstream owners.
         emitted_events: Structured emitted events, when permitted.
@@ -212,7 +209,7 @@ class AgentOutput(BaseModel):
     )
     decisions: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Structured planner, scheduler or critic decisions.",
+        description="Structured planner or critic decisions.",
     )
     state_deltas: list[dict[str, Any]] = Field(
         default_factory=list,

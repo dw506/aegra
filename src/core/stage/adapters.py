@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.core.graph.tg_builder import TaskCandidate
 from src.core.models.ag import GraphRef
 from src.core.models.events import (
     AgentResultStatus,
@@ -18,10 +17,8 @@ from src.core.models.events import (
     ReplanScope,
     RuntimeControlRequest,
     RuntimeControlType,
-    TaskCandidateProposal,
     new_protocol_id,
 )
-from src.core.models.tg import TaskType
 from src.core.stage.models import StageResult, normalize_stage_name
 
 
@@ -51,7 +48,6 @@ class StageResultAdapter:
         observations = cls._observations(stage_result)
         evidence = cls._evidence(stage_result)
         fact_writes = cls._fact_writes(stage_result)
-        task_candidates = cls._task_candidate_proposals(stage_result)
         runtime_requests = cls._runtime_requests(stage_result)
         replan_hints = []
         if stage_result.status in {"needs_replan", "blocked", "need_more_info"}:
@@ -69,13 +65,12 @@ class StageResultAdapter:
             agent_role=cls.ROLE_BY_STAGE[normalize_stage_name(stage_result.stage_type)],
             operation_id=stage_result.operation_id,
             task_id=stage_result.stage_task_id,
-            tg_node_id=stage_result.stage_task_id,
+            execution_node_id=stage_result.stage_task_id,
             status=cls.STATUS_MAP[stage_result.status],
             summary=stage_result.summary,
             observations=observations,
             evidence=evidence,
             fact_write_requests=fact_writes,
-            task_candidate_proposals=task_candidates,
             runtime_requests=runtime_requests,
             replan_hints=replan_hints,
             outcome_payload={
@@ -89,7 +84,7 @@ class StageResultAdapter:
                 "retry_recommendation": stage_result.retry_recommendation,
                 "replan_recommendation": stage_result.replan_recommendation,
                 "next_stage_suggestion": stage_result.next_stage_suggestion,
-                "task_candidates": [item.model_dump(mode="json") for item in cls._task_candidates(stage_result)],
+                "next_stage_candidates": list(stage_result.next_stage_candidates),
             },
             metadata={
                 "adapted_from": "stage_result",
@@ -202,50 +197,6 @@ class StageResultAdapter:
         return writes
 
     @classmethod
-    def _task_candidate_proposals(cls, stage_result: StageResult) -> list[TaskCandidateProposal]:
-        proposals: list[TaskCandidateProposal] = []
-        for candidate in stage_result.next_stage_candidates:
-            if not isinstance(candidate, dict):
-                continue
-            task_type = cls._task_type(candidate.get("stage_type") or candidate.get("task_type"))
-            if task_type is None:
-                continue
-            proposals.append(
-                TaskCandidateProposal(
-                    source_task_id=stage_result.stage_task_id,
-                    task_type=task_type,
-                    label=str(candidate.get("objective") or candidate.get("label") or task_type.value),
-                    reason=str(candidate.get("reason") or candidate.get("summary") or "stage agent proposed next stage"),
-                    input_bindings={
-                        "objective": candidate.get("objective") or candidate.get("label") or task_type.value,
-                        "required_context": dict(candidate.get("required_context") or {}),
-                        "success_criteria": list(candidate.get("success_criteria") or []),
-                        "max_steps": int(candidate.get("max_steps") or 8),
-                        "risk_level": candidate.get("risk_level") or "medium",
-                    },
-                    target_refs=cls._refs(candidate.get("target_refs")),
-                    resource_keys=set(str(item) for item in candidate.get("resource_keys", []) if item is not None),
-                    priority_hint=int(candidate.get("priority") or 50),
-                    metadata={key: value for key, value in candidate.items() if key not in {"stage_type", "task_type", "objective", "label", "reason", "target_refs", "resource_keys", "priority"}},
-                )
-            )
-        return proposals
-
-    @classmethod
-    def _task_candidates(cls, stage_result: StageResult) -> list[TaskCandidate]:
-        candidates: list[TaskCandidate] = []
-        for proposal in cls._task_candidate_proposals(stage_result):
-            candidates.append(
-                TaskCandidate(
-                    source_action_id=f"{stage_result.stage_task_id}:{proposal.candidate_id}",
-                    task_type=proposal.task_type,
-                    input_bindings=dict(proposal.input_bindings),
-                    target_refs=list(proposal.target_refs),
-                    resource_keys=set(proposal.resource_keys),
-                )
-            )
-        return candidates
-
     @classmethod
     def _runtime_requests(cls, stage_result: StageResult) -> list[RuntimeControlRequest]:
         requests: list[RuntimeControlRequest] = []
@@ -314,14 +265,6 @@ class StageResultAdapter:
         return [{key: value for key, value in hint.items() if value is not None} for hint in hints]
 
     @staticmethod
-    def _task_type(value: Any) -> TaskType | None:
-        if value is None:
-            return None
-        try:
-            return TaskType(str(value))
-        except ValueError:
-            return None
-
     @classmethod
     def _refs(cls, value: Any) -> list[GraphRef]:
         if not isinstance(value, list):

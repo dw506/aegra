@@ -9,9 +9,6 @@ from src.core.stage.base_stage_agent import BaseStageAgent
 class ReconAgent(BaseStageAgent):
     stage_type = "RECON_STAGE"
     agent_name = "recon_agent"
-    allowed_tool_names = frozenset({"nmap_scan", "http_probe", "web_fingerprint", "web_discover", "dns_lookup", "tls_probe", "tcp_connect_probe"})
-    denied_tool_names = frozenset({"run_command", "safe_vuln_validate", "credential_check", "session_open_lab", "pivot_route_probe"})
-    tool_categories = frozenset({"nmap", "scan", "probe", "discover", "dns", "tls", "fingerprint"})
 
     def __init__(
         self,

@@ -1,0 +1,504 @@
+
+2026-06-04T12:21:29.362786+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:21:29.364208+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:21:29.365554+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:21:29.269210Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:21:29.367758+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:21:29.370784+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: replan
+
+2026-06-04T12:23:56.933713+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:23:56.934607+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:23:56.934986+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:23:56.847607Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:23:56.938238+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:23:56.942090+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: replan
+
+2026-06-04T12:36:37.209659+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:36:37.210690+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:36:37.212087+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:36:37.156391Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:36:37.213795+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:36:37.216320+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:41:47.620792+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:41:47.621793+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:41:47.622796+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:41:47.572505Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:41:47.624510+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:41:47.626389+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:47:21.790801+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:47:21.792855+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:47:21.795783+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:47:21.693071Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:47:21.798744+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:47:21.808354+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:51:54.724834+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:51:54.725477+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:51:54.725976+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:51:54.677470Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:51:54.727738+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:51:54.730607+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:52:46.498448+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:52:46.501904+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:52:46.504237+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:52:46.415662Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:52:46.505449+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:52:46.509316+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:54:17.880442+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:54:17.880442+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:54:17.883702+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:54:17.821007Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:54:17.885894+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:54:17.888518+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:55:57.392834+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:55:57.394196+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:55:57.396193+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:55:57.261758Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:55:57.398801+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:55:57.403531+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:59:15.670976+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:59:15.672698+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:59:15.673833+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:59:15.613544Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T12:59:15.675197+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:59:15.677308+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:15:01.169068+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:15:01.169939+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:15:01.171711+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:15:01.066590Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T13:15:01.173179+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:15:01.176164+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:26:49.715535+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:26:49.716555+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:26:49.718544+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:26:49.618484Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T13:26:49.719560+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:26:49.723253+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:27:34.173752+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:27:34.177660+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:27:34.183366+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:27:34.091553Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T13:27:34.184992+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:27:34.187786+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:31:26.495823+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:31:26.496851+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:31:26.498852+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:31:26.404414Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-04T13:31:26.500793+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:31:26.503295+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None

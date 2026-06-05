@@ -9,9 +9,6 @@ from src.core.stage.base_stage_agent import BaseStageAgent
 class VulnAnalysisAgent(BaseStageAgent):
     stage_type = "VULN_ANALYSIS_STAGE"
     agent_name = "vuln_analysis_agent"
-    allowed_tool_names = frozenset({"vuln_profile_match", "validation_precheck", "whatweb_fingerprint", "nuclei_scan", "http_probe"})
-    denied_tool_names = frozenset({"run_command", "safe_vuln_validate", "credential_check", "session_open_lab", "pivot_route_probe"})
-    tool_categories = frozenset({"vuln", "cve", "exploit_doc", "profile", "precheck", "repo"})
 
     def __init__(
         self,

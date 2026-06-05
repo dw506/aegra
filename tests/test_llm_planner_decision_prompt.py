@@ -69,6 +69,9 @@ def test_llm_planner_decision_prompt_uses_decision_contract_not_task_graph() -> 
             "kg_summary": {"hosts": ["host-1"]},
             "ag_summary": {"process_nodes": []},
             "runtime_summary": {"status": "running"},
+            "lab_profile": {"profile_id": "docker-multihost"},
+            "mcp_tool_catalog": {"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
+            "agent_capabilities": [{"agent_name": "recon_agent", "stage_type": "RECON_STAGE"}],
         },
         policy_context={"authorized": True},
     )
@@ -82,3 +85,6 @@ def test_llm_planner_decision_prompt_uses_decision_contract_not_task_graph() -> 
     assert "selected_next_task" not in prompt_text
     assert "shell commands" in prompt_text
     assert "MCP tool arguments" in prompt_text
+    assert "LabProfile" in prompt_text
+    assert "ToolCatalog" in prompt_text
+    assert "parallel capability pool" in prompt_text

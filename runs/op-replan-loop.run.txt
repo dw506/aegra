@@ -1,0 +1,1296 @@
+
+2026-06-04T12:36:37.348320+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:36:37.349322+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:36:37.350930+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:36:37.298668Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:36:37.360534+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:36:37.363226+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:36:37.433216+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:36:37.434216+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:36:37.436483+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:36:37.298668Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:36:37.438551+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:36:37.440468+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:36:37.512709+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:36:37.513209+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:36:37.514710+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:36:37.298668Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:36:37.515710+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:36:37.517806+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:41:47.738618+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:41:47.738618+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:41:47.739622+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:41:47.691131Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:41:47.741217+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:41:47.742263+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:41:47.805443+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:41:47.806451+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:41:47.807450+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:41:47.691131Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:41:47.808450+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:41:47.809450+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:41:47.877532+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:41:47.878493+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:41:47.880627+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:41:47.691131Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:41:47.881663+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:41:47.883758+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:47:22.030875+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:47:22.032972+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:47:22.035706+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:47:21.932074Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:47:22.037690+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:47:22.040002+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:47:22.270065+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:47:22.271583+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:47:22.273791+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:47:21.932074Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:47:22.276460+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:47:22.280500+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:47:22.399339+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:47:22.404684+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:47:22.410377+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:47:21.932074Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:47:22.413128+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:47:22.459309+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:51:54.889256+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:51:54.891250+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:51:54.893253+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:51:54.805071Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:51:54.894252+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:51:54.897952+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:51:54.989704+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:51:54.989704+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:51:54.990705+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:51:54.805071Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:51:54.991705+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:51:54.992806+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:51:55.058902+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:51:55.058902+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:51:55.059925+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:51:54.805071Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:51:55.061064+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:51:55.062628+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:52:46.779858+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:52:46.781669+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:52:46.783211+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:52:46.677301Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:52:46.784941+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:52:46.787237+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:52:46.905334+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:52:46.906369+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:52:46.907572+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:52:46.677301Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:52:46.908959+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:52:46.911957+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:52:47.033456+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:52:47.034526+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:52:47.037732+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:52:46.677301Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:52:47.039267+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:52:47.041766+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:54:18.019354+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:54:18.020638+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:54:18.021275+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:54:17.960798Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:54:18.023091+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:54:18.024701+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:54:18.114593+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:54:18.116725+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:54:18.119756+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:54:17.960798Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:54:18.121875+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:54:18.123165+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:54:18.209337+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:54:18.210373+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:54:18.211929+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:54:17.960798Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:54:18.213518+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:54:18.217331+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:55:57.763496+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:55:57.765099+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:55:57.768481+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:55:57.615302Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:55:57.770661+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:55:57.775240+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:55:57.963806+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:55:57.970025+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:55:57.980275+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:55:57.615302Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:55:57.988715+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:55:57.997042+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:55:58.311833+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:55:58.313332+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:55:58.316753+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:55:57.615302Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:55:58.320210+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:55:58.324587+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T12:59:15.806916+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:59:15.807941+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T12:59:15.809416+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T12:59:15.751388Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:59:15.810916+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:59:15.813417+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:59:15.890052+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:59:15.891394+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T12:59:15.893222+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:59:15.751388Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:59:15.894221+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:59:15.896222+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T12:59:15.986721+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T12:59:15.987222+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T12:59:15.988727+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T12:59:15.751388Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T12:59:15.990222+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T12:59:15.992739+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T13:15:01.369407+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:15:01.370863+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:15:01.372304+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:15:01.288730Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:15:01.373303+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:15:01.376992+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:15:01.485602+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:15:01.487212+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T13:15:01.488672+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:15:01.288730Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:15:01.490115+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:15:01.493332+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:15:01.609051+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:15:01.610052+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T13:15:01.612026+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:15:01.288730Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:15:01.614565+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:15:01.617096+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T13:26:49.911790+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:26:49.913790+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:26:49.916367+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:26:49.839181Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:26:49.918885+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:26:49.921102+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:26:50.022624+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:26:50.024054+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T13:26:50.026825+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:26:49.839181Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:26:50.028674+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:26:50.032261+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:26:50.122775+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:26:50.123307+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T13:26:50.125288+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:26:49.839181Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:26:50.128041+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:26:50.133211+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T13:27:34.375135+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:27:34.377560+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:27:34.379610+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:27:34.301363Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:27:34.381964+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:27:34.385118+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:27:34.492296+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:27:34.493247+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T13:27:34.496106+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:27:34.301363Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:27:34.498165+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:27:34.501431+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:27:34.600427+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:27:34.600427+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T13:27:34.602979+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:27:34.301363Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:27:34.604479+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:27:34.607873+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied
+
+2026-06-04T13:31:26.750545+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:31:26.751557+00:00 【CYCLE】 cycle=1 started
+
+2026-06-04T13:31:26.753756+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-04T13:31:26.630689Z", "engagement": {"engagement_id": "engagement::op-replan-loop", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "loaded_from": "settings"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:31:26.755755+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:31:26.762312+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:31:26.872935+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 2
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:31:26.874882+00:00 【CYCLE】 cycle=2 started
+
+2026-06-04T13:31:26.877350+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:31:26.630689Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:31:26.879382+00:00 【PLANNER】 planner decision
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned replan
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:31:26.882343+00:00 【CYCLE】 cycle completed
+  cycle: 2
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-04T13:31:26.989982+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-replan-loop
+  cycle: 3
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-04T13:31:26.993873+00:00 【CYCLE】 cycle=3 started
+
+2026-06-04T13:31:27.007017+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "10.20.0.20", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "10.20.0.20"}], "denylist": [], "engagement_id": "engagement::op-replan-loop", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "10.20.0.20"}]}, "loaded_at": "2026-06-04T13:31:26.630689Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings", "profile_id": "docker-multihost"}
+  tool_catalog: {"available": false, "error": "MCP is not configured"}
+
+2026-06-04T13:31:27.011124+00:00 【PLANNER】 planner decision
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: planner returned stop_success
+  success_criteria: []
+  target_refs: []
+
+2026-06-04T13:31:27.013915+00:00 【CYCLE】 cycle completed
+  cycle: 3
+  selected_agent: None
+  selected_stage: None
+  status: completed
+  stop_reason: goal_satisfied

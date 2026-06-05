@@ -11,7 +11,6 @@ from typing import Any
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import RuntimeState
-from src.core.models.tg import TaskGraph
 
 
 class GraphMemoryStore:
@@ -23,9 +22,6 @@ class GraphMemoryStore:
 
     KG_FILENAME = "kg.json"
     AG_FILENAME = "ag.json"
-    # Legacy compatibility: TG persistence remains readable/writable for older callers,
-    # but the primary snapshot path no longer includes TG by default.
-    TG_FILENAME = "tg.json"
     RUNTIME_FILENAME = "runtime.json"
     SNAPSHOTS_DIRNAME = "snapshots"
 
@@ -70,21 +66,6 @@ class GraphMemoryStore:
         with self._lock:
             self._write_json(self._artifact_path(operation_id, self.AG_FILENAME), ag.to_dict())
 
-    def load_tg(self, operation_id: str) -> TaskGraph:
-        """Legacy compatibility: load a Task Graph snapshot, or return an empty graph when absent."""
-
-        with self._lock:
-            path = self._artifact_path(operation_id, self.TG_FILENAME)
-            if not path.exists():
-                return TaskGraph()
-            return TaskGraph.from_dict(self._read_json(path))
-
-    def save_tg(self, operation_id: str, tg: TaskGraph) -> None:
-        """Legacy compatibility: persist a Task Graph snapshot."""
-
-        with self._lock:
-            self._write_json(self._artifact_path(operation_id, self.TG_FILENAME), tg.to_dict())
-
     def load_runtime(self, operation_id: str) -> RuntimeState | None:
         """Load a RuntimeState snapshot, or return None when absent."""
 
@@ -105,7 +86,7 @@ class GraphMemoryStore:
                 runtime.model_dump(mode="json"),
             )
 
-    def save_snapshot(self, operation_id: str, cycle_index: int, *, include_legacy_tg: bool = False) -> Path:
+    def save_snapshot(self, operation_id: str, cycle_index: int) -> Path:
         """Copy current operation graph files into a cycle snapshot directory."""
 
         if cycle_index < 0:
@@ -126,9 +107,6 @@ class GraphMemoryStore:
                 self.AG_FILENAME,
                 self.RUNTIME_FILENAME,
             ]
-            if include_legacy_tg:
-                filenames.insert(2, self.TG_FILENAME)
-
             for filename in filenames:
                 source = operation_dir / filename
                 if not source.exists():

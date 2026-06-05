@@ -6,9 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.execution.tool_plan import ToolPlan
 from src.core.models.runtime import RuntimeState
-from src.core.models.tg import BaseTaskNode
 from src.core.runtime.policy import policy_from_runtime_state
-from src.core.runtime.policy_gate import PolicyGate, PolicyGateAction
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 
 
@@ -31,21 +29,9 @@ class ToolPolicy:
         self,
         plan: ToolPlan,
         runtime_state: RuntimeState,
-        *,
-        task: BaseTaskNode | None = None,
     ) -> ToolPolicyDecision:
         """Return ALLOW/DENY/APPROVAL decision for one plan."""
 
-        if task is not None:
-            gate_decision = PolicyGate().evaluate(task, runtime_state=runtime_state)
-            PolicyGate().audit(runtime_state, gate_decision)
-            return ToolPolicyDecision(
-                allowed=gate_decision.action == PolicyGateAction.ALLOW,
-                reason=gate_decision.reason,
-                gate=gate_decision.gate,
-                approval_id=gate_decision.approval_id,
-                metadata={"policy_gate_action": gate_decision.action.value, "plan": plan.model_dump(mode="json")},
-            )
         if not (plan.command or plan.tool or "").strip():
             return ToolPolicyDecision(allowed=False, gate="tool_plan", reason="tool plan tool is empty")
         runtime_policy = policy_from_runtime_state(runtime_state)

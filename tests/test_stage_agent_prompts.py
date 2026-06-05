@@ -79,6 +79,8 @@ def test_llm_stage_advisor_uses_common_and_agent_specific_prompt() -> None:
     assert "You are GoalAgent" in system_prompt
     assert "runtime_hints.goal_satisfied=true" in system_prompt
     assert "You are an Aegra LLM Stage Agent" in system_prompt
+    assert "parallel execution capability pool" in system_prompt
+    assert "Do not call or route work to another StageAgent" in system_prompt
 
 
 def test_llm_stage_advisor_normalizes_string_finish_items_and_legacy_intents() -> None:

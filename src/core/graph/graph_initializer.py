@@ -1,4 +1,4 @@
-"""Initial KG / AG / TG construction for a new operation."""
+"""Initial KG / AG construction for a new operation."""
 
 from __future__ import annotations
 
@@ -11,11 +11,9 @@ from urllib.parse import urlparse
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.graph.tg_builder import AttackGraphTaskBuilder, TaskGenerationRequest
 from src.core.models.ag import ActionNode, ActionNodeType, AttackGraph, stable_node_id
 from src.core.models.kg import BelongsToZoneEdge, Goal, Host, NetworkZone, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
-from src.core.models.tg import BaseTaskNode, TaskGraph
 
 
 @dataclass(frozen=True)
@@ -41,12 +39,10 @@ class GraphInitializationResult:
     target: InitialTarget
     kg: KnowledgeGraph
     ag: AttackGraph
-    tg: TaskGraph
     host_id: str
     goal_id: str
     scope_id: str
     initial_action_ids: list[str]
-    initial_task_ids: list[str]
 
 
 class GraphInitializer:
@@ -57,11 +53,9 @@ class GraphInitializer:
         store: GraphMemoryStore | None = None,
         *,
         projector: AttackGraphProjector | None = None,
-        task_builder: AttackGraphTaskBuilder | None = None,
     ) -> None:
         self._store = store or GraphMemoryStore()
         self._projector = projector or AttackGraphProjector()
-        self._task_builder = task_builder or AttackGraphTaskBuilder()
 
     def initialize(
         self,
@@ -73,7 +67,7 @@ class GraphInitializer:
         goal_category: str = "context",
         persist: bool = True,
     ) -> GraphInitializationResult:
-        """Build initial KG / AG / TG from a user target and optionally persist it."""
+        """Build initial KG / AG from a user target and optionally persist it."""
 
         normalized_target = normalize_initial_target(target)
         kg = self._build_initial_kg(
@@ -85,29 +79,20 @@ class GraphInitializer:
         )
         ag = self._projector.project(kg, goal_context={"goal_ids": [self._goal_id(operation_id)]})
         initial_actions = self._select_initial_actions(ag, self._host_id(operation_id, normalized_target))
-        tg = self._build_initial_tg(ag, initial_actions)
-        initial_task_ids = [
-            node.id
-            for node in tg.list_nodes()
-            if isinstance(node, BaseTaskNode) and node.source_action_id in {action.id for action in initial_actions}
-        ]
 
         if persist:
             self._store.save_kg(operation_id, kg)
             self._store.save_ag(operation_id, ag)
-            self._store.save_tg(operation_id, tg)
 
         return GraphInitializationResult(
             operation_id=operation_id,
             target=normalized_target,
             kg=kg,
             ag=ag,
-            tg=tg,
             host_id=self._host_id(operation_id, normalized_target),
             goal_id=self._goal_id(operation_id),
             scope_id=self._scope_id(operation_id, normalized_target),
             initial_action_ids=[action.id for action in initial_actions],
-            initial_task_ids=sorted(initial_task_ids),
         )
 
     def _build_initial_kg(
@@ -206,19 +191,6 @@ class GraphInitializer:
             if any(ref.graph == "kg" and ref.ref_id == host_id for ref in action.source_refs)
         ]
         return sorted(actions, key=lambda action: action.id)
-
-    def _build_initial_tg(self, ag: AttackGraph, actions: list[ActionNode]) -> TaskGraph:
-        result = self._task_builder.build_candidates(
-            ag,
-            TaskGenerationRequest(
-                action_ids=[action.id for action in actions],
-                include_evidence_tasks=False,
-                group_label="Initial Probe",
-            ),
-        )
-        if result.task_graph is None:
-            return TaskGraph()
-        return TaskGraph.from_dict(result.task_graph)
 
     @staticmethod
     def _target_properties(target: InitialTarget) -> dict[str, Any]:

@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-GraphName = Literal["kg", "ag", "tg", "runtime"]
+GraphName = Literal["kg", "ag", "runtime"]
 
 
 def utc_now() -> datetime:

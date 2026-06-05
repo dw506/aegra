@@ -1,4 +1,4 @@
-"""Build executable tool plans from Task Graph nodes."""
+"""Build executable tool plans from structured execution specs."""
 
 from __future__ import annotations
 
@@ -7,11 +7,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.agents.agent_protocol import GraphRef
-from src.core.models.tg import BaseTaskNode
 
 
 class ToolPlan(BaseModel):
-    """Minimal adapter-facing plan for one TG task."""
+    """Minimal adapter-facing plan for one execution task."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -34,10 +33,10 @@ class ToolPlan(BaseModel):
         return self
 
 
-def build_tool_plan(task: BaseTaskNode, *, default_adapter: str | None = None) -> ToolPlan:
-    """Convert one TG task into a ToolPlan without executing it."""
+def build_tool_plan(task: Any, *, default_adapter: str | None = None) -> ToolPlan:
+    """Convert one task-like object into a ToolPlan without executing it."""
 
-    bindings = dict(task.input_bindings)
+    bindings = dict(getattr(task, "input_bindings", {}) or {})
     selected_route = bindings.get("selected_route") if isinstance(bindings.get("selected_route"), dict) else {}
     route_metadata = selected_route.get("metadata") if isinstance(selected_route.get("metadata"), dict) else {}
     route_transport = route_metadata.get("transport") if isinstance(route_metadata.get("transport"), dict) else {}
@@ -66,7 +65,7 @@ def build_tool_plan(task: BaseTaskNode, *, default_adapter: str | None = None) -
         target_agent_ref=str(target_agent_ref) if target_agent_ref is not None else None,
         timeout_seconds=int(timeout) if timeout is not None else 60,
         metadata={
-            "tg_node_id": task.id,
+            "execution_node_id": task.id,
             "task_type": task.task_type.value,
             "source_action_id": task.source_action_id,
             "resource_keys": sorted(task.resource_keys),

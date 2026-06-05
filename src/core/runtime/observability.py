@@ -205,7 +205,7 @@ def prepare_state_for_resume(
 
     # 中文注释：
     # 活动锁在 crash 后已失去 owner 连通性，保守策略是直接释放，
-    # 避免下一轮 scheduler 因旧锁永久阻塞。
+    # 避免后续执行因旧锁永久阻塞。
     for lock in state.locks.values():
         if lock.status != LockStatus.ACTIVE:
             continue
@@ -244,7 +244,7 @@ def prepare_state_for_resume(
 
     # 中文注释：
     # lease 视图要和 session/task 恢复结果保持一致：所有仍然活动的 lease 都在恢复点收口释放，
-    # 否则 scheduler 会误以为 session 仍被旧 task 持有。
+    # 否则后续执行会误以为 session 仍被旧 task 持有。
     for lease in state.session_leases.values():
         if "released_at" in lease.metadata:
             continue

@@ -5,9 +5,9 @@ from typing import Any
 
 from src.core.models.ag import GraphRef
 from src.core.planning.models import PlannerDecision
-from src.core.stage.agents import ReconAgent
+from src.core.stage.agents import ExploitValidationAgent, ReconAgent
+from src.core.stage.base_stage_agent import StageAgentDecision, StageToolCall
 from src.core.stage.dispatcher import StageDispatcher
-from src.core.stage.base_stage_agent import StageAgentDecision
 from src.core.stage.models import StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
 
@@ -37,6 +37,44 @@ class FinishAdvisor:
         )
 
 
+class ValidationPrecheckAdvisor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def decide(self, **kwargs: Any) -> StageAgentDecision:
+        self.calls += 1
+        if kwargs["memory"]:
+            return StageAgentDecision(
+                action="finish",
+                rationale="precheck completed",
+                finish={"status": "succeeded", "summary": "validation precheck completed"},
+            )
+        return StageAgentDecision(
+            action="call_tool",
+            rationale="run bounded precheck",
+            tool_call=StageToolCall(
+                server_id="pentest-tools",
+                tool_name="validation_precheck",
+                arguments={"profile_id": "struts2-s2-045"},
+            ),
+        )
+
+
+class RecordingMCP:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def call_tool(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        return {
+            "success": True,
+            "stdout": "{\"precheck\": true}",
+            "stderr": "",
+            "exit_code": 0,
+            "metadata": {"parsed_output": {"runtime_hints": {"validation_precheck_passed": True}}},
+        }
+
+
 def test_stage_agent_registry_still_registers_five_agents() -> None:
     registry = StageAgentRegistry.default()
 
@@ -63,8 +101,7 @@ def test_exploit_validation_agent_name_matches_planner_and_dispatcher() -> None:
     )
 
     assert agent.agent_name == "exploit_validation_agent"
-    assert StageDispatcher.AGENT_STAGE_MAP["exploit_validation_agent"] == "EXPLOIT_STAGE"
-    assert "_".join(["exploit", "agent"]) not in StageDispatcher.AGENT_STAGE_MAP
+    assert registry.resolve_agent("exploit_validation_agent").stage_type == "EXPLOIT_STAGE"
     assert decision.selected_agent == agent.agent_name
 
 
@@ -104,3 +141,43 @@ def test_base_stage_agent_main_path_has_no_task_graph_dependency() -> None:
 
     assert "TaskGraph" not in source
     assert "src.core.models.tg" not in source
+
+
+def test_exploit_validation_precheck_infers_missing_target_url() -> None:
+    advisor = ValidationPrecheckAdvisor()
+    mcp = RecordingMCP()
+    request = StageExecutionRequest(
+        operation_id="op-validation-url",
+        cycle_index=3,
+        agent_name="exploit_validation_agent",
+        stage_type="EXPLOIT_STAGE",
+        objective="Safely validate Struts2 candidate",
+        target_refs=[
+            GraphRef(graph="kg", ref_id="service::10.20.0.22:8080/tcp", ref_type="Service"),
+        ],
+        required_context={"profile_id": "struts2-s2-045"},
+        success_criteria=["validation precheck receives a target_url"],
+        risk_level="medium",
+        max_steps=2,
+        kg_snapshot={},
+        ag_process_history={},
+        runtime_context={},
+        policy_context={"authorized_hosts": ["10.20.0.0/24"]},
+        mcp_tool_catalog={
+            "pentest-tools": {
+                "tools": [
+                    {
+                        "name": "validation_precheck",
+                        "category": "vuln",
+                        "requires_authorization": True,
+                    }
+                ]
+            }
+        },
+    )
+
+    result = ExploitValidationAgent(advisor=advisor, mcp_client=mcp).run(request)
+
+    assert result.status == "succeeded"
+    assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
+    assert result.tool_traces[0].arguments["target_url"] == "http://10.20.0.22:8080/"

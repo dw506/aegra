@@ -94,6 +94,8 @@ def test_tool_executor_audits_out_of_scope_task_without_policy_blocking() -> Non
     result = ToolExecutor().execute(build_tool_plan(task), state, task=task)
 
     assert result.status.value != "blocked"
+    assert result.metadata["tool_policy"]["metadata"]["policy_audit_only"] is True
+    assert result.metadata["tool_policy"]["metadata"]["original_allowed"] is False
     audit = state.execution.metadata["audit_log"][-1]["decision"]
     assert audit["metadata"]["policy_audit_only"] is True
     assert audit["metadata"]["original_allowed"] is False

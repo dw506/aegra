@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,9 +20,7 @@ from src.core.agents.agent_protocol import (
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
 from src.core.agents.registry import AgentNotFoundError, AgentRegistry
 from src.core.models.events import AgentTaskResult
-from src.core.models.tg import BaseTaskNode, TaskGraph
 from src.core.runtime.worker_result_adapter import WorkerResultAdapter
-from src.core.workers.base import BaseWorkerAgent, WorkerTaskSpec
 
 
 class PipelineStepResult(BaseModel):
@@ -123,7 +121,6 @@ class AgentPipeline:
         graph_refs: Sequence[GraphRef],
         planner_payload: dict[str, Any],
         planner_agent: str | None = None,
-        task_builder_agent: str | None = None,
         context: AgentContext | dict[str, Any] | None = None,
     ) -> PipelineCycleResult:
         steps: list[PipelineStepResult] = []
@@ -131,127 +128,7 @@ class AgentPipeline:
         planner_step = self._dispatch("planner", planner_input, agent_name=planner_agent, agent_kind=AgentKind.PLANNER)
         steps.append(planner_step)
         self._forward(planner_step)
-        for index, decision in enumerate(planner_step.agent_output.decisions, start=1):
-            builder_input = self._build_input(
-                operation_id,
-                graph_refs,
-                {
-                    "decision": decision,
-                    "tg_graph": planner_payload.get("tg_graph"),
-                    "task_graph": planner_payload.get("task_graph"),
-                    "candidate_actions": self._extract_candidate_actions(decision),
-                    "task_candidates": self._extract_task_candidates(decision),
-                    "runtime_hints": self._mapping(planner_payload.get("runtime_hints")),
-                },
-                decision_ref=str(decision.get("id") or ""),
-                context=context,
-            )
-            step = self._dispatch(
-                f"task_builder[{index}]",
-                builder_input,
-                agent_name=task_builder_agent,
-                agent_kind=AgentKind.TASK_BUILDER,
-            )
-            steps.append(step)
-            self._forward(step)
         return self._cycle("planning", operation_id, steps)
-
-    def run_execution_cycle(
-        self,
-        *,
-        operation_id: str,
-        graph_refs: Sequence[GraphRef],
-        scheduler_payload: dict[str, Any],
-        scheduler_agent: str | None = None,
-        worker_agent: str | None = None,
-        context: AgentContext | dict[str, Any] | None = None,
-    ) -> PipelineCycleResult:
-        steps: list[PipelineStepResult] = []
-        scheduler_input = self._build_input(operation_id, graph_refs, scheduler_payload, context=context)
-        scheduler_step = self._dispatch(
-            "scheduler",
-            scheduler_input,
-            agent_name=scheduler_agent,
-            agent_kind=AgentKind.SCHEDULER,
-        )
-        steps.append(scheduler_step)
-        self._forward(scheduler_step)
-        task_graph = self._resolve_task_graph(scheduler_payload)
-        for index, decision in enumerate(self._accepted(scheduler_step.agent_output.decisions), start=1):
-            worker_input = self._build_worker_input(
-                operation_id=operation_id,
-                graph_refs=graph_refs,
-                decision=decision,
-                task_graph=task_graph,
-                scheduler_payload=scheduler_payload,
-                context=context,
-            )
-            worker = self._select_worker(
-                worker_input,
-                explicit_name=worker_agent,
-                preferred_name=self._first_text(
-                    decision.get("worker_id"),
-                    self._mapping(scheduler_payload.get("worker_overrides")).get(
-                        str(worker_input.raw_payload.get("task_type"))
-                    ),
-                ),
-            )
-            step = self._dispatch(f"worker[{index}]", worker_input, agent_name=worker.name)
-            steps.append(step)
-            self._forward(step)
-        return self._cycle("execution", operation_id, steps)
-
-    def run_worker_execution_cycle(
-        self,
-        *,
-        operation_id: str,
-        graph_refs: Sequence[GraphRef],
-        scheduler_payload: dict[str, Any],
-        scheduler_output: AgentOutput,
-        worker_agent: str | None = None,
-        context: AgentContext | dict[str, Any] | None = None,
-    ) -> PipelineCycleResult:
-        """Run worker steps from deterministic scheduler output."""
-
-        steps: list[PipelineStepResult] = []
-        started_at = datetime.now(timezone.utc)
-        scheduler_step = PipelineStepResult(
-            step_name="scheduler",
-            agent_name="schedule_ready_tasks",
-            agent_kind=AgentKind.SCHEDULER,
-            success=not scheduler_output.errors,
-            agent_input=self._build_input(operation_id, graph_refs, scheduler_payload, context=context),
-            agent_output=scheduler_output,
-            started_at=started_at,
-            finished_at=started_at,
-            duration_ms=0,
-        )
-        steps.append(scheduler_step)
-        self._forward(scheduler_step)
-        task_graph = self._resolve_task_graph(scheduler_payload)
-        for index, decision in enumerate(self._accepted(scheduler_output.decisions), start=1):
-            worker_input = self._build_worker_input(
-                operation_id=operation_id,
-                graph_refs=graph_refs,
-                decision=decision,
-                task_graph=task_graph,
-                scheduler_payload=scheduler_payload,
-                context=context,
-            )
-            worker = self._select_worker(
-                worker_input,
-                explicit_name=worker_agent,
-                preferred_name=self._first_text(
-                    decision.get("worker_id"),
-                    self._mapping(scheduler_payload.get("worker_overrides")).get(
-                        str(worker_input.raw_payload.get("task_type"))
-                    ),
-                ),
-            )
-            step = self._dispatch(f"worker[{index}]", worker_input, agent_name=worker.name)
-            steps.append(step)
-            self._forward(step)
-        return self._cycle("execution", operation_id, steps)
 
     def worker_task_results(
         self,
@@ -349,13 +226,11 @@ class AgentPipeline:
             steps.append(projection_step)
             self._forward(projection_step)
 
-        if critic_agent is not None or bool(payload.get("enable_legacy_graph_critic", False)):
+        if critic_agent is not None:
             critic_input = self._build_input(
                 operation_id,
                 graph_refs,
                 {
-                    "tg_graph": payload.get("tg_graph"),
-                    "task_graph": payload.get("task_graph"),
                     "runtime_state": payload.get("runtime_state"),
                     "runtime_summary": payload.get("runtime_summary"),
                     "critic_context": payload.get("critic_context"),
@@ -432,124 +307,6 @@ class AgentPipeline:
             raw_payload=dict(raw_payload or {}),
         )
 
-    def _build_worker_input(
-        self,
-        *,
-        operation_id: str,
-        graph_refs: Sequence[GraphRef],
-        decision: dict[str, Any],
-        task_graph: TaskGraph | None,
-        scheduler_payload: dict[str, Any],
-        context: AgentContext | dict[str, Any] | None,
-    ) -> AgentInput:
-        task_id = self._first_text(decision.get("task_id"), self._decision_task_id(decision))
-        if not task_id:
-            raise ValueError("accepted scheduling decision is missing task_id")
-        task_node = self._task_node(task_graph, task_id)
-        decision_payload = self._mapping(decision.get("payload"))
-        constraints = self._mapping(scheduler_payload.get("worker_constraints"))
-        session_id = self._first_text(decision.get("session_id"))
-        if session_id:
-            constraints["session_id"] = session_id
-        route_id = self._first_text(decision.get("route_id"))
-        if route_id:
-            constraints["route_id"] = route_id
-        worker_refs = self._dedupe_refs(
-            [*graph_refs, *self._refs(decision.get("target_refs")), *self._task_refs(task_node)]
-        )
-        return self._build_input(
-            operation_id,
-            worker_refs,
-            {
-                "task_id": task_id,
-                "task_type": self._task_type(decision_payload, task_node),
-                "input_bindings": dict(getattr(task_node, "input_bindings", {}) or {}),
-                "target_context": self._target_context(
-                    task_node=task_node,
-                    kg_graph=self._mapping(scheduler_payload.get("kg_graph")),
-                ),
-                "resource_keys": list(
-                    decision.get("required_resource_keys") or getattr(task_node, "resource_keys", []) or []
-                ),
-                "constraints": constraints,
-                "timeout_seconds": getattr(task_node, "timeout_seconds", None),
-            },
-            task_ref=task_id,
-            decision_ref=str(decision.get("id") or ""),
-            context=context,
-        )
-
-    def _select_worker(
-        self,
-        worker_input: AgentInput,
-        *,
-        explicit_name: str | None = None,
-        preferred_name: str | None = None,
-    ) -> BaseWorkerAgent:
-        spec = WorkerTaskSpec(
-            task_id=worker_input.task_ref or "unknown-task",
-            task_type=str(worker_input.raw_payload.get("task_type") or "unknown"),
-            input_bindings=self._mapping(worker_input.raw_payload.get("input_bindings")),
-            target_refs=list(worker_input.graph_refs),
-            resource_keys=[str(item) for item in worker_input.raw_payload.get("resource_keys", [])],
-            constraints=self._mapping(worker_input.raw_payload.get("constraints")),
-            timeout_seconds=worker_input.raw_payload.get("timeout_seconds"),
-        )
-        for name in (explicit_name, preferred_name):
-            if not name:
-                continue
-            try:
-                agent = self.registry.get(name)
-            except AgentNotFoundError:
-                # 中文注释：
-                # 调度结果里的 worker_id 可能来自 runtime worker 槽位，而不是 registry 中的 agent 名称。
-                # 这里找不到时继续回退到按 task_type 匹配的分支，避免 execution cycle 被无意义中断。
-                continue
-            if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
-                return agent
-        workers = self.registry.list_by_kind(AgentKind.WORKER)
-        for agent in workers:
-            if isinstance(agent, BaseWorkerAgent) and agent.supports_task(spec):
-                return agent
-        raise AgentNotFoundError(f"no worker registered for task_type '{spec.task_type}'")
-
-    def _target_context(self, *, task_node: BaseTaskNode | None, kg_graph: dict[str, Any]) -> list[dict[str, Any]]:
-        if task_node is None or not kg_graph:
-            return []
-        node_by_id = {
-            str(node.get("id")): dict(node)
-            for node in kg_graph.get("nodes", [])
-            if isinstance(node, dict) and node.get("id") is not None
-        }
-        refs = [
-            *list(getattr(task_node, "target_refs", []) or []),
-            *list(getattr(task_node, "source_refs", []) or []),
-        ]
-        seen: set[str] = set()
-        context: list[dict[str, Any]] = []
-        for ref in refs:
-            ref_id = str(getattr(ref, "ref_id", ""))
-            if not ref_id or ref_id in seen or ref_id not in node_by_id:
-                continue
-            seen.add(ref_id)
-            node = node_by_id[ref_id]
-            properties = self._mapping(node.get("properties"))
-            context.append(
-                {
-                    "ref_id": ref_id,
-                    "ref_type": getattr(ref, "ref_type", None),
-                    "label": node.get("label"),
-                    "type": node.get("type"),
-                    "hostname": node.get("hostname"),
-                    "address": node.get("address"),
-                    "url": node.get("url") or properties.get("url") or properties.get("target"),
-                    "port": node.get("port") or properties.get("port"),
-                    "scheme": properties.get("scheme"),
-                    "properties": properties,
-                }
-            )
-        return context
-
     def _kg_batch(self, state_writer_step: PipelineStepResult) -> KGEventBatch:
         events: list[KGDeltaEvent] = []
         for delta in state_writer_step.agent_output.state_deltas:
@@ -613,55 +370,6 @@ class AgentPipeline:
         payload = dict(context or {})
         payload.setdefault("operation_id", operation_id)
         return AgentContext.model_validate(payload)
-
-    @staticmethod
-    def _resolve_task_graph(payload: dict[str, Any]) -> TaskGraph | None:
-        raw = payload.get("tg_graph") or payload.get("task_graph")
-        if isinstance(raw, TaskGraph):
-            return raw
-        if isinstance(raw, dict):
-            return TaskGraph.from_dict(raw)
-        return None
-
-    @staticmethod
-    def _task_node(task_graph: TaskGraph | None, task_id: str) -> BaseTaskNode | None:
-        if task_graph is None:
-            return None
-        node = task_graph.get_node(task_id)
-        return node if isinstance(node, BaseTaskNode) else None
-
-    @staticmethod
-    def _task_type(decision_payload: dict[str, Any], task_node: BaseTaskNode | None) -> str:
-        if decision_payload.get("task_type"):
-            return str(decision_payload["task_type"])
-        if task_node is not None:
-            return str(task_node.task_type.value)
-        raise ValueError("worker task type could not be resolved")
-
-    @staticmethod
-    def _task_refs(task_node: BaseTaskNode | None) -> list[GraphRef]:
-        if task_node is None:
-            return []
-        return [*task_node.target_refs, *task_node.source_refs, *task_node.expected_output_refs]
-
-    @staticmethod
-    def _accepted(decisions: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            decision
-            for decision in decisions
-            if bool(decision.get("accepted")) and str(decision.get("action")) in {"assign", "dispatch"}
-        ]
-
-    @staticmethod
-    def _decision_task_id(decision: dict[str, Any]) -> str | None:
-        for ref in decision.get("target_refs", []):
-            try:
-                parsed = GraphRef.model_validate(ref)
-            except Exception:
-                continue
-            if parsed.graph.value == "tg":
-                return parsed.ref_id
-        return None
 
     @staticmethod
     def _extract_candidate_actions(decision: dict[str, Any]) -> list[str]:

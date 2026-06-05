@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from src.core.planning.models import PlannerDecision
 from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.models import StageExecutionRequest, StageResult, StageType
@@ -51,9 +49,8 @@ def test_stage_dispatcher_resolves_all_five_agents() -> None:
     dispatcher = StageDispatcher(StageAgentRegistry(agents))  # type: ignore[arg-type]
 
     for agent in agents:
-        stage = StageDispatcher.AGENT_STAGE_MAP[agent.agent_name]
         result = dispatcher.dispatch(
-            _decision(agent.agent_name, stage.value),
+            _decision(agent.agent_name, agent.stage_type.value),
             kg_snapshot={"nodes": []},
             ag_process_history={"nodes": []},
             runtime_context={"operation_id": "op-dispatch"},
@@ -62,15 +59,31 @@ def test_stage_dispatcher_resolves_all_five_agents() -> None:
         )
 
         assert result.agent_name == agent.agent_name
-        assert result.stage_type == stage
+        assert result.stage_type == agent.stage_type.value
         assert agent.requests[-1].agent_name == agent.agent_name
-        assert agent.requests[-1].stage_type == stage
+        assert agent.requests[-1].stage_type == agent.stage_type.value
 
 
-def test_stage_dispatcher_rejects_agent_stage_mismatch() -> None:
+def test_stage_dispatcher_replans_for_agent_stage_mismatch() -> None:
     dispatcher = StageDispatcher(
         StageAgentRegistry([RecordingStageAgent("recon_agent", StageType.RECON_STAGE)])  # type: ignore[arg-type]
     )
 
-    with pytest.raises(ValueError, match="requires selected_stage"):
-        dispatcher.dispatch(_decision("recon_agent", "GOAL_STAGE"))
+    result = dispatcher.dispatch(_decision("recon_agent", "GOAL_STAGE"))
+
+    assert result.status == "needs_replan"
+    assert result.agent_name == "recon_agent"
+    assert result.stage_type == "GOAL_STAGE"
+    assert "not GOAL_STAGE" in result.summary
+
+
+def test_stage_dispatcher_returns_needs_replan_for_unregistered_agent() -> None:
+    dispatcher = StageDispatcher(
+        StageAgentRegistry([RecordingStageAgent("recon_agent", StageType.RECON_STAGE)])  # type: ignore[arg-type]
+    )
+
+    result = dispatcher.dispatch(_decision("custom_agent", "RECON_STAGE"))
+
+    assert result.status == "needs_replan"
+    assert result.agent_name == "custom_agent"
+    assert "no StageAgent registered" in result.summary

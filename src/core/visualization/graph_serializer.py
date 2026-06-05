@@ -22,17 +22,13 @@ def build_visual_snapshot(
     operation_id: str,
     kg_payload: dict[str, Any] | None = None,
     ag_payload: dict[str, Any] | None = None,
-    tg_payload: dict[str, Any] | None = None,
     runtime_state: RuntimeState | dict[str, Any] | None = None,
-    legacy_tg: bool = False,
 ) -> VisualGraphSnapshot:
     graphs: dict[GraphName, VisualGraphState] = {
         "kg": graph_payload_to_state("kg", kg_payload or {}),
         "ag": graph_payload_to_state("ag", ag_payload or {}),
         "runtime": runtime_to_state(runtime_state),
     }
-    if legacy_tg:
-        graphs["tg"] = graph_payload_to_state("tg", tg_payload or {})
     return VisualGraphSnapshot(
         operation_id=operation_id,
         graphs=graphs,
@@ -148,7 +144,7 @@ def runtime_to_state(runtime_state: RuntimeState | dict[str, Any] | None) -> Vis
         nodes.append(
             VisualNode(
                 id=node_id,
-                label=str(task.get("tg_node_id") or task_id),
+                label=str(task.get("execution_node_id") or task_id),
                 type="TaskRuntime",
                 graph="runtime",
                 status=status,
@@ -245,7 +241,6 @@ def _runtime_version(payload: dict[str, Any]) -> int:
     versions = [
         graph_memory.get("kg_version"),
         graph_memory.get("ag_version"),
-        graph_memory.get("tg_version"),
         len(_mapping(_mapping(payload.get("execution")).get("tasks"))),
         len(payload.get("pending_events") or []),
     ]

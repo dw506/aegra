@@ -1,8 +1,8 @@
 """Runtime checkpoint manager.
 
 This module manages recovery anchors for Runtime State. Checkpoints are runtime
-bookkeeping objects only; they are not a fact store and must not replace KG,
-AG or TG.
+bookkeeping objects only; they are not a fact store and must not replace KG or
+AG.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ class RuntimeCheckpointManager:
         created_after_tasks: list[str],
         kg_version: str | None = None,
         ag_version: str | None = None,
-        tg_version: str | None = None,
         summary: str | None = None,
     ) -> CheckpointRuntime:
         """Create or replace one runtime checkpoint anchor."""
@@ -33,7 +32,6 @@ class RuntimeCheckpointManager:
             created_after_tasks=list(created_after_tasks),
             kg_version=kg_version,
             ag_version=ag_version,
-            tg_version=tg_version,
             summary=summary or "",
             metadata={},
         )
@@ -43,7 +41,6 @@ class RuntimeCheckpointManager:
             "checkpoint_id": checkpoint_id,
             "kg_version": kg_version,
             "ag_version": ag_version,
-            "tg_version": tg_version,
             "created_after_tasks": list(created_after_tasks),
             "created_at": checkpoint.created_at.isoformat(),
             "summary": checkpoint.summary,
@@ -74,7 +71,7 @@ class RuntimeCheckpointManager:
         replaces_task_id: str | None = None,
         derived_from_checkpoint: str | None = None,
     ) -> dict[str, Any]:
-        """Record runtime lineage for one task without mutating TG structure."""
+        """Record runtime lineage for one task without mutating graph structure."""
 
         recovery = self._recovery_metadata(state)
         lineage = recovery.setdefault("task_lineage", {})
@@ -158,4 +155,3 @@ class RuntimeCheckpointManager:
 
 
 __all__ = ["RuntimeCheckpointManager"]
-

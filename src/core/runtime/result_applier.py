@@ -97,7 +97,6 @@ class PhaseTwoApplyResult(BaseModel):
     graph_projection_result: AgentExecutionResult | None = None
     visual_graph_deltas: list[VisualGraphDelta] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
-    tg_graph: dict[str, Any] | None = None
 
 
 class PhaseTwoResultApplier:
@@ -196,7 +195,7 @@ class PhaseTwoResultApplier:
         kg_store: KnowledgeGraph,
         attack_graph: AttackGraph,
     ) -> PhaseTwoApplyResult:
-        """Record a PlannerDecision in AG and Runtime without touching TG."""
+        """Record a PlannerDecision in AG and Runtime."""
 
         del kg_store
         apply_result = PhaseTwoApplyResult()
@@ -327,7 +326,7 @@ class PhaseTwoResultApplier:
         kg_store: KnowledgeGraph,
         attack_graph: AttackGraph,
     ) -> PhaseTwoApplyResult:
-        """Apply StageResult effects to KG, AG and Runtime without TG writes."""
+        """Apply StageResult effects to KG, AG and Runtime."""
 
         canonical_result = StageResultAdapter.to_task_result(stage_result)
         if canonical_result.operation_id != state.operation_id:
@@ -1434,7 +1433,7 @@ class PhaseTwoResultApplier:
                         "operation_id": result.operation_id,
                         "worker_result_id": result.result_id,
                         "source_agent": result.agent_role.value,
-                        "tg_node_id": result.tg_node_id,
+                        "execution_node_id": result.execution_node_id,
                         "timestamp": evidence.created_at.isoformat(),
                     },
                     created_at=evidence.created_at,
@@ -1500,7 +1499,7 @@ class PhaseTwoResultApplier:
             provenance={
                 "operation_id": state.operation_id,
                 "task_ref": result.task_id,
-                "tg_node_id": result.tg_node_id,
+                "execution_node_id": result.execution_node_id,
                 "worker_result_id": result.result_id,
                 "tool_output_refs": [item.payload_ref for item in result.evidence],
                 "timestamp": result.created_at.isoformat(),

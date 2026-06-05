@@ -18,7 +18,6 @@ def build_vuln_analysis_context(
     return {
         **graph_context,
         "stage_context_builder": "vuln_analysis_context_builder",
-        "allowed_tool_names": ["vuln_profile_match", "validation_precheck", "whatweb_fingerprint", "nuclei_scan", "http_probe"],
         "vulnerability_analysis_focus": {
             "objective": request.objective,
             "services": graph_context.get("known_services") or request.required_context.get("services") or [],

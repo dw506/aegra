@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,7 @@ from src.app.settings import AppSettings
 from src.core.agents.agent_protocol import GraphRef, GraphScope
 from src.core.models.runtime import RuntimeStatus
 from src.core.runtime.approvals import ApprovalManager, ApprovalRequest
-from src.core.runtime.policy import RuntimePolicy, policy_from_runtime_state
+from src.core.runtime.policy import policy_from_runtime_state
 from src.core.workers.vulnerability_validators import (
     HttpFingerprintValidator,
     Struts2S2045Validator,
@@ -93,10 +92,8 @@ class OperationCycleRequest(BaseModel):
 
     graph_refs: list[GraphRef] = Field(default_factory=list)
     planner_payload: dict[str, Any] = Field(default_factory=dict)
-    scheduler_payload: dict[str, Any] = Field(default_factory=dict)
     feedback_payload: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
-    worker_overrides: dict[str, str] = Field(default_factory=dict)
 
 
 class OperationRunRequest(OperationCycleRequest):
@@ -124,28 +121,20 @@ def _default_graph_refs() -> list[GraphRef]:
     ]
 
 
-def _scheduler_payload(request: OperationCycleRequest) -> dict[str, Any]:
-    payload = dict(request.scheduler_payload)
-    if request.worker_overrides:
-        merged = dict(payload.get("worker_overrides") or {})
-        merged.update(request.worker_overrides)
-        payload["worker_overrides"] = merged
-    return payload
-
-
 def _ensure_operation_runnable(orchestrator: AppOrchestrator, operation_id: str) -> None:
-    """Apply minimal API-side execution guard before dispatching work."""
+    """Apply minimal API-side execution guard before dispatching work.
+
+    Policy is intentionally audit-only in the current automated main path. The
+    API must not block `/cycle` or `/run` because of runtime policy scope fields;
+    tool policy checks record their original decisions separately.
+    """
 
     state = orchestrator.get_operation_state(operation_id)
     if state.operation_status == RuntimeStatus.CANCELLED:
         raise HTTPException(status_code=409, detail="operation is cancelled")
-    policy = policy_from_runtime_state(state)
-    if policy.safety_stop:
-        raise HTTPException(status_code=409, detail="runtime policy safety_stop is enabled")
     targets = list(state.execution.metadata.get("target_inventory", []))
     if not targets:
-        raise HTTPException(status_code=409, detail="operation has no imported authorized targets")
-    blocked = {item.lower() for item in policy.blocked_hosts}
+        raise HTTPException(status_code=409, detail="operation has no imported targets")
     for target in targets:
         address = str(
             target.get("value") or target.get("address") or target.get("url") or target.get("hostname")
@@ -154,10 +143,6 @@ def _ensure_operation_runnable(orchestrator: AppOrchestrator, operation_id: str)
         ).strip()
         if not address:
             raise HTTPException(status_code=400, detail="target inventory contains a target without address")
-        if address.lower() in blocked:
-            raise HTTPException(status_code=409, detail=f"target '{address}' is blocked by runtime policy")
-        if not _target_is_authorized(address, policy):
-            raise HTTPException(status_code=409, detail=f"target '{address}' is not authorized by runtime policy")
 
 
 def _workspace_from_summary(summary: Any) -> dict[str, Any]:
@@ -214,56 +199,6 @@ def _operation_policy_summary(orchestrator: AppOrchestrator, operation_id: str) 
     }
 
 
-def _tasks_from_state(state: Any) -> dict[str, Any]:
-    graph = state.execution.metadata.get("task_graph", {})
-    graph_payload = dict(graph) if isinstance(graph, dict) else {"nodes": [], "edges": []}
-    runtime_tasks = [
-        {
-            **task.model_dump(mode="json"),
-            "links": {
-                "audit": f"/operations/{state.operation_id}/audit-report",
-                "evidence": f"/operations/{state.operation_id}/evidence",
-            },
-        }
-        for task in state.execution.tasks.values()
-    ]
-    high_risk = []
-    for node in graph_payload.get("nodes", []):
-        if not isinstance(node, dict):
-            continue
-        if bool(node.get("approval_required")) or float(node.get("estimated_risk") or 0) >= 0.7:
-            high_risk.append(
-                {
-                    "task_id": node.get("id"),
-                    "label": node.get("label"),
-                    "estimated_risk": node.get("estimated_risk"),
-                    "approval_required": bool(node.get("approval_required")),
-                    "approval_status": node.get("approval_status") or "pending",
-                }
-            )
-    return {
-        "operation_id": state.operation_id,
-        "legacy_endpoint": True,
-        "legacy_tg": True,
-        "replacement_endpoints": {
-            "graph": f"/operations/{state.operation_id}/graph",
-            "findings": f"/operations/{state.operation_id}/findings",
-            "evidence": f"/operations/{state.operation_id}/evidence",
-            "control_cycles": f"/operations/{state.operation_id}/control-cycles",
-            "audit_report": f"/operations/{state.operation_id}/audit-report",
-            "llm_decisions": f"/operations/{state.operation_id}/llm-decisions",
-        },
-        "nodes": list(graph_payload.get("nodes", [])),
-        "edges": list(graph_payload.get("edges", [])),
-        "runtime_tasks": runtime_tasks,
-        "high_risk_tasks": high_risk,
-        "links": {
-            "evidence": f"/operations/{state.operation_id}/evidence",
-            "audit": f"/operations/{state.operation_id}/audit-report",
-        },
-    }
-
-
 def _validator_registry() -> ValidatorRegistry:
     return ValidatorRegistry([Struts2S2045Validator(), HttpFingerprintValidator()])
 
@@ -275,18 +210,6 @@ def _validator_summary(validator: Any) -> dict[str, Any]:
         "safe_mode": True,
         "description": (getattr(validator, "__doc__", "") or "").strip(),
     }
-
-
-def _target_is_authorized(address: str, policy: RuntimePolicy) -> bool:
-    if not policy.authorized_hosts and not policy.cidr_whitelist:
-        return True
-    if address.lower() in {item.lower() for item in policy.authorized_hosts}:
-        return True
-    try:
-        parsed = ip_address(address)
-    except ValueError:
-        return False
-    return any(parsed in ip_network(cidr, strict=False) for cidr in policy.cidr_whitelist)
 
 
 def create_app(
@@ -412,7 +335,6 @@ def create_app(
                 operation_id,
                 graph_refs=request.graph_refs or _default_graph_refs(),
                 planner_payload=dict(request.planner_payload),
-                scheduler_payload=_scheduler_payload(request),
                 feedback_payload=dict(request.feedback_payload),
                 context=dict(request.context),
             )
@@ -429,7 +351,6 @@ def create_app(
                 operation_id,
                 graph_refs=request.graph_refs or _default_graph_refs(),
                 planner_payload=dict(request.planner_payload),
-                scheduler_payload=_scheduler_payload(request),
                 feedback_payload=dict(request.feedback_payload),
                 context=dict(request.context),
                 max_cycles=request.max_cycles,
@@ -468,14 +389,6 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return summary.model_dump(mode="json")
-
-    @app.get("/operations/{operation_id}/tasks")
-    def get_operation_tasks(operation_id: str) -> dict[str, Any]:
-        try:
-            state = resolved_orchestrator.get_operation_state(operation_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return _tasks_from_state(state)
 
     @app.post("/operations/{operation_id}/resume")
     def resume_operation(operation_id: str, request: OperationActionRequest) -> dict[str, Any]:

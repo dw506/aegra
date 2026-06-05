@@ -2,7 +2,6 @@ const state = {
   workspaceId: null,
   workspaces: [],
   evidence: [],
-  legacyTg: new URLSearchParams(window.location.search).get("legacy_tg") === "1",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -32,7 +31,6 @@ async function refreshAll() {
   await Promise.all([
     refreshAssets(),
     refreshPolicy(),
-    state.legacyTg ? refreshTasks() : Promise.resolve(),
     refreshGraph(),
     refreshFindings(),
     refreshApprovals(),
@@ -69,20 +67,6 @@ async function refreshPolicy() {
     policy: summary.metadata?.runtime_policy || {},
     audit: `/operations/${op}/audit-report`,
   }, null, 2);
-}
-
-async function refreshTasks() {
-  const op = currentOperation();
-  const payload = await api(`/operations/${encodeURIComponent(op)}/tasks`);
-  renderGraph("taskGraph", payload.nodes || [], payload.edges || []);
-  $("highRiskTable").innerHTML = (payload.high_risk_tasks || []).map((item) => `
-    <tr>
-      <td>${escapeHtml(item.label || item.task_id)}</td>
-      <td class="risk">${escapeHtml(item.estimated_risk ?? "")}</td>
-      <td>${escapeHtml(item.approval_status || "pending")}</td>
-      <td><button data-evidence="all">Evidence</button></td>
-      <td><a href="${payload.links.audit}">audit</a></td>
-    </tr>`).join("") || `<tr><td colspan="5">No high-risk tasks awaiting approval.</td></tr>`;
 }
 
 async function refreshGraph() {

@@ -1,7 +1,7 @@
 """Runtime budget manager.
 
 This module manages execution-time budget consumption only. The tracked budget
-state belongs to Runtime State and must not be written into KG, AG or TG.
+state belongs to Runtime State and must not be written into KG or AG.
 """
 
 from __future__ import annotations
@@ -170,4 +170,3 @@ class RuntimeBudgetManager:
 
 
 __all__ = ["BudgetExceededError", "RuntimeBudgetManager"]
-

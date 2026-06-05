@@ -156,7 +156,7 @@ class RuntimeLeaseManager:
         return released
 
     # 中文注释：
-    # session 失效时要把挂在它下面的 lease 一并收掉，避免 scheduler 继续把它当作可复用占用。
+    # session 失效时要把挂在它下面的 lease 一并收掉，避免后续执行继续把它当作可复用占用。
     def release_leases_for_session(
         self,
         state: RuntimeState,

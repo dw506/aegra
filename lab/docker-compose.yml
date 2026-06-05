@@ -10,10 +10,6 @@ services:
     env_file:
         - ../.env
     environment:
-        AEGRA_LLM_API_KEY: ${AEGRA_LLM_API_KEY}
-        AEGRA_LLM_BASE_URL: ${AEGRA_LLM_BASE_URL}
-        AEGRA_LLM_MODEL: ${AEGRA_LLM_MODEL}
-        AEGRA_LLM_TIMEOUT_SEC: ${AEGRA_LLM_TIMEOUT_SEC:-180}
         PYTHONPATH: /app
         AEGRA_LAB_MODE: "1"
         AEGRA_MCP_ENABLED: "1"

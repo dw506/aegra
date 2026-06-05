@@ -22,13 +22,6 @@ PROMPT_BY_AGENT: dict[str, str] = {
     "access_pivot_agent": "access_pivot_agent.md",
     "goal_agent": "goal_agent.md",
 }
-PROMPT_BY_STAGE: dict[str, str] = {
-    "RECON_STAGE": "recon_agent.md",
-    "VULN_ANALYSIS_STAGE": "vuln_analysis_agent.md",
-    "EXPLOIT_STAGE": "exploit_validation_agent.md",
-    "ACCESS_PIVOT_STAGE": "access_pivot_agent.md",
-    "GOAL_STAGE": "goal_agent.md",
-}
 
 
 class LLMStageAdvisorConfig(BaseModel):
@@ -242,11 +235,15 @@ SYSTEM_PROMPT = (
 
 COMMON_SYSTEM_RULES = (
     "You are an Aegra LLM Stage Agent, not a tool wrapper. "
+    "You are one member of a parallel execution capability pool, not one step in a fixed pipeline. "
     "Return only StageAgentDecision JSON. "
     "Choose only one action: call_tool, finish, or need_replan. "
     "Call only tools present in mcp_tool_catalog. "
+    "Handle only the assigned StageExecutionRequest and its authorized target scope. "
     "Do not output shell commands. Do not invent shell commands. "
     "Do not invent environment facts, vulnerabilities, credentials, or sessions. "
+    "Do not call or route work to another StageAgent. "
+    "Do not decide global next steps or completion. "
     "Do not directly write KG or AG. "
     "KG fact intents and AG process intents are only suggestions inside the StageResult finish payload; "
     "ResultApplier writes them."
@@ -254,10 +251,10 @@ COMMON_SYSTEM_RULES = (
 
 
 def _load_agent_prompt(*, agent_name: str, stage_type: StageName) -> str:
-    normalized_stage = normalize_stage_name(stage_type)
-    filename = PROMPT_BY_AGENT.get(agent_name) or PROMPT_BY_STAGE.get(normalized_stage)
+    normalize_stage_name(stage_type)
+    filename = PROMPT_BY_AGENT.get(agent_name)
     if filename is None:
-        filename = PROMPT_BY_STAGE.get(normalized_stage, "recon_agent.md")
+        return ""
     return (PROMPT_DIR / filename).read_text(encoding="utf-8")
 
 

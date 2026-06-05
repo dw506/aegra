@@ -1,8 +1,8 @@
 """Runtime State query service.
 
-This module exposes read-only runtime queries for scheduler, critic and
+This module exposes read-only runtime queries for critic and
 replanner flows. The queries operate only on Runtime State and do not inspect
-KG, AG or TG structures directly.
+KG or AG structures directly.
 """
 
 from __future__ import annotations
@@ -134,7 +134,7 @@ class RuntimeQueryService:
     ) -> bool:
         """Return True when runtime conditions block task execution.
 
-        This method is useful when TG considers a task ready but runtime-level
+        This method is useful when planning considers a task ready but runtime-level
         resource locks or lease issues still prevent dispatch.
         """
 
@@ -178,8 +178,8 @@ class RuntimeQueryService:
         )
         return [item.model_dump(mode="json") for item in ordered[:limit]]
 
-    def build_scheduler_view(self, state: RuntimeState) -> dict:
-        """Build a compact scheduler-facing summary of Runtime State."""
+    def build_execution_view(self, state: RuntimeState) -> dict:
+        """Build a compact execution-facing summary of Runtime State."""
 
         queued = self.find_queued_tasks(state)
         active = self.find_active_tasks(state)
@@ -230,4 +230,3 @@ class RuntimeQueryService:
 
 
 __all__ = ["RuntimeQueryService"]
-

@@ -388,8 +388,8 @@ class PerceptionAgent(BaseAgent):
                     continue
 
         task_ref = agent_input.task_ref or outcome.task_id
-        if task_ref and not any(ref.graph == GraphScope.TG and ref.ref_id == task_ref for ref in refs):
-            add(GraphRef(graph=GraphScope.TG, ref_id=task_ref, ref_type="task"))
+        if task_ref and not any(ref.graph == GraphScope.RUNTIME and ref.ref_id == task_ref for ref in refs):
+            add(GraphRef(graph=GraphScope.RUNTIME, ref_id=task_ref, ref_type="execution_task"))
 
         return refs
 

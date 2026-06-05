@@ -10,11 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
 from src.app.llm_decision_observer import LLMDecisionObserver
-from src.core.agents.agent_pipeline import AgentPipeline, PipelineCycleResult, PipelineStepResult
+from src.core.agents.agent_pipeline import PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef
 from src.core.agents.graph_context import TwoGraphContextBuilder
 from src.core.agents.packy_llm import PackyLLMClient
-from src.core.agents.pipeline_builders import AgentPipelineAssemblyOptions, build_optional_agent_pipeline
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_initializer import GraphInitializer
@@ -122,14 +121,12 @@ class AppOrchestrator:
         settings: AppSettings | None = None,
         runtime_store: RuntimeStore | None = None,
         graph_memory_store: GraphMemoryStore | None = None,
-        pipeline: AgentPipeline | None = None,
         result_applier: PhaseTwoResultApplier | None = None,
         graph_projector: AttackGraphProjector | None = None,
     ) -> None:
         self.settings = settings or AppSettings.from_env()
         self.runtime_store = runtime_store or self._build_runtime_store(self.settings)
         self.graph_memory_store = graph_memory_store or GraphMemoryStore(self.settings.runtime_store_dir)
-        self.pipeline = pipeline or self._build_default_pipeline(self.settings)
         self.result_applier = result_applier or PhaseTwoResultApplier()
         self.mcp_client = (
             ConfiguredMCPClient.from_sources(
@@ -161,6 +158,7 @@ class AppOrchestrator:
         """Create a new operation with control-plane metadata attached."""
 
         runtime_policy = self.settings.load_runtime_policy()
+        lab_profile = self.settings.load_lab_profile()
         operation_metadata = {
             "control_plane": {
                 "audit_enabled": self.settings.audit_enabled,
@@ -181,6 +179,7 @@ class AppOrchestrator:
             # 中文注释：
             # operation metadata 中只落稳定 JSON 结构，避免把 Pydantic 对象直接塞进 state。
             "runtime_policy": runtime_policy.to_runtime_metadata(),
+            "lab_profile": lab_profile,
             "target_inventory": [],
             "target_count": 0,
             "llm_decision_history": [],
@@ -451,11 +450,10 @@ class AppOrchestrator:
         *,
         graph_refs: list[AgentGraphRef],
         planner_payload: dict[str, Any],
-        scheduler_payload: dict[str, Any] | None = None,
         feedback_payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
     ) -> OperationCycleResult:
-        del scheduler_payload, feedback_payload
+        del feedback_payload
 
         state = self.runtime_store.snapshot(operation_id)
         kg = self.graph_memory_store.load_kg(operation_id)
@@ -503,6 +501,12 @@ class AppOrchestrator:
             planner_payload.get("policy_context")
             or state.execution.metadata.get("runtime_policy")
         )
+        lab_profile = self._mapping(
+            planner_payload.get("lab_profile")
+            or state.execution.metadata.get("lab_profile")
+        )
+        tool_catalog = self._load_tool_catalog()
+        state.execution.metadata["tool_catalog"] = tool_catalog
         txt_logger.write_block(
             "MISSION",
             "mission context",
@@ -510,6 +514,8 @@ class AppOrchestrator:
                 "mission_goal": goal,
                 "targets": state.execution.metadata.get("target_inventory", []),
                 "scope": policy_context,
+                "lab_profile": lab_profile,
+                "tool_catalog": tool_catalog,
             },
         )
         graph_snapshot = self._kg_ag_runtime_snapshot(
@@ -521,6 +527,9 @@ class AppOrchestrator:
             runtime_state=state,
             extra=planner_payload,
         )
+        graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
+        graph_snapshot["lab_profile"] = lab_profile
+        graph_snapshot["mcp_tool_catalog"] = tool_catalog
         decision = self.mission_planner.run(
             goal=goal,
             graph_context=graph_snapshot,
@@ -586,11 +595,10 @@ class AppOrchestrator:
             final_output=AgentOutput(logs=["no stage dispatch requested"]),
         )
         applied_ids: list[str] = []
-        stopped = decision.decision != "dispatch_agent"
+        stopped = decision.decision in {"stop_success", "stop_failed", "pause_for_review"}
         stop_reason = decision.stop_condition or (decision.decision if stopped else None)
 
         if decision.decision == "dispatch_agent":
-            tool_catalog = self.mcp_client.list_tools() if self.mcp_client is not None else {"available": False, "error": "MCP is not configured"}
             started_at = utc_now()
             stage_result = StageDispatcher(self.stage_registry).dispatch(
                 decision,
@@ -796,7 +804,6 @@ class AppOrchestrator:
         *,
         graph_refs: list[AgentGraphRef],
         planner_payload: dict[str, Any],
-        scheduler_payload: dict[str, Any] | None = None,
         feedback_payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
         max_cycles: int = 5,
@@ -809,6 +816,7 @@ class AppOrchestrator:
         results: list[OperationCycleResult] = []
         llm_rejection_count = 0
         supervisor_replan_count = 0
+        planner_replan_count = 0
         for _ in range(max_cycles):
             state_before = self.runtime_store.snapshot(operation_id)
             if self._budget_guard_triggered(state_before):
@@ -831,11 +839,26 @@ class AppOrchestrator:
                 operation_id,
                 graph_refs=graph_refs,
                 planner_payload=planner_payload,
-                scheduler_payload=scheduler_payload,
                 feedback_payload=feedback_payload,
                 context=context,
             )
             results.append(cycle_result)
+            planner_decision = self._cycle_planner_decision(cycle_result)
+            if planner_decision == "replan":
+                planner_replan_count += 1
+                if planner_replan_count > max_replans:
+                    state = self.runtime_store.snapshot(operation_id)
+                    self._record_control_strategy(
+                        state,
+                        cycle_index=cycle_result.cycle_index,
+                        strategy="max_replans",
+                        accepted=False,
+                        reason="planner replan limit reached",
+                    )
+                    self.runtime_store.save_state(state)
+                    break
+            elif planner_decision in {"dispatch_agent"}:
+                planner_replan_count = 0
             supervisor_control = self._apply_supervisor_control_strategy(
                 operation_id=operation_id,
                 graph_refs=graph_refs,
@@ -1075,24 +1098,6 @@ class AppOrchestrator:
                 count += 1
         return count
 
-    def _run_planning_phase(
-        self,
-        *,
-        pipeline: AgentPipeline,
-        operation_id: str,
-        graph_refs: list[AgentGraphRef],
-        planner_payload: dict[str, Any],
-        context: dict[str, Any] | None,
-    ) -> PipelineCycleResult:
-        """运行 planning 阶段。"""
-
-        return pipeline.run_planning_cycle(
-            operation_id=operation_id,
-            graph_refs=graph_refs,
-            planner_payload=planner_payload,
-            context=context,
-        )
-
     def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, RuntimeState | None]:
         """Load KG / AG / Runtime snapshots for operation bootstrap."""
 
@@ -1102,7 +1107,7 @@ class AppOrchestrator:
         return kg, ag, runtime
 
     def _ensure_graph_initialized_from_targets(self, state: RuntimeState) -> dict[str, Any] | None:
-        """Initialize KG / AG / TG from imported targets when graph memory is empty."""
+        """Initialize KG / AG from imported targets when graph memory is empty."""
 
         kg, ag, _runtime = self._load_graph_memory(state.operation_id)
         if kg.list_nodes() or ag.list_nodes():
@@ -1156,7 +1161,7 @@ class AppOrchestrator:
                 continue
             if stage_result.get("stage_type") == "GOAL_STAGE" and stage_result.get("status") == "succeeded":
                 hints = stage_result.get("runtime_hints")
-                if not isinstance(hints, dict) or bool(hints.get("goal_satisfied", True)):
+                if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
                     state.execution.metadata["goal_satisfied"] = True
                     return True
         return False
@@ -1186,7 +1191,7 @@ class AppOrchestrator:
         runtime_state: RuntimeState,
         extra: dict[str, Any],
     ) -> dict[str, Any]:
-        del operation_id, cycle_index, graph_refs
+        del graph_refs
         policy_context = AppOrchestrator._mapping(extra.get("policy_context") or runtime_state.execution.metadata.get("runtime_policy"))
         current_goal = str(
             extra.get("mission_goal")
@@ -1195,13 +1200,16 @@ class AppOrchestrator:
             or runtime_state.execution.summary
             or ""
         )
-        return TwoGraphContextBuilder().build(
+        snapshot = TwoGraphContextBuilder().build(
             knowledge_graph=kg,
             attack_graph=ag,
             runtime_state=runtime_state,
             policy_context=policy_context,
             current_goal=current_goal,
         )
+        snapshot["operation_id"] = operation_id
+        snapshot["cycle_index"] = cycle_index
+        return snapshot
 
     def _append_llm_decision_history_from_cycle(
         self,
@@ -1269,6 +1277,22 @@ class AppOrchestrator:
         }
 
     @staticmethod
+    def _cycle_planner_decision(cycle_result: OperationCycleResult) -> str | None:
+        if cycle_result.planning is None:
+            return None
+        for item in cycle_result.planning.final_output.decisions:
+            payload = item.get("planner_decision") if isinstance(item, dict) else None
+            if isinstance(payload, dict):
+                decision = payload.get("decision")
+                return str(decision) if decision is not None else None
+        return None
+
+    def _load_tool_catalog(self) -> dict[str, Any]:
+        if self.mcp_client is None:
+            return {"available": False, "error": "MCP is not configured"}
+        return self.mcp_client.list_tools()
+
+    @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:
         return dict(value) if isinstance(value, dict) else {}
 
@@ -1328,52 +1352,6 @@ class AppOrchestrator:
         if persist:
             self.runtime_store.save_state(state)
         return checkpoint
-
-    def _require_pipeline(self) -> AgentPipeline:
-        if self.pipeline is None:
-            raise ValueError("AppOrchestrator.run_operation_cycle requires an AgentPipeline instance")
-        return self.pipeline
-
-    @staticmethod
-    def _build_default_pipeline(settings: AppSettings) -> AgentPipeline:
-        # 中文注释：
-        # 运行时默认总是装配一套标准 pipeline；
-        # planner advisor 是否启用、以及使用哪个 LLM 配置，统一由 settings 决定。
-        llm_client_config = settings.to_packy_llm_config()
-        enabled_advisors: list[str] = []
-        if settings.enable_planner_llm_advisor:
-            enabled_advisors.append("enable_planner_llm_advisor")
-        if settings.enable_planner_rank_llm_advisor:
-            enabled_advisors.append("enable_planner_rank_llm_advisor")
-        if settings.enable_graph_llm_planner_advisor:
-            enabled_advisors.append("enable_graph_llm_planner_advisor")
-        if settings.enable_critic_llm_advisor:
-            enabled_advisors.append("enable_critic_llm_advisor")
-        if settings.enable_supervisor_llm_advisor:
-            enabled_advisors.append("enable_supervisor_llm_advisor")
-        if enabled_advisors and llm_client_config is None:
-            raise ValueError(f"{', '.join(enabled_advisors)} require llm_api_key in AppSettings")
-        mcp_client = (
-            ConfiguredMCPClient.from_sources(
-                config_path=settings.mcp_config_path,
-                config_json=settings.mcp_config_json,
-            )
-            if settings.mcp_enabled
-            else None
-        )
-        pipeline_kwargs: dict[str, Any] = {
-            "options": AgentPipelineAssemblyOptions(
-                enable_packy_planner_advisor=AppOrchestrator._planner_rank_llm_enabled(settings),
-                enable_graph_llm_planner_advisor=AppOrchestrator._graph_llm_planner_enabled(settings),
-                enable_packy_critic_advisor=False,
-                enable_packy_supervisor_advisor=False,
-                include_critic=False,
-                include_supervisor=False,
-                include_recon_worker=False,
-            ),
-            "llm_client_config": llm_client_config,
-        }
-        return build_optional_agent_pipeline(**pipeline_kwargs)
 
     @staticmethod
     def _llm_advisor_status(settings: AppSettings) -> dict[str, Any]:

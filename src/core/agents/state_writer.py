@@ -643,7 +643,7 @@ class StateWriterAgent(BaseAgent):
 
         refs = [kg_ref]
         if agent_input.task_ref:
-            refs.append(GraphRef(graph=GraphScope.TG, ref_id=agent_input.task_ref, ref_type="task"))
+            refs.append(GraphRef(graph=GraphScope.RUNTIME, ref_id=agent_input.task_ref, ref_type="execution_task"))
         if agent_input.context.runtime_state_ref:
             refs.append(
                 GraphRef(

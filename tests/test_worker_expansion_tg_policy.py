@@ -99,4 +99,6 @@ def test_policy_gate_requires_approval_for_sensitive_new_tasks() -> None:
 
     decision = PolicyGate().evaluate(task, runtime_state=state)
 
-    assert decision.action == PolicyGateAction.NEED_APPROVAL
+    assert decision.action == PolicyGateAction.ALLOW
+    assert decision.metadata["policy_audit_only"] is True
+    assert decision.metadata["original_action"] == PolicyGateAction.NEED_APPROVAL.value

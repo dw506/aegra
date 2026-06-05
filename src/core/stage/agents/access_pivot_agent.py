@@ -9,21 +9,6 @@ from src.core.stage.base_stage_agent import BaseStageAgent
 class AccessPivotAgent(BaseStageAgent):
     stage_type = "ACCESS_PIVOT_STAGE"
     agent_name = "access_pivot_agent"
-    allowed_tool_names = frozenset(
-        {
-            "credential_check",
-            "session_probe",
-            "session_open_lab",
-            "identity_context_probe",
-            "privilege_context_probe",
-            "pivot_route_probe",
-            "internal_service_discover",
-            "tcp_connect_probe",
-            "http_probe",
-        }
-    )
-    denied_tool_names = frozenset({"safe_vuln_validate", "nuclei_scan", "run_command"})
-    tool_categories = frozenset({"credential", "session", "identity", "privilege", "pivot", "internal"})
 
     def __init__(
         self,

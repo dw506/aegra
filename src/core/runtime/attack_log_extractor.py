@@ -76,9 +76,11 @@ class AttackLogExtractor:
                 summary=f"cycle {cycle_index}",
                 evidence_refs=list(evidence_refs),
                 properties={
-                    "node_role": "ATTACK_CYCLE",
-                    "display_name": f"Cycle {cycle_index}",
-                    "cycle_index": cycle_index,
+                "node_role": "ATTACK_CYCLE",
+                "display_name": f"Cycle {cycle_index}",
+                "visual_title": self._cycle_visual_title(cycle_index, decision, stage_result),
+                "visual_summary": self._cycle_visual_summary(decision, stage_result, traces),
+                "cycle_index": cycle_index,
                     "step_order": 1,
                     "status": "completed" if stage_result is not None else "planned",
                     "runtime_event_count": len(runtime_events or []),
@@ -367,6 +369,11 @@ class AttackLogExtractor:
             properties={
                 "node_role": "PLANNER_DECISION",
                 "display_name": f"规划决策：{decision.selected_stage or decision.decision}",
+                "visual_title": AttackLogExtractor._planner_visual_title(decision),
+                "visual_subtitle": AttackLogExtractor._target_summary(decision.target_refs),
+                "visual_summary": decision.reasoning_summary or decision.objective,
+                "visual_target": AttackLogExtractor._target_summary(decision.target_refs),
+                "visual_outcome": decision.decision,
                 "cycle_index": decision.cycle_index,
                 "step_order": 2,
                 "decision": decision.decision,
@@ -424,6 +431,11 @@ class AttackLogExtractor:
             properties={
                 "node_role": "AGENT_EXECUTION",
                 "display_name": f"执行 Agent：{decision.selected_agent}",
+                "visual_title": f"{decision.selected_stage or 'Stage'}：{decision.objective}",
+                "visual_subtitle": f"{decision.selected_agent} / {AttackLogExtractor._target_summary(decision.target_refs) or 'target pending'}",
+                "visual_summary": decision.reasoning_summary or decision.objective,
+                "visual_target": AttackLogExtractor._target_summary(decision.target_refs),
+                "visual_outcome": "planned",
                 "cycle_index": decision.cycle_index,
                 "step_order": 3,
                 "planner_decision_id": planner_id,
@@ -434,8 +446,8 @@ class AttackLogExtractor:
             },
         )
 
-    @staticmethod
-    def _execution_node_from_stage(stage_result: StageResult, cycle_index: int, node_id: str) -> AgentExecutionNode:
+    @classmethod
+    def _execution_node_from_stage(cls, stage_result: StageResult, cycle_index: int, node_id: str) -> AgentExecutionNode:
         return AgentExecutionNode(
             id=node_id,
             label=f"{stage_result.agent_name} execution",
@@ -448,6 +460,11 @@ class AttackLogExtractor:
             properties={
                 "node_role": "AGENT_EXECUTION",
                 "display_name": f"执行 Agent：{stage_result.agent_name}",
+                "visual_title": f"{stage_result.stage_type}：{stage_result.summary}",
+                "visual_subtitle": stage_result.agent_name,
+                "visual_summary": stage_result.summary,
+                "visual_target": cls._stage_visual_target(stage_result),
+                "visual_outcome": stage_result.status,
                 "cycle_index": cycle_index,
                 "step_order": 3,
                 "stage_task_id": stage_result.stage_task_id,
@@ -478,6 +495,11 @@ class AttackLogExtractor:
             properties={
                 "node_role": "TOOL_CALL",
                 "display_name": f"工具调用：{trace.tool_name}",
+                "visual_title": cls._tool_visual_title(stage_result, trace),
+                "visual_subtitle": cls._tool_visual_subtitle(stage_result, trace),
+                "visual_summary": cls._tool_summary(trace),
+                "visual_target": cls._guess_target_from_trace(trace),
+                "visual_outcome": "succeeded" if trace.success else "failed",
                 "cycle_index": cycle_index,
                 "step_order": 4,
                 "trace_id": trace.trace_id,
@@ -524,6 +546,17 @@ class AttackLogExtractor:
             properties={
                 "node_role": "STAGE_RESULT",
                 "display_name": f"阶段结果：{stage_result.status}",
+                "visual_title": f"{stage_result.stage_type} {stage_result.status}",
+                "visual_subtitle": cls._stage_visual_target(stage_result),
+                "visual_summary": stage_result.summary,
+                "visual_target": cls._stage_visual_target(stage_result),
+                "visual_outcome": stage_result.status,
+                "visual_counts": {
+                    "observations": len(stage_result.observations),
+                    "evidence": len(stage_result.evidence),
+                    "findings": len(stage_result.findings),
+                    "relations": len(stage_result.discovered_relations),
+                },
                 "cycle_index": cycle_index,
                 "step_order": 5,
                 "result_id": stage_result.result_id,
@@ -566,6 +599,10 @@ class AttackLogExtractor:
                 **handoff.model_dump(mode="json"),
                 "node_role": "HANDOFF_SUGGESTION",
                 "display_name": f"下一步建议：{handoff.suggested_stage}",
+                "visual_title": f"下一步：{handoff.suggested_stage}",
+                "visual_subtitle": handoff.suggested_agent,
+                "visual_summary": handoff.reason,
+                "visual_outcome": "suggested",
                 "cycle_index": cycle_index,
                 "step_order": 6,
                 "suggested_stage": handoff.suggested_stage,
@@ -805,6 +842,91 @@ class AttackLogExtractor:
         if decision is not None:
             return f"planner {decision.decision}: {decision.objective}"
         return "attack log extraction"
+
+    @classmethod
+    def _cycle_visual_title(
+        cls,
+        cycle_index: int,
+        decision: PlannerDecision | None,
+        stage_result: StageResult | None,
+    ) -> str:
+        stage = (stage_result.stage_type if stage_result is not None else decision.selected_stage if decision is not None else "") or "planning"
+        status = stage_result.status if stage_result is not None else decision.decision if decision is not None else "planned"
+        target = cls._target_summary(decision.target_refs) if decision is not None else cls._stage_visual_target(stage_result)
+        parts = [f"Cycle {cycle_index}", str(stage), str(status)]
+        if target:
+            parts.append(target)
+        return " | ".join(parts)
+
+    @classmethod
+    def _cycle_visual_summary(
+        cls,
+        decision: PlannerDecision | None,
+        stage_result: StageResult | None,
+        traces: list[ToolTrace],
+    ) -> str:
+        if stage_result is not None:
+            return f"{stage_result.summary} ({len(traces)} tool call(s))"
+        if decision is not None:
+            return decision.reasoning_summary or decision.objective
+        return ""
+
+    @classmethod
+    def _planner_visual_title(cls, decision: PlannerDecision) -> str:
+        target = cls._target_summary(decision.target_refs)
+        action = decision.selected_stage or decision.decision
+        if target:
+            return f"规划：{action}，目标 {target}"
+        return f"规划：{action}"
+
+    @staticmethod
+    def _target_summary(refs: list[GraphRef]) -> str:
+        labels: list[str] = []
+        for ref in refs[:3]:
+            labels.append(str(ref.ref_id))
+        return ", ".join(labels)
+
+    @classmethod
+    def _tool_visual_title(cls, stage_result: StageResult, trace: ToolTrace) -> str:
+        target = cls._guess_target_from_trace(trace) or cls._stage_visual_target(stage_result)
+        outcome = "成功" if trace.success else "失败"
+        if target:
+            return f"{trace.tool_name} {outcome}：{target}"
+        return f"{trace.tool_name} {outcome}"
+
+    @classmethod
+    def _tool_visual_subtitle(cls, stage_result: StageResult, trace: ToolTrace) -> str:
+        status = "succeeded" if trace.success else "failed"
+        summary = cls._tool_summary(trace)
+        return f"{stage_result.stage_type} / {status} / {summary}" if summary else f"{stage_result.stage_type} / {status}"
+
+    @staticmethod
+    def _guess_target_from_trace(trace: ToolTrace) -> str:
+        for key in ("target", "host", "url", "address", "endpoint", "service", "asset"):
+            value = trace.arguments.get(key)
+            if value:
+                return str(value)
+        parsed_target = trace.parsed_output.get("target") or trace.parsed_output.get("host") or trace.parsed_output.get("url")
+        return str(parsed_target) if parsed_target else ""
+
+    @staticmethod
+    def _stage_visual_target(stage_result: StageResult | None) -> str:
+        if stage_result is None:
+            return ""
+        for bucket in (
+            stage_result.runtime_hints,
+            stage_result.writeback_hints,
+            *(stage_result.observations[:3]),
+            *(stage_result.evidence[:3]),
+            *(stage_result.findings[:3]),
+        ):
+            if not isinstance(bucket, dict):
+                continue
+            for key in ("target", "host", "url", "address", "endpoint", "service_id", "asset_id"):
+                value = bucket.get(key)
+                if value:
+                    return str(value)
+        return ""
 
 
 __all__ = ["AttackLogExtraction", "AttackLogExtractor"]

@@ -18,7 +18,6 @@
     <nav class="tabs" aria-label="Console pages">
       <button data-view="workspace" class="active">Workspace / Asset</button>
       <button data-view="run">Operation Run</button>
-      <button data-view="tasks">Legacy TG</button>
       <button data-view="knowledge">Knowledge Graph</button>
       <button data-view="findings">Findings</button>
       <button data-view="approval">Approval</button>
@@ -62,18 +61,6 @@
           </div>
         </div>
         <div class="panel"><h2>Run Status</h2><pre id="runStatus"></pre></div>
-      </section>
-
-      <section id="tasks" class="view">
-        <div class="panel">
-          <h2>Legacy TG</h2>
-          <div id="taskGraph" class="graph"></div>
-          <h3>High Risk Approval State</h3>
-          <table>
-            <thead><tr><th>Task</th><th>Risk</th><th>Approval</th><th>Evidence</th><th>Audit</th></tr></thead>
-            <tbody id="highRiskTable"></tbody>
-          </table>
-        </div>
       </section>
 
       <section id="knowledge" class="view">

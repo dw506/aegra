@@ -2,7 +2,7 @@
 
 The reducer is intentionally scoped to Runtime State updates only. It consumes
 typed runtime events and returns a new RuntimeState snapshot without touching
-KG, AG or TG.
+KG or AG.
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ class RuntimeStateReducer:
     def _apply_task_queued(self, state: RuntimeState, event: TaskQueuedEvent) -> None:
         """Create or update a queued task runtime entry."""
 
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.tg_node_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.execution_node_id)
         task.status = TaskRuntimeStatus.QUEUED
         task.queued_at = event.created_at
         task.deadline = event.deadline
@@ -120,7 +120,7 @@ class RuntimeStateReducer:
     def _apply_task_started(self, state: RuntimeState, event: TaskStartedEvent) -> None:
         """Mark a task as running and capture its start timestamp."""
 
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.tg_node_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.execution_node_id)
         task.status = TaskRuntimeStatus.RUNNING
         task.started_at = event.created_at
         task.assigned_worker = event.worker_id
@@ -131,7 +131,7 @@ class RuntimeStateReducer:
     def _apply_task_completed(self, state: RuntimeState, event: TaskCompletedEvent) -> None:
         """Mark a task as succeeded and release any assigned worker."""
 
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.tg_node_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.execution_node_id)
         released_worker_id = task.assigned_worker
         task.status = TaskRuntimeStatus.SUCCEEDED
         task.finished_at = event.created_at
@@ -148,7 +148,7 @@ class RuntimeStateReducer:
     def _apply_task_failed(self, state: RuntimeState, event: TaskFailedEvent) -> None:
         """Mark a task as failed and increment its attempt counter."""
 
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.tg_node_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.execution_node_id)
         task.status = TaskRuntimeStatus.FAILED
         task.finished_at = event.created_at
         task.attempt_count = min(task.max_attempts, task.attempt_count + 1)
@@ -158,7 +158,7 @@ class RuntimeStateReducer:
     def _apply_task_cancelled(self, state: RuntimeState, event: TaskCancelledEvent) -> None:
         """Mark a task as cancelled."""
 
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.tg_node_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.execution_node_id)
         task.status = TaskRuntimeStatus.CANCELLED
         task.finished_at = event.created_at
         if event.reason is not None:
@@ -169,7 +169,7 @@ class RuntimeStateReducer:
         """Bind a worker to a task and reflect the assignment on both sides."""
 
         worker = self._ensure_worker_runtime(state, event.worker_id)
-        task = self._ensure_task_runtime(state, task_id=event.task_id, tg_node_id=event.task_id)
+        task = self._ensure_task_runtime(state, task_id=event.task_id, execution_node_id=event.task_id)
         worker.current_task_id = event.task_id
         worker.current_load = max(event.current_load, 1)
         worker.status = WorkerStatus.BUSY
@@ -273,7 +273,6 @@ class RuntimeStateReducer:
             created_after_tasks=list(event.created_after_tasks),
             kg_version=event.kg_version,
             ag_version=event.ag_version,
-            tg_version=event.tg_version,
             summary=event.summary,
             metadata=dict(event.payload),
         )
@@ -293,12 +292,12 @@ class RuntimeStateReducer:
         )
 
     @staticmethod
-    def _ensure_task_runtime(state: RuntimeState, task_id: str, tg_node_id: str) -> TaskRuntime:
+    def _ensure_task_runtime(state: RuntimeState, task_id: str, execution_node_id: str) -> TaskRuntime:
         """Return an existing task runtime or create a minimal placeholder."""
 
         task = state.execution.tasks.get(task_id)
         if task is None:
-            task = TaskRuntime(task_id=task_id, tg_node_id=tg_node_id)
+            task = TaskRuntime(task_id=task_id, execution_node_id=execution_node_id)
             state.execution.tasks[task_id] = task
         return task
 
@@ -343,4 +342,3 @@ class RuntimeStateReducer:
 
 
 __all__ = ["RuntimeStateReducer"]
-

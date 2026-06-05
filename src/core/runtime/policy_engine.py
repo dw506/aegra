@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 from src.core.models.runtime import RuntimeState, utc_now
 from src.core.models.scope import Asset, DenylistRule, Engagement, ScopeRule, Workspace
-from src.core.models.tg import BaseTaskNode
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.policy import PolicyDecision, RuntimePolicy, policy_from_runtime_state
 
@@ -66,43 +65,45 @@ class PolicyEngine:
 
     def evaluate_task_policy(
         self,
-        task: BaseTaskNode,
+        task: Any,
         runtime_state: RuntimeState | None = None,
     ) -> PolicyDecision:
         policy = self._resolve_policy(runtime_state)
+        task_id = self._task_id(task)
         for target in self._task_targets(task):
             scope_decision = self.evaluate_target_scope(target, runtime_state)
             if scope_decision.decision != "allow":
-                return scope_decision.model_copy(update={"task_id": task.id})
+                return scope_decision.model_copy(update={"task_id": task_id})
 
         window_decision = self._scan_window_decision(policy)
         if window_decision.decision != "allow":
-            return window_decision.model_copy(update={"task_id": task.id})
+            return window_decision.model_copy(update={"task_id": task_id})
 
-        tags = {tag.lower() for tag in task.tags}
-        bindings = {str(key).lower(): str(value).lower() for key, value in task.input_bindings.items()}
+        input_bindings = self._task_input_bindings(task)
+        tags = {tag.lower() for tag in self._task_tags(task)}
+        bindings = {str(key).lower(): str(value).lower() for key, value in input_bindings.items()}
         risk_decision = self._risk_decision(
             policy=policy,
             tags=tags,
             metadata=bindings,
             risk_level=self._task_risk_level(task),
-            task_id=task.id,
+            task_id=task_id,
         )
         if risk_decision.decision != "allow":
             return risk_decision
 
-        if task.approval_required or task.gate_ids:
-            approval_id = f"task:{task.id}:approved"
+        if self._task_approval_required(task) or self._task_gate_ids(task):
+            approval_id = f"task:{task_id}:approved"
             approved = bool(runtime_state and runtime_state.budgets.approval_cache.get(approval_id))
             if not approved:
                 return PolicyDecision(
                     decision="requires_approval",
                     gate="approval",
-                    task_id=task.id,
+                    task_id=task_id,
                     approval_id=approval_id,
                     reason="task requires approval",
                 )
-        return PolicyDecision(decision="allow", gate="task", task_id=task.id, reason="task policy allowed")
+        return PolicyDecision(decision="allow", gate="task", task_id=task_id, reason="task policy allowed")
 
     def evaluate_validator_policy(self, validator_id: str, metadata: dict[str, Any] | None = None) -> PolicyDecision:
         metadata = metadata or {}
@@ -307,26 +308,68 @@ class PolicyEngine:
         return False
 
     @staticmethod
-    def _task_targets(task: BaseTaskNode) -> list[str | dict[str, Any]]:
+    def _task_targets(task: Any) -> list[str | dict[str, Any]]:
         targets: list[str | dict[str, Any]] = []
+        input_bindings = PolicyEngine._task_input_bindings(task)
         for key in ("target_url", "url", "service_id", "target_address", "address", "host_id", "target_host_id"):
-            value = task.input_bindings.get(key)
+            value = input_bindings.get(key)
             if isinstance(value, str) and value.strip():
                 targets.append(value.strip())
-        for ref in task.target_refs:
+        for ref in PolicyEngine._task_target_refs(task):
             if ref.ref_type in {"Host", "Service"}:
                 targets.append(ref.ref_id)
-        return targets or [task.id]
+        return targets or [PolicyEngine._task_id(task)]
 
     @staticmethod
-    def _task_risk_level(task: BaseTaskNode) -> str:
-        if "risk_level" in task.input_bindings:
-            return str(task.input_bindings["risk_level"]).lower()
-        if task.estimated_risk >= 0.7:
+    def _task_risk_level(task: Any) -> str:
+        input_bindings = PolicyEngine._task_input_bindings(task)
+        if "risk_level" in input_bindings:
+            return str(input_bindings["risk_level"]).lower()
+        estimated_risk = PolicyEngine._task_float(task, "estimated_risk")
+        if estimated_risk >= 0.7:
             return "high"
-        if task.estimated_risk >= 0.3:
+        if estimated_risk >= 0.3:
             return "medium"
         return "low"
+
+    @staticmethod
+    def _task_id(task: Any) -> str:
+        if isinstance(task, dict):
+            return str(task.get("id") or task.get("task_id") or "task")
+        return str(getattr(task, "id", None) or getattr(task, "task_id", None) or "task")
+
+    @staticmethod
+    def _task_input_bindings(task: Any) -> dict[str, Any]:
+        value = task.get("input_bindings") if isinstance(task, dict) else getattr(task, "input_bindings", None)
+        return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _task_tags(task: Any) -> list[str]:
+        value = task.get("tags") if isinstance(task, dict) else getattr(task, "tags", None)
+        return [str(item) for item in value] if isinstance(value, (list, set, tuple)) else []
+
+    @staticmethod
+    def _task_target_refs(task: Any) -> list[Any]:
+        value = task.get("target_refs") if isinstance(task, dict) else getattr(task, "target_refs", None)
+        return list(value) if isinstance(value, list) else []
+
+    @staticmethod
+    def _task_approval_required(task: Any) -> bool:
+        value = task.get("approval_required") if isinstance(task, dict) else getattr(task, "approval_required", False)
+        return bool(value)
+
+    @staticmethod
+    def _task_gate_ids(task: Any) -> list[str]:
+        value = task.get("gate_ids") if isinstance(task, dict) else getattr(task, "gate_ids", None)
+        return [str(item) for item in value] if isinstance(value, (list, set, tuple)) else []
+
+    @staticmethod
+    def _task_float(task: Any, key: str) -> float:
+        value = task.get(key) if isinstance(task, dict) else getattr(task, key, 0.0)
+        try:
+            return float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
 
     @staticmethod
     def _is_opaque_runtime_id(value: str) -> bool:

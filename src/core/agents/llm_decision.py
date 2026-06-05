@@ -16,7 +16,7 @@ from src.core.agents.graph_llm_models import (
 )
 from src.core.models.ag import GraphRef
 from src.core.models.scope import Asset
-from src.core.models.tg import TaskType
+from src.core.models.task_types import TaskType
 from src.core.runtime.policy import RuntimePolicy
 from src.core.runtime.policy_engine import PolicyEngine
 
@@ -342,7 +342,7 @@ class LLMDecisionValidator:
         risk_review_threshold: float = DEFAULT_GRAPH_PLAN_REVIEW_THRESHOLD,
         noise_review_threshold: float = DEFAULT_GRAPH_PLAN_REVIEW_THRESHOLD,
     ) -> GraphLLMPlanValidationResult:
-        """Validate graph-planning proposals before TG construction."""
+        """Validate graph-planning proposals before execution planning."""
 
         raw_payload = proposal if isinstance(proposal, dict) else proposal.model_dump(mode="json")
         if not isinstance(raw_payload, dict):

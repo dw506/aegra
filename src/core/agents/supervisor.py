@@ -59,7 +59,7 @@ class SupervisorLLMAdvisor(Protocol):
 class SupervisorAgent(BaseAgent):
     """Control-only high-level strategy advisor.
 
-    The agent is deliberately advisory. It never writes KG/AG/TG/Runtime state,
+    The agent is deliberately advisory. It never writes KG/AG/Runtime state,
     never emits replan requests, and never dispatches workers or tool commands.
     """
 

@@ -12,10 +12,13 @@ SENSITIVE_KEYS = {
     "password",
     "token",
     "api_key",
+    "apikey",
     "secret",
     "cookie",
     "authorization",
+    "auth",
     "private_key",
+    "privatekey",
 }
 
 
@@ -51,7 +54,7 @@ class TxtTraceLogger:
         if isinstance(value, dict):
             redacted: dict[Any, Any] = {}
             for key, item in value.items():
-                if str(key).lower() in SENSITIVE_KEYS:
+                if cls._is_sensitive_key(key):
                     redacted[key] = "[REDACTED]"
                 else:
                     redacted[key] = cls._redact(item)
@@ -59,6 +62,11 @@ class TxtTraceLogger:
         if isinstance(value, list):
             return [cls._redact(item) for item in value]
         return value
+
+    @staticmethod
+    def _is_sensitive_key(key: Any) -> bool:
+        normalized = str(key).lower().replace("-", "_")
+        return any(part in normalized for part in SENSITIVE_KEYS)
 
     @classmethod
     def _json_safe(cls, value: Any) -> Any:

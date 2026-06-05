@@ -40,6 +40,8 @@ class AppSettings(BaseModel):
     recovery_enabled: bool = True
     runtime_policy_path: Path | None = None
     runtime_policy: dict[str, Any] = Field(default_factory=dict)
+    lab_profile_path: Path | None = None
+    lab_profile: dict[str, Any] = Field(default_factory=dict)
     llm_api_key: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -51,7 +53,6 @@ class AppSettings(BaseModel):
     enable_planner_llm_advisor: bool = False
     enable_critic_llm_advisor: bool = False
     enable_supervisor_llm_advisor: bool = False
-    debug_scheduler_io: bool = False
     tool_nmap_path: str = "nmap"
     tool_python_path: str = "python"
     mcp_enabled: bool = False
@@ -60,7 +61,6 @@ class AppSettings(BaseModel):
     mcp_config_json: dict[str, Any] = Field(default_factory=dict)
     mcp_default_timeout_seconds: int = Field(default=60, ge=1)
     allow_local_fallback: bool = True
-    legacy_tg: bool = False
 
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
@@ -86,6 +86,13 @@ class AppSettings(BaseModel):
             return None
         return Path(value).expanduser().resolve()
 
+    @field_validator("lab_profile_path", mode="before")
+    @classmethod
+    def _coerce_lab_profile_path(cls, value: str | Path | None) -> Path | None:
+        if value in {None, ""}:
+            return None
+        return Path(value).expanduser().resolve()
+
     def load_runtime_policy(self) -> RuntimePolicy:
         """Load the effective runtime policy from settings and optional external file."""
 
@@ -96,6 +103,23 @@ class AppSettings(BaseModel):
             inline_policy=self.runtime_policy,
             policy_path=self.runtime_policy_path,
         )
+
+    def load_lab_profile(self) -> dict[str, Any]:
+        """Load stable lab profile metadata used by PlannerAgent and StageAgents."""
+
+        payload: dict[str, Any] = dict(self.lab_profile)
+        loaded_from = "settings"
+        if self.lab_profile_path is not None:
+            try:
+                file_payload = _load_mapping_file(self.lab_profile_path)
+            except FileNotFoundError as exc:
+                raise ValueError(f"lab profile file not found: {self.lab_profile_path}") from exc
+            except Exception as exc:
+                raise ValueError(f"failed to read lab profile file '{self.lab_profile_path}': {exc}") from exc
+            payload.update(file_payload)
+            loaded_from = str(self.lab_profile_path)
+        payload.setdefault("loaded_from", loaded_from)
+        return payload
 
     def to_packy_llm_config(self) -> PackyLLMConfig | None:
         """Convert settings into a Packy/OpenAI-compatible client config."""
@@ -178,6 +202,10 @@ class AppSettings(BaseModel):
             values["runtime_policy_path"] = environ["AEGRA_RUNTIME_POLICY_PATH"]
         if "AEGRA_RUNTIME_POLICY_JSON" in environ:
             values["runtime_policy"] = json.loads(environ["AEGRA_RUNTIME_POLICY_JSON"])
+        if "AEGRA_LAB_PROFILE_PATH" in environ:
+            values["lab_profile_path"] = environ["AEGRA_LAB_PROFILE_PATH"]
+        if "AEGRA_LAB_PROFILE_JSON" in environ:
+            values["lab_profile"] = json.loads(environ["AEGRA_LAB_PROFILE_JSON"])
         if "AEGRA_LLM_API_KEY" in environ:
             values["llm_api_key"] = environ["AEGRA_LLM_API_KEY"] or None
         if "AEGRA_LLM_BASE_URL" in environ:
@@ -232,13 +260,6 @@ class AppSettings(BaseModel):
                 "yes",
                 "on",
             }
-        if "AEGRA_DEBUG_SCHEDULER_IO" in environ:
-            values["debug_scheduler_io"] = environ["AEGRA_DEBUG_SCHEDULER_IO"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
         if "AEGRA_TOOL_NMAP_PATH" in environ:
             values["tool_nmap_path"] = environ["AEGRA_TOOL_NMAP_PATH"]
         if "AEGRA_TOOL_PYTHON_PATH" in environ:
@@ -270,14 +291,22 @@ class AppSettings(BaseModel):
                 "yes",
                 "on",
             }
-        if "AEGRA_LEGACY_TG" in environ:
-            values["legacy_tg"] = environ["AEGRA_LEGACY_TG"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
         return cls.model_validate(values)
+
+
+def _load_mapping_file(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        payload = json.loads(text)
+    else:
+        try:
+            import yaml  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ValueError("YAML lab profiles require PyYAML; use JSON or install PyYAML") from exc
+        payload = yaml.safe_load(text)
+    if not isinstance(payload, dict):
+        raise ValueError("lab profile file must contain an object")
+    return dict(payload)
 
 
 __all__ = ["AppSettings"]

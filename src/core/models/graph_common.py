@@ -25,11 +25,11 @@ def stable_node_id(prefix: str, payload: dict[str, Any]) -> str:
 
 
 class GraphRef(BaseModel):
-    """Reference to a source object in KG, AG, TG or a derived query."""
+    """Reference to a source object in KG, AG or a derived query."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    graph: Literal["kg", "ag", "tg", "query"]
+    graph: Literal["kg", "ag", "query"]
     ref_id: str = Field(min_length=1)
     ref_type: str | None = None
     label: str | None = None

@@ -22,7 +22,7 @@ class MCP:
         return {"success": True, "stdout": "ok", "metadata": {}}
 
 
-def test_recon_agent_audits_non_recon_tool_without_blocking() -> None:
+def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> None:
     result = ReconAgent(advisor=StaticAdvisor("safe_vuln_validate"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
@@ -39,10 +39,10 @@ def test_recon_agent_audits_non_recon_tool_without_blocking() -> None:
     assert result.status != "blocked"
     assert result.tool_trace[0].policy_check["allowed"] is True
     assert result.tool_trace[0].policy_check["metadata"]["policy_audit_only"] is True
-    assert result.tool_trace[0].policy_check["metadata"]["original_allowed"] is False
+    assert result.tool_trace[0].policy_check["metadata"]["original_allowed"] is True
 
 
-def test_goal_agent_audits_pivot_tool_without_blocking() -> None:
+def test_policy_denylist_is_audit_only_without_blocking() -> None:
     result = GoalAgent(advisor=StaticAdvisor("pivot_route_probe"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
@@ -50,7 +50,7 @@ def test_goal_agent_audits_pivot_tool_without_blocking() -> None:
             agent_name="goal_agent",
             stage_type="GOAL_STAGE",
             objective="goal",
-            policy_context={"authorized": True},
+            policy_context={"authorized": True, "mcp_tool_denylist": ["pivot_route_probe"]},
             max_steps=1,
             mcp_tool_catalog={"mcp": {"tools": [{"name": "pivot_route_probe", "category": "pivot", "requires_authorization": False}]}},
         )

@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Circle, Clock3 } from "lucide-react";
 import type { GraphState } from "../graphState";
 import {
   buildDisplayName,
+  buildNodeSubtitle,
   buildOperationOverview,
   buildStatePath,
   groupCycles,
@@ -71,7 +72,7 @@ export function AgTimelineView({ ag, runtime, operation, selectedNode, onSelectN
                     >
                       <span className="stepOrder">{inferStepOrder(node)}</span>
                       <strong>{buildDisplayName(node)}</strong>
-                      <small>{nodeType(node)}</small>
+                      <small>{buildNodeSubtitle(node) || nodeType(node)}</small>
                       <NodeStatus node={node} />
                     </button>
                     {index < cycle.nodes.length - 1 && <span className="chainArrow">→</span>}

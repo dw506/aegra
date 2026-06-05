@@ -48,6 +48,9 @@ export interface KgAssetSummary {
 export function buildDisplayName(node: VisualNode): string {
   const type = nodeType(node);
   const meta = readMeta(node);
+  const visualTitle = firstString(readValue(node, "visual_title"), readValue(node, "visual_label"), readValue(node, "display_name"), meta.visual_title, meta.visual_label, meta.display_name);
+  if (visualTitle) return visualTitle;
+
   const asset = firstString(readValue(node, "asset"), readValue(node, "host"), readValue(node, "target"), meta.asset, meta.host, meta.target);
   const port = firstString(readValue(node, "port"), meta.port);
   const protocol = firstString(readValue(node, "protocol"), meta.protocol, "tcp");
@@ -59,10 +62,6 @@ export function buildDisplayName(node: VisualNode): string {
   const status = firstString(node.status, readValue(node, "status"), meta.status);
   const reason = firstString(readValue(node, "reason"), readValue(node, "stop_reason"), meta.reason, meta.stop_reason);
   const goal = firstString(readValue(node, "goal"), meta.goal);
-
-  if (firstString(readValue(node, "display_name"), meta.display_name)) {
-    return firstString(readValue(node, "display_name"), meta.display_name);
-  }
 
   switch (type) {
     case "HOST_KNOWN":
@@ -107,6 +106,20 @@ export function buildDisplayName(node: VisualNode): string {
     default:
       return firstString(node.label, type, "未命名节点");
   }
+}
+
+export function buildNodeSubtitle(node: VisualNode): string {
+  const meta = readMeta(node);
+  return firstString(
+    readValue(node, "visual_subtitle"),
+    readValue(node, "visual_summary"),
+    readValue(node, "summary"),
+    readValue(node, "output_summary"),
+    meta.visual_subtitle,
+    meta.visual_summary,
+    meta.summary,
+    meta.output_summary,
+  );
 }
 
 export function inferStepOrder(node: VisualNode): number {

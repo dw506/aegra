@@ -11,7 +11,6 @@ from src.core.execution.tool_policy import ToolPolicy
 from src.core.execution.tool_result import ToolExecutionResult
 from src.core.models.events import AgentResultStatus, AgentRole, AgentTaskResult
 from src.core.models.runtime import RuntimeState
-from src.core.models.tg import BaseTaskNode
 
 
 class LegacyToolAdapter(Protocol):
@@ -70,17 +69,15 @@ class ToolExecutor:
         self,
         plan: ToolPlan,
         runtime_state: RuntimeState,
-        *,
-        task: BaseTaskNode | None = None,
     ) -> AgentTaskResult:
-        decision = self._policy.evaluate(plan, runtime_state, task=task)
+        decision = self._policy.evaluate(plan, runtime_state)
         if not decision.allowed:
             return AgentTaskResult(
                 request_id=f"tool-plan::{plan.task_id}",
                 agent_role=AgentRole.RECON_WORKER,
                 operation_id=runtime_state.operation_id,
                 task_id=plan.task_id,
-                tg_node_id=str(plan.metadata.get("tg_node_id") or plan.task_id),
+                execution_node_id=str(plan.metadata.get("execution_node_id") or plan.task_id),
                 status=AgentResultStatus.BLOCKED,
                 summary=decision.reason,
                 metadata={"tool_policy": decision.model_dump(mode="json"), "tool_plan": plan.model_dump(mode="json")},
@@ -92,10 +89,13 @@ class ToolExecutor:
                 agent_role=AgentRole.RECON_WORKER,
                 operation_id=runtime_state.operation_id,
                 task_id=plan.task_id,
-                tg_node_id=str(plan.metadata.get("tg_node_id") or plan.task_id),
+                execution_node_id=str(plan.metadata.get("execution_node_id") or plan.task_id),
                 status=AgentResultStatus.FAILED,
                 summary=f"execution adapter '{plan.adapter}' is not registered",
                 error_message=f"missing adapter: {plan.adapter}",
-                metadata={"tool_plan": plan.model_dump(mode="json")},
+                metadata={"tool_policy": decision.model_dump(mode="json"), "tool_plan": plan.model_dump(mode="json")},
             )
-        return adapter.execute(plan, runtime_state)
+        result = adapter.execute(plan, runtime_state)
+        result.metadata.setdefault("tool_policy", decision.model_dump(mode="json"))
+        result.metadata.setdefault("tool_plan", plan.model_dump(mode="json"))
+        return result

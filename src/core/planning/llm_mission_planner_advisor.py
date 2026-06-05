@@ -135,8 +135,8 @@ class LLMMissionPlannerAdvisor:
             "operation_id": "operation id string",
             "cycle_index": 0,
             "decision": "dispatch_agent | replan | pause_for_review | stop_success | stop_failed",
-            "selected_agent": "recon_agent | vuln_analysis_agent | exploit_validation_agent | access_pivot_agent | goal_agent | null",
-            "selected_stage": "RECON_STAGE | VULN_ANALYSIS_STAGE | EXPLOIT_STAGE | ACCESS_PIVOT_STAGE | GOAL_STAGE | null",
+            "selected_agent": "registered agent name string | null",
+            "selected_stage": "stage name string from the registered agent capability | null",
             "objective": "bounded objective for the selected agent or stop/replan reason",
             "target_refs": [],
             "required_context": {},
@@ -155,6 +155,7 @@ class LLMMissionPlannerAdvisor:
                 "kg": graph_context.get("kg") or graph_context.get("kg_summary") or {},
                 "ag_process": graph_context.get("ag_process_summary") or graph_context.get("ag") or graph_context.get("ag_summary") or {},
                 "runtime": graph_context.get("runtime") or graph_context.get("runtime_summary") or {},
+                "lab_profile": graph_context.get("lab_profile") or {},
                 "policy": policy_context,
                 "recent_evidence": graph_context.get("recent_evidence") or [],
                 "known_assets": graph_context.get("known_assets") or [],
@@ -166,20 +167,8 @@ class LLMMissionPlannerAdvisor:
                 "current_goal": graph_context.get("current_goal") or goal,
                 "recent_results": list(recent_stage_results or []),
                 "planner_decision_contract": decision_contract,
-                "allowed_agents": [
-                    "recon_agent",
-                    "vuln_analysis_agent",
-                    "exploit_validation_agent",
-                    "access_pivot_agent",
-                    "goal_agent",
-                ],
-                "allowed_stages": [
-                    "RECON_STAGE",
-                    "VULN_ANALYSIS_STAGE",
-                    "EXPLOIT_STAGE",
-                    "ACCESS_PIVOT_STAGE",
-                    "GOAL_STAGE",
-                ],
+                "agent_capabilities": graph_context.get("agent_capabilities") or [],
+                "mcp_tool_capabilities": graph_context.get("mcp_tool_capabilities") or graph_context.get("mcp_tool_catalog") or {},
             },
             self._config.max_context_chars,
         )
@@ -189,13 +178,16 @@ class LLMMissionPlannerAdvisor:
             "AG is the attack process graph: it records each Planner decision, Agent execution, Tool call and Result. "
             "Do not output shell commands. Do not output MCP tool arguments. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
-            "Do not use a fixed stage sequence. Select the next agent from graph evidence. "
-            "If evidence is insufficient, choose recon_agent or replan. "
+            "The execution layer is a parallel capability pool, not a pipeline. "
+            "Do not use a fixed stage sequence and do not require every agent to run. "
+            "Select the next agent from evidence gaps in KG, AG, Runtime, LabProfile, Policy and ToolCatalog. "
+            "Use agent_capabilities as the only source for valid agent/stage pairs. "
+            "If evidence is insufficient, select an appropriate registered agent or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "
             "If Runtime metadata has goal_satisfied=true and there is a GoalAgent StageResult, "
             "a GoalCheck finding, evidence refs, and AG GoalCheck/StageResult process nodes, "
             "choose stop_success with stop_condition=goal_satisfied. "
-            "If goal_satisfied=true exists without complete evidence, dispatch goal_agent or replan. "
+            "If goal_satisfied=true exists without complete evidence, select an appropriate registered agent or choose replan. "
             "For dispatch_agent, selected_agent and selected_stage must be non-null. "
             "For non-dispatch decisions, selected_agent may be null. "
             "Use reasoning_summary for a concise justification without chain-of-thought.\n\n"
@@ -362,15 +354,8 @@ def _legacy_selected_task_fields(selected_task: Any) -> dict[str, Any]:
         selected_stage = normalize_stage_name(raw_stage)
     except ValueError:
         selected_stage = selected_task.get("selected_stage")
-    stage_agent = {
-        "RECON_STAGE": "recon_agent",
-        "VULN_ANALYSIS_STAGE": "vuln_analysis_agent",
-        "EXPLOIT_STAGE": "exploit_validation_agent",
-        "ACCESS_PIVOT_STAGE": "access_pivot_agent",
-        "GOAL_STAGE": "goal_agent",
-    }.get(str(selected_stage))
     return {
-        "selected_agent": selected_task.get("selected_agent") or stage_agent,
+        "selected_agent": selected_task.get("selected_agent"),
         "selected_stage": selected_stage,
         "objective": selected_task.get("objective") or selected_task.get("label"),
         "target_refs": selected_task.get("target_refs") or selected_task.get("input_refs") or [],

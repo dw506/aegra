@@ -117,7 +117,7 @@ class OutcomeRecord(BaseAgentRecord):
 
 
 class DecisionRecord(BaseAgentRecord):
-    """Structured decision emitted by planner, scheduler or critic-style agents."""
+    """Structured decision emitted by planner or critic-style agents."""
 
     id: str = Field(
         default_factory=lambda: new_record_id("decision"),

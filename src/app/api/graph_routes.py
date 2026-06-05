@@ -19,9 +19,9 @@ def register_graph_routes(app: Any, orchestrator: Any, settings: Any) -> None:
     """Register visualization graph snapshot and WebSocket routes."""
 
     @app.get("/operations/{operation_id}/visual-graphs/snapshot")
-    def get_visual_graph_snapshot(operation_id: str, legacy_tg: bool = False) -> dict[str, Any]:
+    def get_visual_graph_snapshot(operation_id: str) -> dict[str, Any]:
         try:
-            snapshot = _build_snapshot(orchestrator, operation_id, legacy_tg=legacy_tg)
+            snapshot = _build_snapshot(orchestrator, operation_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return snapshot.model_dump(mode="json")
@@ -30,7 +30,7 @@ def register_graph_routes(app: Any, orchestrator: Any, settings: Any) -> None:
     async def visual_graph_ws(websocket: WebSocket, operation_id: str) -> None:
         await websocket.accept()
         try:
-            snapshot = _build_snapshot(orchestrator, operation_id, legacy_tg=False)
+            snapshot = _build_snapshot(orchestrator, operation_id)
         except ValueError:
             await websocket.close(code=1008)
             return
@@ -48,16 +48,13 @@ def register_graph_routes(app: Any, orchestrator: Any, settings: Any) -> None:
             raise
 
 
-def _build_snapshot(orchestrator: Any, operation_id: str, *, legacy_tg: bool = False) -> Any:
+def _build_snapshot(orchestrator: Any, operation_id: str) -> Any:
     runtime_state = orchestrator.runtime_store.snapshot(operation_id)
     kg = orchestrator.graph_memory_store.load_kg(operation_id)
     ag = orchestrator.graph_memory_store.load_ag(operation_id)
-    tg_payload = orchestrator.graph_memory_store.load_tg(operation_id).to_dict() if legacy_tg else None
     return build_visual_snapshot(
         operation_id=operation_id,
         kg_payload=kg.to_dict(),
         ag_payload=ag.to_dict(),
-        tg_payload=tg_payload,
         runtime_state=runtime_state,
-        legacy_tg=legacy_tg,
     )

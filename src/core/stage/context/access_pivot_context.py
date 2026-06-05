@@ -18,17 +18,6 @@ def build_access_pivot_context(
     return {
         **graph_context,
         "stage_context_builder": "access_pivot_context_builder",
-        "allowed_tool_names": [
-            "credential_check",
-            "session_probe",
-            "session_open_lab",
-            "identity_context_probe",
-            "privilege_context_probe",
-            "pivot_route_probe",
-            "internal_service_discover",
-            "tcp_connect_probe",
-            "http_probe",
-        ],
         "access_pivot_focus": {
             "objective": request.objective,
             "credentials": request.required_context.get("credentials") or runtime_context.get("credentials") or [],
@@ -38,6 +27,5 @@ def build_access_pivot_context(
             "policy_scope": policy_context,
             "memory_tail": memory[-4:],
             "tool_catalog": available_tools,
-            "validation_mode": "authorized_session_credential_pivot_reachability_only",
         },
     }

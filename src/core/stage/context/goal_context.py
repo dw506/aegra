@@ -18,7 +18,6 @@ def build_goal_context(
     return {
         **graph_context,
         "stage_context_builder": "goal_context_builder",
-        "allowed_tool_names": ["goal_check", "chain_goal_check", "internal_service_discover", "http_probe", "artifact_store"],
         "goal_focus": {
             "objective": request.objective,
             "success_criteria": list(request.success_criteria),

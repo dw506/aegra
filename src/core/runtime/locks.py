@@ -2,7 +2,7 @@
 
 This module manages transient execution locks stored inside Runtime State.
 Locks are runtime coordination primitives only. They are not world facts and
-must not be persisted as KG, AG or TG structures.
+must not be persisted as KG or AG structures.
 """
 
 from __future__ import annotations

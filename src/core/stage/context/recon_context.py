@@ -18,22 +18,6 @@ def build_recon_context(
     return {
         **graph_context,
         "stage_context_builder": "recon_context_builder",
-        "allowed_tool_names": [
-            "nmap_scan",
-            "http_probe",
-            "web_fingerprint",
-            "web_discover",
-            "dns_lookup",
-            "tls_probe",
-            "tcp_connect_probe",
-        ],
-        "denied_tool_names": [
-            "run_command",
-            "safe_vuln_validate",
-            "credential_check",
-            "session_open_lab",
-            "pivot_route_probe",
-        ],
         "recon_focus": {
             "objective": request.objective,
             "target_refs": [ref.model_dump(mode="json") for ref in request.target_refs],
@@ -41,6 +25,7 @@ def build_recon_context(
             "known_services": graph_context.get("known_services") or request.kg_snapshot.get("known_services") or [],
             "policy_scope": policy_context,
             "tool_names": _tool_names(available_tools),
+            "tool_catalog": available_tools,
             "memory_tail": memory[-4:],
             "runtime_reachability": runtime_context.get("reachability") or runtime_context.get("pivot_routes") or {},
         },

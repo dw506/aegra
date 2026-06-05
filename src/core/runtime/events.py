@@ -54,7 +54,7 @@ class TaskQueuedEvent(BaseRuntimeEvent):
 
     event_type: Literal[RuntimeEventType.TASK_QUEUED] = RuntimeEventType.TASK_QUEUED
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     queue_name: str | None = None
     deadline: datetime | None = None
     priority: int = Field(default=50, ge=0, le=100)
@@ -65,7 +65,7 @@ class TaskStartedEvent(BaseRuntimeEvent):
 
     event_type: Literal[RuntimeEventType.TASK_STARTED] = RuntimeEventType.TASK_STARTED
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     worker_id: str = Field(min_length=1)
     session_id: str | None = None
     attempt_count: int = Field(default=1, ge=0)
@@ -76,7 +76,7 @@ class TaskCompletedEvent(BaseRuntimeEvent):
 
     event_type: Literal[RuntimeEventType.TASK_COMPLETED] = RuntimeEventType.TASK_COMPLETED
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     outcome_id: str | None = None
     outcome_ref: str | None = None
     summary: str | None = None
@@ -87,7 +87,7 @@ class TaskFailedEvent(BaseRuntimeEvent):
 
     event_type: Literal[RuntimeEventType.TASK_FAILED] = RuntimeEventType.TASK_FAILED
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     error_message: str = Field(min_length=1)
     retryable: bool = False
     attempt_count: int = Field(default=0, ge=0)
@@ -98,7 +98,7 @@ class TaskCancelledEvent(BaseRuntimeEvent):
 
     event_type: Literal[RuntimeEventType.TASK_CANCELLED] = RuntimeEventType.TASK_CANCELLED
     task_id: str = Field(min_length=1)
-    tg_node_id: str = Field(min_length=1)
+    execution_node_id: str = Field(min_length=1)
     reason: str | None = None
 
 
@@ -191,7 +191,6 @@ class CheckpointCreatedEvent(BaseRuntimeEvent):
     created_after_tasks: list[str] = Field(default_factory=list)
     kg_version: str | None = None
     ag_version: str | None = None
-    tg_version: str | None = None
     summary: str = Field(default="")
 
 

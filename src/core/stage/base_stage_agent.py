@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal, Protocol
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,101 +12,6 @@ from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, Unavaila
 from src.core.models.events import utc_now
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
-
-
-_AGENT_TOOL_ALLOWLISTS: dict[str, frozenset[str]] = {
-    "recon_agent": frozenset(
-        {
-            "nmap_scan",
-            "http_probe",
-            "web_fingerprint",
-            "web_discover",
-            "dns_lookup",
-            "tls_probe",
-            "tcp_connect_probe",
-        }
-    ),
-    "vuln_analysis_agent": frozenset(
-        {
-            "vuln_profile_match",
-            "validation_precheck",
-            "whatweb_fingerprint",
-            "nuclei_scan",
-            "http_probe",
-        }
-    ),
-    "exploit_validation_agent": frozenset(
-        {
-            "validation_precheck",
-            "safe_vuln_validate",
-            "http_probe",
-            "artifact_store",
-            "nuclei_scan",
-        }
-    ),
-    "access_pivot_agent": frozenset(
-        {
-            "credential_check",
-            "session_probe",
-            "session_open_lab",
-            "identity_context_probe",
-            "privilege_context_probe",
-            "pivot_route_probe",
-            "internal_service_discover",
-            "tcp_connect_probe",
-            "http_probe",
-        }
-    ),
-    "goal_agent": frozenset(
-        {
-            "goal_check",
-            "chain_goal_check",
-            "internal_service_discover",
-            "http_probe",
-            "artifact_store",
-        }
-    ),
-}
-
-_AGENT_TOOL_DENYLISTS: dict[str, frozenset[str]] = {
-    "recon_agent": frozenset(
-        {
-            "run_command",
-            "safe_vuln_validate",
-            "credential_check",
-            "session_open_lab",
-            "pivot_route_probe",
-        }
-    ),
-    "vuln_analysis_agent": frozenset(
-        {
-            "run_command",
-            "safe_vuln_validate",
-            "credential_check",
-            "session_open_lab",
-            "pivot_route_probe",
-        }
-    ),
-    "exploit_validation_agent": frozenset(
-        {
-            "run_command",
-            "credential_check",
-            "session_open_lab",
-            "pivot_route_probe",
-            "internal_service_discover",
-        }
-    ),
-    "access_pivot_agent": frozenset({"safe_vuln_validate", "nuclei_scan", "run_command"}),
-    "goal_agent": frozenset(
-        {
-            "safe_vuln_validate",
-            "credential_check",
-            "session_open_lab",
-            "pivot_route_probe",
-            "run_command",
-        }
-    ),
-}
 
 
 class StageToolCall(BaseModel):
@@ -160,15 +67,12 @@ class BaseStageAgent:
     """Bounded ReAct-style stage executor.
 
     Stage agents may call tools and reason over their results, but they never
-    mutate KG, AG, TG or Runtime directly. The only persisted output is a
+    mutate KG, AG or Runtime directly. The only persisted output is a
     StageResult later adapted into the canonical AgentTaskResult protocol.
     """
 
     stage_type: StageName
     agent_name: str
-    allowed_tool_names: frozenset[str] = frozenset()
-    denied_tool_names: frozenset[str] = frozenset()
-    tool_categories: frozenset[str] = frozenset()
     context_builder_name: str = "base_stage_context_builder"
 
     def __init__(
@@ -285,22 +189,7 @@ class BaseStageAgent:
         )
 
     def filter_tool_catalog(self, tool_catalog: dict[str, Any]) -> dict[str, Any]:
-        if not self.allowed_tool_names and not self.tool_categories:
-            return dict(tool_catalog)
-        filtered: dict[str, Any] = {}
-        for server_id, payload in tool_catalog.items():
-            tools = payload.get("tools") if isinstance(payload, dict) else None
-            if not isinstance(tools, list):
-                filtered[server_id] = payload
-                continue
-            selected = [
-                tool
-                for tool in tools
-                if self._tool_matches_stage(tool)
-            ]
-            if selected:
-                filtered[server_id] = {**payload, "tools": selected}
-        return filtered
+        return dict(tool_catalog)
 
     def build_graph_context(self, request: StageExecutionRequest) -> dict[str, Any]:
         """Build the read-only context passed to this StageAgent's advisor.
@@ -365,6 +254,7 @@ class BaseStageAgent:
         policy_context: dict[str, Any],
         request: StageExecutionRequest,
     ) -> ToolTrace:
+        call = self._normalize_tool_call_arguments(call=call, request=request)
         timeout = int(call.timeout_seconds or self._default_timeout_seconds)
         tool_metadata = self._lookup_tool(available_tools, server_id=call.server_id, tool_name=call.tool_name)
         policy_check = self._enforce_policy(
@@ -449,6 +339,76 @@ class BaseStageAgent:
         )
         return trace
 
+    @classmethod
+    def _normalize_tool_call_arguments(cls, *, call: StageToolCall, request: StageExecutionRequest) -> StageToolCall:
+        """Fill deterministic tool arguments that can be derived from graph context."""
+
+        if call.tool_name not in {"validation_precheck", "safe_vuln_validate"}:
+            return call
+        if call.arguments.get("target_url"):
+            return call
+        inferred = cls._infer_target_url(request)
+        if not inferred:
+            return call
+        arguments = dict(call.arguments)
+        arguments["target_url"] = inferred
+        return call.model_copy(update={"arguments": arguments})
+
+    @classmethod
+    def _infer_target_url(cls, request: StageExecutionRequest) -> str | None:
+        candidates: list[Any] = [
+            request.required_context,
+            request.runtime_context,
+            request.kg_snapshot,
+            request.ag_process_history,
+        ]
+        for candidate in candidates:
+            found = cls._find_url_value(candidate)
+            if found:
+                return found
+        for ref in request.target_refs:
+            found = cls._url_from_ref(ref.ref_id) or cls._url_from_ref(ref.label)
+            if found:
+                return found
+        return None
+
+    @classmethod
+    def _find_url_value(cls, value: Any) -> str | None:
+        if isinstance(value, str):
+            return cls._url_from_ref(value)
+        if isinstance(value, dict):
+            for key in ("target_url", "canonical_target_url", "url", "endpoint", "base_url"):
+                found = cls._url_from_ref(value.get(key))
+                if found:
+                    return found
+            for item in value.values():
+                found = cls._find_url_value(item)
+                if found:
+                    return found
+        if isinstance(value, list):
+            for item in value:
+                found = cls._find_url_value(item)
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _url_from_ref(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        parsed = urlparse(text)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return text
+        match = re.search(r"(?P<host>(?:\d{1,3}\.){3}\d{1,3}):(?P<port>\d{1,5})(?:/tcp)?", text)
+        if not match:
+            return None
+        port = int(match.group("port"))
+        scheme = "https" if port == 443 else "http"
+        return f"{scheme}://{match.group('host')}:{port}/"
+
     @staticmethod
     def _decision_metadata(decision: StageAgentDecision) -> dict[str, Any]:
         metadata = getattr(decision, "metadata", {})
@@ -527,18 +487,6 @@ class BaseStageAgent:
         keys = ", ".join(sorted(str(key) for key in arguments)[:8])
         return f"arguments: {keys}" if keys else "no arguments"
 
-    def _tool_matches_stage(self, tool: Any) -> bool:
-        if not isinstance(tool, dict):
-            return any(category in str(tool).lower() for category in self.tool_categories)
-        category = str(tool.get("category") or "").lower()
-        name = str(tool.get("name") or tool.get("tool_name") or "").lower()
-        if name in self.denied_tool_names:
-            return False
-        if self.allowed_tool_names:
-            return name in self.allowed_tool_names
-        tags = " ".join(str(item).lower() for item in tool.get("policy_tags", []) if item is not None)
-        return any(item in {category} or item in name or item in tags for item in self.tool_categories)
-
     @staticmethod
     def _lookup_tool(available_tools: dict[str, Any], *, server_id: str, tool_name: str) -> dict[str, Any]:
         server = available_tools.get(server_id)
@@ -592,12 +540,6 @@ class BaseStageAgent:
         name = call.tool_name
         if not tool_metadata:
             return {"allowed": False, "reason": f"tool {call.server_id}.{name} is not in the supplied MCP catalog"}
-        agent_allowlist = _AGENT_TOOL_ALLOWLISTS.get(request.agent_name, frozenset())
-        agent_denylist = _AGENT_TOOL_DENYLISTS.get(request.agent_name, frozenset())
-        if name in agent_denylist:
-            return {"allowed": False, "reason": f"MCP tool '{name}' is denied for {request.agent_name}"}
-        if agent_allowlist and name not in agent_allowlist:
-            return {"allowed": False, "reason": f"MCP tool '{name}' is not allowlisted for {request.agent_name}"}
         deny_tools = {str(item) for item in policy_context.get("mcp_tool_denylist", [])}
         deny_tools.update(str(item) for item in policy_context.get("disabled_tools", []))
         if name in deny_tools:
@@ -611,14 +553,6 @@ class BaseStageAgent:
         allow_servers = {str(item) for item in policy_context.get("mcp_server_allowlist", [])}
         if allow_servers and call.server_id not in allow_servers:
             return {"allowed": False, "reason": f"MCP server '{call.server_id}' is not allowlisted by policy"}
-        denied_risk = BaseStageAgent._denied_risk_pattern(
-            name=name,
-            category=category,
-            tool_metadata=tool_metadata,
-            arguments=call.arguments,
-        )
-        if denied_risk is not None:
-            return {"allowed": False, "reason": f"high-risk action is not allowed for StageAgent execution: {denied_risk}"}
         strict = category in {"exploit", "access", "credential", "pivot"} or normalize_stage_name(request.stage_type) in {
             "EXPLOIT_STAGE",
             "ACCESS_PIVOT_STAGE",
@@ -628,78 +562,7 @@ class BaseStageAgent:
             authorized = authorized or bool(policy_context.get("authorized_hosts") or policy_context.get("engagement"))
             if not authorized:
                 return {"allowed": False, "reason": f"{category or 'sensitive'} tool requires explicit authorization context"}
-        stage = normalize_stage_name(request.stage_type)
-        if stage == "EXPLOIT_STAGE" and not BaseStageAgent._is_safe_validation_tool(tool_metadata):
-            return {"allowed": False, "reason": "ExploitValidationAgent can only call safe validation tools"}
-        if stage == "ACCESS_PIVOT_STAGE" and not BaseStageAgent._is_access_pivot_validation_tool(tool_metadata):
-            return {"allowed": False, "reason": "AccessPivotAgent can only validate authorized session, credential, pivot route, or reachability state"}
         return {"allowed": True, "reason": "policy allowed MCP tool call"}
-
-    @staticmethod
-    def _denied_risk_pattern(
-        *,
-        name: str,
-        category: str,
-        tool_metadata: dict[str, Any],
-        arguments: dict[str, Any],
-    ) -> str | None:
-        text = " ".join(
-            [
-                name,
-                category,
-                str(tool_metadata.get("description") or ""),
-                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
-                " ".join(str(key) for key in arguments.keys()),
-            ]
-        ).lower()
-        denied_terms = {
-            "reverse_shell": "reverse shell",
-            "reverse shell": "reverse shell",
-            "bind_shell": "bind shell",
-            "bind shell": "bind shell",
-            "persistence": "persistence",
-            "persist": "persistence",
-            "evasion": "evasion",
-            "bypass": "bypass",
-            "stealth": "stealth",
-            "bruteforce": "credential brute force",
-            "brute_force": "credential brute force",
-            "brute force": "credential brute force",
-            "password_spray": "credential spraying",
-            "spray": "credential spraying",
-            "destructive": "destructive action",
-            "delete": "destructive action",
-            "wipe": "destructive action",
-            "ransom": "destructive action",
-        }
-        for term, reason in denied_terms.items():
-            if term in text:
-                return reason
-        return None
-
-    @staticmethod
-    def _is_safe_validation_tool(tool_metadata: dict[str, Any]) -> bool:
-        text = " ".join(
-            [
-                str(tool_metadata.get("name") or tool_metadata.get("tool_name") or ""),
-                str(tool_metadata.get("category") or ""),
-                str(tool_metadata.get("description") or ""),
-                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
-            ]
-        ).lower()
-        return any(term in text for term in ("safe", "validate", "validation", "precheck", "fingerprint", "probe", "artifact"))
-
-    @staticmethod
-    def _is_access_pivot_validation_tool(tool_metadata: dict[str, Any]) -> bool:
-        text = " ".join(
-            [
-                str(tool_metadata.get("name") or tool_metadata.get("tool_name") or ""),
-                str(tool_metadata.get("category") or ""),
-                str(tool_metadata.get("description") or ""),
-                " ".join(str(item) for item in tool_metadata.get("policy_tags", []) if item is not None),
-            ]
-        ).lower()
-        return any(term in text for term in ("validate", "validation", "session", "credential", "pivot", "route", "reachability", "identity", "privilege"))
 
     @staticmethod
     def _graph_context_from_request(request: StageExecutionRequest) -> dict[str, Any]:

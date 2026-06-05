@@ -9,9 +9,6 @@ from src.core.stage.base_stage_agent import BaseStageAgent
 class GoalAgent(BaseStageAgent):
     stage_type = "GOAL_STAGE"
     agent_name = "goal_agent"
-    allowed_tool_names = frozenset({"goal_check", "chain_goal_check", "internal_service_discover", "http_probe", "artifact_store"})
-    denied_tool_names = frozenset({"safe_vuln_validate", "credential_check", "session_open_lab", "pivot_route_probe", "run_command"})
-    tool_categories = frozenset({"goal", "check", "cleanup", "artifact"})
 
     def __init__(
         self,

@@ -139,28 +139,9 @@ def _legacy_selected_task_fields(selected_task: Any) -> dict[str, Any]:
     if not isinstance(selected_task, dict):
         return {}
     selected_stage = selected_task.get("selected_stage") or selected_task.get("stage_type") or selected_task.get("task_type")
-    stage_agent = {
-        "recon": "recon_agent",
-        "vuln_analysis": "vuln_analysis_agent",
-        "exploit": "exploit_validation_agent",
-        "access_pivot": "access_pivot_agent",
-        "goal": "goal_agent",
-        "RECON_STAGE": "recon_agent",
-        "VULN_ANALYSIS_STAGE": "vuln_analysis_agent",
-        "EXPLOIT_STAGE": "exploit_validation_agent",
-        "ACCESS_PIVOT_STAGE": "access_pivot_agent",
-        "GOAL_STAGE": "goal_agent",
-    }.get(str(selected_stage))
-    canonical_stage = {
-        "recon": "RECON_STAGE",
-        "vuln_analysis": "VULN_ANALYSIS_STAGE",
-        "exploit": "EXPLOIT_STAGE",
-        "access_pivot": "ACCESS_PIVOT_STAGE",
-        "goal": "GOAL_STAGE",
-    }.get(str(selected_stage), selected_stage)
     return {
-        "selected_agent": selected_task.get("selected_agent") or stage_agent,
-        "selected_stage": canonical_stage,
+        "selected_agent": selected_task.get("selected_agent"),
+        "selected_stage": selected_stage,
         "objective": selected_task.get("objective") or selected_task.get("label"),
         "target_refs": selected_task.get("target_refs") or selected_task.get("input_refs") or [],
         "required_context": selected_task.get("required_context") or {},

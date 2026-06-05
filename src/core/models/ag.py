@@ -327,7 +327,7 @@ class AttackGraph:
         """Attach projection metadata to the current AG snapshot.
 
         AG 的版本并不试图模拟数据库事务版本，而是作为一个轻量可追踪版本号，
-        用于把当前 AG 快照与来源 KG 版本、投影批次和下游 TG 构建关联起来。
+        用于把当前 AG 快照与来源 KG 版本、投影批次和下游规划关联起来。
         """
 
         self._source_kg_version = source_kg_version

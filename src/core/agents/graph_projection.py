@@ -3,7 +3,7 @@
 This agent is the AG-side owner in the agent layer. It consumes KG delta
 events, projects only the affected slices into Attack Graph state/action
 patches, and emits AG-scoped deltas plus downstream projection events. It does
-not write TG and does not rebuild AG wholesale by default.
+not rebuild AG wholesale by default.
 """
 
 from __future__ import annotations
@@ -134,7 +134,7 @@ class GraphProjectionAgent(BaseAgent):
             f"anchored AG projection to KG version {source_kg_version if source_kg_version is not None else 'unknown'}",
             f"prepared {len(state_deltas)} AG delta(s) without full AG rebuild",
             "projection only writes AG-scoped deltas and emits AG events",
-            "no TG writes or replanning requests were produced",
+            "no runtime writes or replanning requests were produced",
         ]
         if goal_context:
             logs.append("goal_context applied to AG projection scoring")

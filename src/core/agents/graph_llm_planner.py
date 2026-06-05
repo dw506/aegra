@@ -26,7 +26,7 @@ from src.core.agents.llm_decision import validate_graph_plan_proposal
 from src.core.agents.llm_safety import response_within_limits, sanitize_llm_payload
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMConfig, PackyLLMError
 from src.core.models.ag import GraphRef
-from src.core.models.tg import TaskType
+from src.core.models.task_types import TaskType
 
 
 class GraphLLMPlannerAdvisorConfig(BaseModel):

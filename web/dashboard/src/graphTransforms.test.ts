@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphState } from "./graphState";
 import {
   buildDisplayName,
+  buildNodeSubtitle,
   buildKgAssetSummaries,
   buildOperationOverview,
   groupCycles,
@@ -14,6 +15,8 @@ describe("graphTransforms", () => {
     expect(buildDisplayName(agNode("s1", "HOST_KNOWN", { asset: "10.20.0.22" }))).toBe("发现主机：10.20.0.22");
     expect(buildDisplayName(agNode("svc1", "SERVICE_CONFIRMED", { asset: "10.20.0.22", port: 8080 }))).toBe("验证服务开放：10.20.0.22:8080");
     expect(buildDisplayName(agNode("tool1", "TOOL_CALL", { tool_name: "nmap" }))).toBe("工具调用：nmap");
+    expect(buildDisplayName(agNode("tool2", "TOOL_CALL", { visual_title: "nmap 成功：10.10.0.20" }))).toBe("nmap 成功：10.10.0.20");
+    expect(buildNodeSubtitle(agNode("tool2", "TOOL_CALL", { visual_summary: "8080/tcp open" }))).toBe("8080/tcp open");
   });
 
   it("infers AG step order", () => {

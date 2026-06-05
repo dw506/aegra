@@ -1,2 +1,1 @@
-"""Domain services shared by primary and legacy workers."""
-
+"""Reserved for future reusable worker-domain services."""
