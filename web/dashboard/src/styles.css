@@ -95,6 +95,257 @@ p { color: var(--muted); margin-top: 4px; font-size: 13px; }
   padding: 14px;
   min-height: 0;
 }
+.consoleWorkspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+  padding: 14px;
+  min-height: 0;
+}
+.consoleSurface {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.consoleView {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: #fbfcfd;
+}
+.graphPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.graphPanel .toolbar h2 {
+  margin-right: 8px;
+  font-size: 15px;
+}
+.inlineToolbar {
+  margin: -12px -12px 12px;
+  background: #fff;
+}
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.plainPanel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.plainPanel h2 {
+  margin-bottom: 8px;
+}
+.pathList {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+.pathList li {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.listButton {
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  text-align: left;
+  background: #fbfcfd;
+}
+.listButton strong {
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.listButton span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roundBlock {
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+.roundBlock > summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 800;
+  border-bottom: 1px solid var(--line);
+}
+.timelineRail {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+.timelineEvent {
+  width: 100%;
+  height: auto;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 10px;
+  text-align: left;
+  border-left: 5px solid var(--muted);
+  background: #fbfcfd;
+}
+.timelineEvent.success { border-left-color: var(--ok); }
+.timelineEvent.failed, .timelineEvent.blocked { border-left-color: var(--danger); }
+.timelineEvent.running, .timelineEvent.pending { border-left-color: var(--warn); }
+.timelineEvent span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.timelineEvent strong,
+.timelineEvent p,
+.timelineEvent small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.timelineEvent p,
+.timelineEvent small {
+  grid-column: 2;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.evidenceList {
+  display: grid;
+  gap: 10px;
+}
+.evidenceItem {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.evidenceItem details {
+  margin-top: 8px;
+}
+.evidenceItem summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.compactDl {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+.compactDl div {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+}
+.tracePanel {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.plannerHub {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.plannerHub strong {
+  font-size: 15px;
+}
+.plannerHub span,
+.plannerHub p {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.agentGrid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 8px;
+}
+.agentTile {
+  min-width: 0;
+  min-height: 120px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--muted);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+.agentTile.selected { border-left-color: var(--blue); }
+.agentTile.running { border-left-color: var(--warn); }
+.agentTile.success { border-left-color: var(--ok); }
+.agentTile.failed, .agentTile.blocked { border-left-color: var(--danger); }
+.agentTile strong,
+.agentTile p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agentTile span {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.agentTile p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .graphSurface, .detailPanel {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -544,7 +795,12 @@ pre {
 @media (max-width: 980px) {
   .topbar { align-items: stretch; flex-direction: column; }
   .topbarControls { flex-wrap: wrap; }
-  .workspace { grid-template-columns: 1fr; }
+  .workspace, .consoleWorkspace { grid-template-columns: 1fr; }
+  .metricGrid, .overviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tracePanel { grid-template-columns: 1fr; }
+  .agentGrid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .timelineEvent { grid-template-columns: 1fr; }
+  .timelineEvent p, .timelineEvent small { grid-column: 1; }
   .kgFactSummary { grid-template-columns: 1fr; }
   .operationOverview, .kgAssetStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agTimelineGrid, .kgAssetGrid { grid-template-columns: 1fr; }

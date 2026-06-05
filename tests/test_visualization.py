@@ -12,6 +12,7 @@ from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.visualization.graph_event import GraphOperation, VisualGraphChange, VisualGraphDelta
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.core.visualization.graph_serializer import build_visual_snapshot, graph_payload_to_delta
+from src.core.visualization.unified_visualization import build_unified_visualization
 
 try:
     from fastapi.testclient import TestClient
@@ -74,6 +75,25 @@ def test_graph_payload_to_delta_upserts_nodes_and_edges() -> None:
     ]
 
 
+def test_unified_visualization_adapts_generic_fields_without_environment_assumptions() -> None:
+    kg = KnowledgeGraph()
+    kg.add_node(Host(id="host-alpha", label="host-alpha", hostname="host-alpha"))
+    runtime = RuntimeState(operation_id="op-unified", execution=OperationRuntime(operation_id="op-unified"))
+    ag = AttackGraph()
+
+    payload = build_unified_visualization(
+        operation_id="op-unified",
+        kg_payload=kg.to_dict(),
+        ag_payload=ag.to_dict(),
+        runtime_state=runtime,
+    )
+
+    assert payload["operation"]["id"] == "op-unified"
+    assert payload["kg"]["nodes"][0]["display_name"] == "host-alpha"
+    assert payload["overview"]["asset_count"] == 1
+    assert payload["timeline"] == []
+
+
 def test_visual_snapshot_api_and_websocket(tmp_path) -> None:
     client_cls = _require_test_client()
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
@@ -88,6 +108,9 @@ def test_visual_snapshot_api_and_websocket(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json()["graphs"]["kg"]["nodes"][0]["id"] == "host-1"
+    visualization_response = client.get("/operations/op-vis/visualization")
+    assert visualization_response.status_code == 200
+    assert visualization_response.json()["kg"]["nodes"][0]["display_name"] == "10.20.0.30"
     assert client.get("/operations/missing/visual-graphs/snapshot").status_code == 404
 
     with client.websocket_connect("/operations/op-vis/visual-graphs/ws") as websocket:

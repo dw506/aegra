@@ -6,6 +6,7 @@ from typing import Any
 
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.core.visualization.graph_serializer import build_visual_snapshot
+from src.core.visualization.unified_visualization import build_unified_visualization
 
 try:  # pragma: no cover - exercised only when FastAPI is installed
     from fastapi import HTTPException, WebSocket, WebSocketDisconnect
@@ -25,6 +26,13 @@ def register_graph_routes(app: Any, orchestrator: Any, settings: Any) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return snapshot.model_dump(mode="json")
+
+    @app.get("/operations/{operation_id}/visualization")
+    def get_operation_visualization(operation_id: str) -> dict[str, Any]:
+        try:
+            return _build_unified_visualization(orchestrator, operation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.websocket("/operations/{operation_id}/visual-graphs/ws")
     async def visual_graph_ws(websocket: WebSocket, operation_id: str) -> None:
@@ -53,6 +61,18 @@ def _build_snapshot(orchestrator: Any, operation_id: str) -> Any:
     kg = orchestrator.graph_memory_store.load_kg(operation_id)
     ag = orchestrator.graph_memory_store.load_ag(operation_id)
     return build_visual_snapshot(
+        operation_id=operation_id,
+        kg_payload=kg.to_dict(),
+        ag_payload=ag.to_dict(),
+        runtime_state=runtime_state,
+    )
+
+
+def _build_unified_visualization(orchestrator: Any, operation_id: str) -> dict[str, Any]:
+    runtime_state = orchestrator.runtime_store.snapshot(operation_id)
+    kg = orchestrator.graph_memory_store.load_kg(operation_id)
+    ag = orchestrator.graph_memory_store.load_ag(operation_id)
+    return build_unified_visualization(
         operation_id=operation_id,
         kg_payload=kg.to_dict(),
         ag_payload=ag.to_dict(),

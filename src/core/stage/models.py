@@ -207,6 +207,7 @@ class StageResult(BaseModel):
     replan_recommendation: str | None = None
     next_stage_suggestion: dict[str, Any] | None = None
     handoff_suggestion: StageHandoffSuggestion | None = None
+    visual_summary: dict[str, Any] = Field(default_factory=dict)
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())

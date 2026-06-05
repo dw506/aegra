@@ -76,6 +76,7 @@ class StageResultAdapter:
             outcome_payload={
                 "outcome_type": stage_result.stage_type,
                 "stage_result": stage_result.model_dump(mode="json"),
+                "visual_summary": cls._visual_summary(stage_result),
                 "runtime_hints": dict(stage_result.runtime_hints),
                 "writeback_hints": dict(stage_result.writeback_hints),
                 "tool_trace": [item.model_dump(mode="json") for item in stage_result.tool_trace],
@@ -93,6 +94,42 @@ class StageResultAdapter:
                 "failed_hypotheses": list(stage_result.failed_hypotheses),
             },
         )
+
+    @classmethod
+    def _visual_summary(cls, stage_result: StageResult) -> dict[str, Any]:
+        if isinstance(stage_result.visual_summary, dict) and stage_result.visual_summary:
+            return dict(stage_result.visual_summary)
+        badges = [
+            {"label": "status", "value": stage_result.status},
+            {"label": "confidence", "value": round(stage_result.confidence, 3)},
+        ]
+        if stage_result.evidence_refs:
+            badges.append({"label": "evidence", "value": len(stage_result.evidence_refs)})
+        target = cls._target_summary(stage_result)
+        return {
+            "title": stage_result.summary,
+            "subtitle": f"{stage_result.agent_name} / {stage_result.stage_type}",
+            "description": stage_result.summary,
+            "target": target,
+            "badges": badges,
+        }
+
+    @staticmethod
+    def _target_summary(stage_result: StageResult) -> str | None:
+        for bucket in (
+            stage_result.runtime_hints,
+            stage_result.writeback_hints,
+            *(stage_result.observations[:3]),
+            *(stage_result.evidence[:3]),
+            *(stage_result.findings[:3]),
+        ):
+            if not isinstance(bucket, dict):
+                continue
+            for key in ("target", "host", "url", "address", "endpoint", "service_id", "asset_id"):
+                value = bucket.get(key)
+                if value:
+                    return str(value)
+        return None
 
     @classmethod
     def _observations(cls, stage_result: StageResult) -> list[ObservationRecord]:
