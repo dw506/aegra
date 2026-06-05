@@ -41,6 +41,7 @@ SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
         requires_auth=True,
     ),
 }
+_HIDDEN_FIXTURE_CACHE: tuple[Path, float, dict[str, Any]] | None = None
 
 
 LAB_TOOL_SPECS: list[dict[str, Any]] = [
@@ -1017,6 +1018,9 @@ def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
     if body_contains is not None:
         needle = str(body_contains)
         checks.append({"type": "body_contains", "expected": needle, "passed": needle in response["body_excerpt"]})
+    hidden_marker_check = _hidden_marker_check(arguments, response)
+    if hidden_marker_check is not None:
+        checks.append(hidden_marker_check)
     passed = all(item["passed"] for item in checks) if checks else int(response["status"]) < 400
     parsed = _parsed_http(url=url, response=response)
     finding = {"kind": "GoalCheck", "url": url, "goal_satisfied": passed, "checks": checks, "evidence_refs": []}
@@ -1379,6 +1383,77 @@ def _lab_mode_enabled() -> bool:
     return os.getenv("AEGRA_LAB_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def load_hidden_fixture_from_env() -> dict[str, Any]:
+    """Load the hidden MCP fixture without exposing it to Planner or Runtime.
+
+    The fixture is consumed only inside MCP tool implementations. Tool responses
+    may return booleans and generic evidence types derived from the fixture, but
+    must never return credential secrets or marker literals.
+    """
+
+    global _HIDDEN_FIXTURE_CACHE
+    fixture_path = _string(os.getenv("AEGRA_LAB_FIXTURE_PATH"))
+    if fixture_path is None:
+        return {}
+    path = Path(fixture_path).expanduser().resolve()
+    stat = path.stat()
+    if (
+        _HIDDEN_FIXTURE_CACHE is not None
+        and _HIDDEN_FIXTURE_CACHE[0] == path
+        and _HIDDEN_FIXTURE_CACHE[1] == stat.st_mtime
+    ):
+        return dict(_HIDDEN_FIXTURE_CACHE[2])
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        payload = json.loads(text)
+    else:
+        try:
+            import yaml  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError("PyYAML is required to load hidden YAML lab fixtures") from exc
+        payload = yaml.safe_load(text)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise ValueError("hidden lab fixture must be a mapping")
+    _HIDDEN_FIXTURE_CACHE = (path, stat.st_mtime, dict(payload))
+    return dict(payload)
+
+
+def _hidden_marker_check(arguments: dict[str, Any], response: dict[str, Any]) -> dict[str, Any] | None:
+    marker_id = _string(arguments.get("fixture_marker_id"))
+    if marker_id is None:
+        return None
+    marker_literal = _hidden_marker_literal(marker_id)
+    matched = bool(marker_literal and marker_literal in str(response.get("body_excerpt") or ""))
+    return {
+        "type": "hidden_marker",
+        "fixture_marker_id": marker_id,
+        "evidence_type": "goal_check",
+        "matched": matched,
+        "passed": matched,
+        "generic_reason": "hidden marker matched" if matched else "hidden marker did not match",
+    }
+
+
+def _hidden_marker_literal(marker_id: str) -> str | None:
+    fixture = load_hidden_fixture_from_env()
+    markers = fixture.get("markers")
+    if isinstance(markers, dict):
+        value = markers.get(marker_id)
+        if isinstance(value, dict):
+            return _string(value.get("literal") or value.get("value") or value.get("marker"))
+        return _string(value)
+    if isinstance(markers, list):
+        for item in markers:
+            if not isinstance(item, dict):
+                continue
+            item_id = _string(item.get("id") or item.get("marker_id") or item.get("name"))
+            if item_id == marker_id:
+                return _string(item.get("literal") or item.get("value") or item.get("marker"))
+    return None
+
+
 def _required(arguments: dict[str, Any], key: str) -> str:
     value = arguments.get(key)
     if value is None or str(value).strip() == "":
@@ -1429,4 +1504,4 @@ def _extract_title(html: str) -> str | None:
     return re.sub(r"\s+", " ", match.group(1)).strip()
 
 
-__all__ = ["LAB_TOOL_SPECS", "call_lab_tool"]
+__all__ = ["LAB_TOOL_SPECS", "call_lab_tool", "load_hidden_fixture_from_env"]

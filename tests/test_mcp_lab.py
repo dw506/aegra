@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import threading
 from typing import Any
@@ -7,7 +8,8 @@ from typing import Any
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.integrations.mcp_lab.http_server import MCPHTTPHandler
 from src.integrations.mcp_lab.server import handle_request
-from src.integrations.mcp_lab.tools import LAB_TOOL_SPECS, call_lab_tool
+from src.integrations.mcp_lab import tools as mcp_tools
+from src.integrations.mcp_lab.tools import LAB_TOOL_SPECS, call_lab_tool, load_hidden_fixture_from_env
 
 
 def test_lab_tool_specs_include_v1_tools() -> None:
@@ -62,6 +64,46 @@ def test_lab_run_command_returns_unified_payload(monkeypatch) -> None:
     assert payload["exit_code"] == 0
     assert payload["parsed"]["writeback_hints"]["observation_category"] == "command_execution"
     assert payload["artifacts"] == []
+
+
+def test_hidden_fixture_loads_only_inside_mcp_tool_env(tmp_path, monkeypatch) -> None:
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(
+        json.dumps({"markers": [{"id": "goal-marker", "literal": "secret-marker-value"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AEGRA_LAB_FIXTURE_PATH", str(fixture_path))
+
+    fixture = load_hidden_fixture_from_env()
+
+    assert fixture["markers"][0]["id"] == "goal-marker"
+
+
+def test_goal_check_hidden_marker_does_not_leak_literal(tmp_path, monkeypatch) -> None:
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(
+        json.dumps({"markers": [{"id": "goal-marker", "literal": "secret-marker-value"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setenv("AEGRA_LAB_FIXTURE_PATH", str(fixture_path))
+    monkeypatch.setattr(
+        mcp_tools,
+        "_open_url",
+        lambda *_, **__: {
+            "url": "http://internal.example/",
+            "status": 200,
+            "headers": {},
+            "body_excerpt": "prefix secret-marker-value suffix",
+        },
+    )
+
+    payload = call_lab_tool("goal_check", {"url": "http://internal.example/", "fixture_marker_id": "goal-marker"})
+    serialized = json.dumps(payload, sort_keys=True)
+
+    assert payload["success"] is True
+    assert payload["parsed"]["findings"][0]["checks"][-1]["matched"] is True
+    assert "secret-marker-value" not in serialized
 
 
 def test_mcp_lab_server_handles_tools_list_and_call(monkeypatch) -> None:
