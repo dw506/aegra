@@ -113,6 +113,23 @@ class OperationCycleResult(BaseModel):
     runtime_state: RuntimeState
 
 
+class OperationRunSummary(BaseModel):
+    """Stable final result contract returned to API, scripts and users."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str
+    status: str
+    stop_reason: str
+    success: bool
+    success_condition_progress: dict[str, Any] = Field(default_factory=dict)
+    evidence_ids: list[str] = Field(default_factory=list)
+    findings_url: str
+    evidence_url: str
+    graph_url: str
+    audit_url: str
+
+
 class AppOrchestrator:
     """Application-layer orchestration facade for phase-one control flows."""
 
@@ -186,6 +203,7 @@ class AppOrchestrator:
         }
         if metadata:
             operation_metadata.update(metadata)
+        operation_metadata["lab_activation"] = self._lab_activation_metadata(operation_metadata["lab_profile"])
         state = RuntimeState(
             operation_id=operation_id,
             operation_status=RuntimeStatus.CREATED,
@@ -301,6 +319,43 @@ class AppOrchestrator:
             pending_event_count=len(state.pending_events),
             last_updated=state.last_updated.isoformat(),
             metadata=dict(state.execution.metadata),
+        )
+
+    def get_operation_run_summary(
+        self,
+        operation_id: str,
+        *,
+        cycle_results: list[OperationCycleResult] | None = None,
+        max_cycles: int | None = None,
+    ) -> OperationRunSummary:
+        """Return the fixed final result contract for `/run` and automation scripts.
+
+        Operation success is owned by the orchestrator summary layer. MCP tools
+        and GoalAgent may contribute evidence and hints, but they do not emit
+        the operation-level success contract directly.
+        """
+
+        state = self.runtime_store.snapshot(operation_id)
+        progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
+        success = state.operation_status == RuntimeStatus.COMPLETED and bool(progress.get("all_required_satisfied"))
+        status = self._result_status(state=state, success=success, progress=progress)
+        stop_reason = self._result_stop_reason(
+            state=state,
+            success=success,
+            cycle_results=cycle_results or [],
+            max_cycles=max_cycles,
+        )
+        return OperationRunSummary(
+            operation_id=operation_id,
+            status=status,
+            stop_reason=stop_reason,
+            success=success,
+            success_condition_progress=progress,
+            evidence_ids=self._success_condition_evidence_ids(progress),
+            findings_url=f"/operations/{operation_id}/findings",
+            evidence_url=f"/operations/{operation_id}/evidence",
+            graph_url=f"/operations/{operation_id}/graph",
+            audit_url=f"/operations/{operation_id}/audit-report",
         )
 
     def list_operations(self) -> list[OperationSummary]:
@@ -1293,8 +1348,79 @@ class AppOrchestrator:
         return self.mcp_client.list_tools()
 
     @staticmethod
+    def _lab_activation_metadata(lab_profile: dict[str, Any]) -> dict[str, Any]:
+        """Describe lab activation using main-process visible profile state.
+
+        Do not depend on AEGRA_MCP_TOOLSET here. That variable may only exist in
+        the MCP server subprocess environment, while the orchestrator always has
+        access to the loaded public lab profile.
+        """
+
+        profile_id = str(lab_profile.get("profile_id") or "")
+        return {
+            "full_pentest_active": profile_id == "full-vulhub-multihost-pentest",
+            "profile_id": profile_id or None,
+            "source": "lab_profile.profile_id",
+        }
+
+    @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:
         return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _success_condition_evidence_ids(progress: dict[str, Any]) -> list[str]:
+        conditions = progress.get("conditions")
+        if not isinstance(conditions, dict):
+            return []
+        evidence_ids: set[str] = set()
+        for condition in conditions.values():
+            if not isinstance(condition, dict):
+                continue
+            for evidence_id in condition.get("evidence_ids") or []:
+                if evidence_id:
+                    evidence_ids.add(str(evidence_id))
+        return sorted(evidence_ids)
+
+    @staticmethod
+    def _result_status(
+        *,
+        state: RuntimeState,
+        success: bool,
+        progress: dict[str, Any],
+    ) -> str:
+        if success:
+            return "success"
+        if state.operation_status == RuntimeStatus.FAILED:
+            return "failed"
+        if state.operation_status in {RuntimeStatus.PAUSED, RuntimeStatus.CANCELLED}:
+            return "blocked"
+        if progress:
+            return "partial"
+        return "failed" if state.operation_status == RuntimeStatus.COMPLETED else "partial"
+
+    @staticmethod
+    def _result_stop_reason(
+        *,
+        state: RuntimeState,
+        success: bool,
+        cycle_results: list[OperationCycleResult],
+        max_cycles: int | None,
+    ) -> str:
+        if success:
+            return "success_conditions_satisfied"
+        if state.operation_status == RuntimeStatus.FAILED:
+            return "failed"
+        if state.operation_status in {RuntimeStatus.PAUSED, RuntimeStatus.CANCELLED}:
+            return "blocked"
+        last = cycle_results[-1] if cycle_results else None
+        if last is not None and last.stop_reason:
+            return str(last.stop_reason)
+        if max_cycles is not None and len(cycle_results) >= max_cycles:
+            return "max_cycles"
+        control = AppOrchestrator._mapping(state.execution.metadata.get("last_control_cycle"))
+        if control.get("stop_reason"):
+            return str(control["stop_reason"])
+        return "blocked"
 
     @staticmethod
     def _next_cycle_index(state: RuntimeState) -> int:

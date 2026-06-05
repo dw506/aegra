@@ -360,10 +360,17 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        run_summary = resolved_orchestrator.get_operation_run_summary(
+            operation_id,
+            cycle_results=results,
+            max_cycles=request.max_cycles,
+        ).model_dump(mode="json")
         return {
+            **run_summary,
+            "result": run_summary,
             "operation": resolved_orchestrator.get_operation_summary(operation_id).model_dump(mode="json"),
             "policy_summary": _operation_policy_summary(resolved_orchestrator, operation_id),
-            "cycles": [result.model_dump(mode="json") for result in results],
+            "cycles": [cycle_result.model_dump(mode="json") for cycle_result in results],
         }
 
     @app.post("/operations/{operation_id}/stop")
