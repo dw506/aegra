@@ -60,6 +60,52 @@ class ValidationPrecheckAdvisor:
         )
 
 
+class UrlTargetAdvisor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def decide(self, **kwargs: Any) -> StageAgentDecision:
+        self.calls += 1
+        if kwargs["memory"]:
+            return StageAgentDecision(
+                action="finish",
+                rationale="fingerprint completed",
+                finish={"status": "succeeded", "summary": "fingerprint completed"},
+            )
+        return StageAgentDecision(
+            action="call_tool",
+            rationale="fingerprint URL target",
+            tool_call=StageToolCall(
+                server_id="pentest-tools",
+                tool_name="web_fingerprint",
+                arguments={"target": "http://10.0.0.5:8080"},
+            ),
+        )
+
+
+class MissingToolAdvisor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def decide(self, **kwargs: Any) -> StageAgentDecision:
+        self.calls += 1
+        if kwargs["memory"]:
+            return StageAgentDecision(
+                action="finish",
+                rationale="missing tool recorded",
+                finish={"status": "partial", "summary": "missing catalog tool recorded"},
+            )
+        return StageAgentDecision(
+            action="call_tool",
+            rationale="try optional tool",
+            tool_call=StageToolCall(
+                server_id="pentest-tools",
+                tool_name="optional_missing_tool",
+                arguments={"url": "http://example.test/"},
+            ),
+        )
+
+
 class RecordingMCP:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -181,3 +227,43 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
     assert result.tool_traces[0].arguments["target_url"] == "http://10.20.0.22:8080/"
+
+
+def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
+    advisor = MissingToolAdvisor()
+    mcp = RecordingMCP()
+    request = StageExecutionRequest(
+        operation_id="op-missing-tool",
+        cycle_index=1,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Respect supplied tool catalog",
+        max_steps=2,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "http_probe"}]}},
+    )
+
+    result = ReconAgent(advisor=advisor, mcp_client=mcp).run(request)
+
+    assert result.status == "partial"
+    assert mcp.calls == []
+    assert result.tool_traces[0].exit_code == "tool_not_in_catalog"
+
+
+def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
+    advisor = UrlTargetAdvisor()
+    mcp = RecordingMCP()
+    request = StageExecutionRequest(
+        operation_id="op-url-tool",
+        cycle_index=1,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Normalize URL target",
+        max_steps=2,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "web_fingerprint"}]}},
+    )
+
+    result = ReconAgent(advisor=advisor, mcp_client=mcp).run(request)
+
+    assert result.status == "succeeded"
+    assert mcp.calls[0]["arguments"] == {"url": "http://10.0.0.5:8080"}
+    assert result.tool_traces[0].arguments == {"url": "http://10.0.0.5:8080"}

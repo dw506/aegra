@@ -34,8 +34,8 @@ services:
       dockerfile: Dockerfile
     container_name: aegra_dashboard
     environment:
-      VITE_GRAPH_API_BASE: "http://127.0.0.1:8000"
-      VITE_GRAPH_WS_BASE: "ws://127.0.0.1:8000"
+      VITE_GRAPH_API_BASE: "${VITE_GRAPH_API_BASE:-http://127.0.0.1:8000}"
+      VITE_GRAPH_WS_BASE: "${VITE_GRAPH_WS_BASE:-ws://127.0.0.1:8000}"
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

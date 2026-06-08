@@ -64,11 +64,18 @@ export default function App() {
   const [targetFilter, setTargetFilter] = useState("");
   const [mainPathOnly, setMainPathOnly] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     listOperations().then((items) => {
-      setOperations(items);
-      setOperationId((current) => current || items[0]?.operation_id || "");
+      const sorted = [...items].sort((left, right) => {
+        const leftLoadError = Boolean(left.metadata?.load_error);
+        const rightLoadError = Boolean(right.metadata?.load_error);
+        if (leftLoadError !== rightLoadError) return leftLoadError ? 1 : -1;
+        return Date.parse(right.last_updated || "") - Date.parse(left.last_updated || "");
+      });
+      setOperations(sorted);
+      setOperationId((current) => current || sorted[0]?.operation_id || "");
     });
   }, []);
 
@@ -80,9 +87,13 @@ export default function App() {
   const refreshVisualization = async (id = operationId) => {
     if (!id) return;
     setLoading(true);
+    setLoadError("");
     try {
       setVisualization(await fetchVisualization(id));
       setDetail(null);
+    } catch (error) {
+      setVisualization(null);
+      setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -239,7 +250,7 @@ export default function App() {
               )}
             </>
           ) : (
-            <div className="emptyState">No visualization data</div>
+            <div className="emptyState">{loadError ? `Visualization failed to load: ${loadError}` : "No visualization data"}</div>
           )}
         </section>
 

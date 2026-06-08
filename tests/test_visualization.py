@@ -80,6 +80,20 @@ def test_unified_visualization_adapts_generic_fields_without_environment_assumpt
     kg.add_node(Host(id="host-alpha", label="host-alpha", hostname="host-alpha"))
     runtime = RuntimeState(operation_id="op-unified", execution=OperationRuntime(operation_id="op-unified"))
     ag = AttackGraph()
+    ag.add_node(
+        StateNode(
+            id="state-alpha",
+            label="Recon completed",
+            node_type=StateNodeType.HOST_KNOWN,
+            properties={
+                "agent_name": "ReconAgent",
+                "cycle_index": 1,
+                "status": "success",
+                "result_summary": "Host was discovered",
+                "target": "host-alpha",
+            },
+        )
+    )
 
     payload = build_unified_visualization(
         operation_id="op-unified",
@@ -91,7 +105,7 @@ def test_unified_visualization_adapts_generic_fields_without_environment_assumpt
     assert payload["operation"]["id"] == "op-unified"
     assert payload["kg"]["nodes"][0]["display_name"] == "host-alpha"
     assert payload["overview"]["asset_count"] == 1
-    assert payload["timeline"] == []
+    assert payload["timeline"][0]["id"] == "timeline::state-alpha"
 
 
 def test_visual_snapshot_api_and_websocket(tmp_path) -> None:

@@ -1,0 +1,140 @@
+
+2026-06-05T14:29:27.746618+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:29:27.748204+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:36:32.162491+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:36:32.174595+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:46:04.581417+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:46:04.582416+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:53:36.305079+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:53:36.306092+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:02:37.320864+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:02:37.322660+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:08:59.383460+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:08:59.385558+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:13:10.501946+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: call_tool
+  tool: optional_missing_tool
+  rationale_summary: try optional tool
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:13:10.502945+00:00 【LLM_DECISION】 stage agent decision
+  agent: recon_agent
+  stage: RECON_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: missing tool recorded
+  confidence: None
+  assumptions: []
+  evidence_refs: []

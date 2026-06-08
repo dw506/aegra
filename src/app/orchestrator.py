@@ -25,7 +25,13 @@ from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
 from src.core.runtime.audit_report import build_operation_audit_report
-from src.core.runtime.observability import append_operation_log, mark_clean_shutdown, mark_unclean_shutdown, record_phase_checkpoint
+from src.core.runtime.observability import (
+    append_operation_log,
+    mark_clean_shutdown,
+    mark_unclean_shutdown,
+    prepare_state_for_resume,
+    record_phase_checkpoint,
+)
 from src.core.runtime.report_generator import ReportFormat, ReportGenerator
 from src.core.runtime.llm_history import (
     LLMDecisionHistoryRecord,
@@ -361,15 +367,41 @@ class AppOrchestrator:
     def list_operations(self) -> list[OperationSummary]:
         """Return summaries for all known operations."""
 
-        return [
-            self.get_operation_summary(operation_id)
-            for operation_id in self.runtime_store.list_operation_ids()
-        ]
+        summaries: list[OperationSummary] = []
+        for operation_id in self.runtime_store.list_operation_ids():
+            try:
+                summaries.append(self.get_operation_summary(operation_id))
+            except Exception as exc:
+                summaries.append(
+                    OperationSummary(
+                        operation_id=operation_id,
+                        operation_status=RuntimeStatus.FAILED,
+                        last_updated="1970-01-01T00:00:00+00:00",
+                        metadata={
+                            "load_error": {
+                                "error_type": exc.__class__.__name__,
+                                "message": str(exc),
+                            }
+                        },
+                    )
+                )
+        return summaries
 
     def recover_operation(self, operation_id: str, *, reason: str = "manual_recover") -> RuntimeState:
         """Normalize runtime state without forcing the operation back to ready."""
 
         state = self.runtime_store.recover_operation(operation_id, reason=reason)
+        state.operation_status = RuntimeStatus.PAUSED
+        state.execution.status = RuntimeStatus.PAUSED
+        recovery = state.execution.metadata.setdefault("recovery", {})
+        if isinstance(recovery, dict):
+            recovery["lifecycle_state"] = "ready_to_resume"
+            recovery["active_cycle_id"] = None
+            recovery["active_stage_id"] = None
+            recovery["runtime_lock"] = "released"
+        state.execution.metadata["lifecycle_state"] = "ready_to_resume"
+        state.execution.summary = f"operation recovered: {reason}"
+        state.last_updated = utc_now()
         # 中文注释：
         # recover 和 resume 分开：recover 只做保守整理，便于运维先收口脏状态，
         # 是否继续执行交给后续 resume 或人工确认。
@@ -585,14 +617,34 @@ class AppOrchestrator:
         graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
         graph_snapshot["lab_profile"] = lab_profile
         graph_snapshot["mcp_tool_catalog"] = tool_catalog
-        decision = self.mission_planner.run(
-            goal=goal,
-            graph_context=graph_snapshot,
-            policy_context=policy_context,
-            recent_stage_results=self._planner_recent_stage_results(state),
-        )
-        if decision.operation_id == "operation":
+        try:
+            decision = self.mission_planner.run(
+                goal=goal,
+                graph_context=graph_snapshot,
+                policy_context=policy_context,
+                recent_stage_results=self._planner_recent_stage_results(state),
+            )
+        except Exception as exc:
+            return self._fail_operation_cycle(
+                operation_id=operation_id,
+                cycle_index=cycle_index,
+                state=state,
+                kg=kg,
+                ag=ag,
+                phase="planning",
+                exc=exc,
+                txt_logger=txt_logger,
+            )
+        if decision.operation_id != operation_id:
+            original_operation_id = decision.operation_id
             decision.operation_id = operation_id
+            self._log_operation_event(
+                state,
+                event_type="planner_decision_operation_id_normalized",
+                cycle_index=cycle_index,
+                original_operation_id=original_operation_id,
+                normalized_operation_id=operation_id,
+            )
         decision.cycle_index = cycle_index
         txt_logger.write_block(
             "PLANNER",
@@ -655,16 +707,45 @@ class AppOrchestrator:
 
         if decision.decision == "dispatch_agent":
             started_at = utc_now()
-            stage_result = StageDispatcher(self.stage_registry).dispatch(
-                decision,
-                kg_snapshot=graph_snapshot,
-                ag_process_history={},
-                runtime_context=state.model_dump(mode="json"),
-                policy_context=policy_context,
-                mcp_tool_catalog=tool_catalog,
-            )
-            finished_at = utc_now()
-            stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+            try:
+                stage_result = StageDispatcher(self.stage_registry).dispatch(
+                    decision,
+                    kg_snapshot=graph_snapshot,
+                    ag_process_history={},
+                    runtime_context=state.model_dump(mode="json"),
+                    policy_context=policy_context,
+                    mcp_tool_catalog=tool_catalog,
+                )
+                if stage_result.operation_id != operation_id:
+                    original_operation_id = stage_result.operation_id
+                    stage_result.operation_id = operation_id
+                    stage_result.runtime_hints = {
+                        **dict(stage_result.runtime_hints),
+                        "normalized_operation_id_from": original_operation_id,
+                    }
+                    self._log_operation_event(
+                        state,
+                        event_type="stage_result_operation_id_normalized",
+                        cycle_index=cycle_index,
+                        stage_task_id=stage_result.stage_task_id,
+                        original_operation_id=original_operation_id,
+                        normalized_operation_id=operation_id,
+                    )
+                finished_at = utc_now()
+                stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+            except Exception as exc:
+                return self._fail_operation_cycle(
+                    operation_id=operation_id,
+                    cycle_index=cycle_index,
+                    state=state,
+                    kg=kg,
+                    ag=ag,
+                    phase="stage_dispatch",
+                    exc=exc,
+                    txt_logger=txt_logger,
+                    planning=planning,
+                    apply_results=apply_results,
+                )
             txt_logger.write_block(
                 "GRAPH_WRITE",
                 "graph write completed",
@@ -824,6 +905,7 @@ class AppOrchestrator:
             },
         )
         mark_clean_shutdown(state, cycle_index=cycle_index)
+        self._mark_operation_cycle_clean(state, cycle_index=cycle_index)
         self._checkpoint_phase(
             state,
             cycle_index=cycle_index,
@@ -852,6 +934,30 @@ class AppOrchestrator:
             stop_reason=stop_reason,
             runtime_state=state.model_copy(deep=True),
         )
+
+    @staticmethod
+    def _mark_operation_cycle_clean(state: RuntimeState, *, cycle_index: int) -> None:
+        """Clear stale recovery markers after a cycle reaches a stable end state."""
+
+        now = utc_now().isoformat()
+        recovery = state.execution.metadata.setdefault("recovery", {})
+        if isinstance(recovery, dict):
+            recovery["lifecycle_state"] = "cycle_completed"
+            recovery["active_cycle_id"] = None
+            recovery["active_stage_id"] = None
+            recovery["runtime_lock"] = "released"
+            recovery["unclean_shutdown"] = False
+            recovery["last_phase"] = "cycle_completed"
+            recovery["last_phase_status"] = "completed"
+            recovery["last_cycle_completed_at"] = now
+            recovery["last_cycle_index"] = cycle_index
+            recovery.pop("last_error", None)
+        state.execution.metadata["lifecycle_state"] = "cycle_completed"
+        state.execution.metadata["active_cycle_id"] = None
+        state.execution.metadata["active_stage_id"] = None
+        state.execution.metadata["runtime_lock"] = "released"
+        state.execution.metadata["unclean_shutdown"] = False
+        state.execution.metadata.pop("last_error", None)
 
     def run_until_quiescent(
         self,
@@ -1431,6 +1537,125 @@ class AppOrchestrator:
     def _needs_recovery(state: RuntimeState) -> bool:
         recovery = state.execution.metadata.get("recovery", {})
         return isinstance(recovery, dict) and bool(recovery.get("unclean_shutdown"))
+
+    def _fail_operation_cycle(
+        self,
+        *,
+        operation_id: str,
+        cycle_index: int,
+        state: RuntimeState,
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        phase: str,
+        exc: Exception,
+        txt_logger: TxtTraceLogger | None = None,
+        planning: PipelineCycleResult | None = None,
+        apply_results: list[PhaseTwoApplyResult] | None = None,
+    ) -> OperationCycleResult:
+        error_type = "llm_transport_error" if "llm_transport_error" in str(exc) else exc.__class__.__name__
+        error_record = {
+            "cycle_index": cycle_index,
+            "phase": phase,
+            "error_type": error_type,
+            "message": str(exc),
+            "retryable": error_type in {"llm_transport_error", "RemoteProtocolError", "ConnectError", "ReadTimeout"},
+            "recorded_at": utc_now().isoformat(),
+            "graph_write": False,
+        }
+        prepare_state_for_resume(state, reason=f"{phase}_failed")
+        recovery = state.execution.metadata.setdefault("recovery", {})
+        if isinstance(recovery, dict):
+            recovery["lifecycle_state"] = "recoverable"
+            recovery["last_error"] = dict(error_record)
+            recovery["active_cycle_id"] = None
+            recovery["active_stage_id"] = None
+            recovery["runtime_lock"] = "released"
+        archived_errors = state.execution.metadata.setdefault("archived_errors", [])
+        if isinstance(archived_errors, list):
+            archived_errors.append(dict(error_record))
+        state.execution.metadata["lifecycle_state"] = "recoverable"
+        state.execution.metadata["last_error"] = dict(error_record)
+        state.operation_status = RuntimeStatus.PAUSED
+        state.execution.status = RuntimeStatus.PAUSED
+        state.execution.summary = f"control cycle {cycle_index} failed during {phase}: {error_type}"
+        state.last_updated = utc_now()
+        self._log_operation_event(
+            state,
+            event_type="cycle_failed",
+            cycle_index=cycle_index,
+            phase=phase,
+            error_type=error_type,
+            retryable=error_record["retryable"],
+        )
+        self._checkpoint_phase(
+            state,
+            cycle_index=cycle_index,
+            phase="cycle_failed",
+            status="failed",
+            success=False,
+            stopped=True,
+            stop_reason=error_type,
+            persist=False,
+        )
+        history = state.execution.metadata.setdefault("control_cycle_history", [])
+        if isinstance(history, list):
+            history.append(
+                {
+                    "cycle_index": cycle_index,
+                    "started_at": error_record["recorded_at"],
+                    "architecture": "planner_stage_agent_graph_main_path",
+                    "planning_success": planning.success if planning is not None else False,
+                    "execution_success": False,
+                    "feedback_success": False,
+                    "selected_agent": None,
+                    "selected_stage": None,
+                    "applied_results": len(apply_results or []),
+                    "stopped": True,
+                    "stop_reason": error_type,
+                    "cycle_status": "cycle_failed",
+                }
+            )
+        if txt_logger is not None:
+            txt_logger.write_block(
+                "CYCLE",
+                "cycle failed",
+                {
+                    "cycle": cycle_index,
+                    "phase": phase,
+                    "error_type": error_type,
+                    "retryable": error_record["retryable"],
+                    "operation_status": state.operation_status.value,
+                },
+            )
+        self.runtime_store.save_state(state)
+        self.graph_memory_store.save_kg(operation_id, kg)
+        self.graph_memory_store.save_ag(operation_id, ag)
+        self.graph_memory_store.save_runtime(operation_id, state)
+        self.graph_memory_store.save_snapshot(operation_id, cycle_index)
+        failed_output = AgentOutput(
+            logs=[state.execution.summary],
+            errors=[f"{error_type}: {exc}"],
+        )
+        failed_cycle = PipelineCycleResult(
+            cycle_name=phase,
+            operation_id=operation_id,
+            success=False,
+            final_output=failed_output,
+            logs=[state.execution.summary],
+        )
+        return OperationCycleResult(
+            operation_id=operation_id,
+            cycle_index=cycle_index,
+            planning=planning or failed_cycle,
+            execution=failed_cycle if phase != "planning" else None,
+            feedback=None,
+            apply_results=list(apply_results or []),
+            selected_task_ids=[],
+            applied_task_ids=[],
+            stopped=True,
+            stop_reason=error_type,
+            runtime_state=state.model_copy(deep=True),
+        )
 
     @staticmethod
     def _log_operation_event(state: RuntimeState, *, event_type: str, **payload: Any) -> None:

@@ -157,3 +157,374 @@
   confidence: None
   assumptions: []
   evidence_refs: []
+
+2026-06-05T14:29:27.734119+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:29:27.736122+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T14:29:27.737877+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T14:29:27.738983+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T14:29:27.740880+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T14:29:27.742410+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:36:32.150308+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:36:32.151510+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T14:36:32.152944+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T14:36:32.154481+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T14:36:32.157711+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T14:36:32.158832+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:46:04.571336+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:46:04.574258+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T14:46:04.575758+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T14:46:04.576756+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T14:46:04.577757+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T14:46:04.578258+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:53:36.295100+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T14:53:36.297094+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T14:53:36.297585+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T14:53:36.298600+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T14:53:36.299750+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T14:53:36.301245+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:02:37.310099+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:02:37.310829+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T15:02:37.312720+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T15:02:37.313720+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T15:02:37.315219+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T15:02:37.316719+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:08:59.370847+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:08:59.373140+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T15:08:59.374610+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T15:08:59.376156+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T15:08:59.377757+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T15:08:59.379559+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:13:10.490858+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: call_tool
+  tool: validation_precheck
+  rationale_summary: run bounded precheck
+  confidence: None
+  assumptions: []
+  evidence_refs: []
+
+2026-06-05T15:13:10.492508+00:00 【AGENT_ACTION】 agent action
+  agent: exploit_validation_agent
+  action: tool_call
+  tool: validation_precheck
+  target: None
+
+2026-06-05T15:13:10.493060+00:00 【POLICY_DECISION】 policy evaluated but not enforced
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  server: pentest-tools
+  tool: validation_precheck
+  target: None
+  original_allowed: True
+  original_reason: policy allowed MCP tool call
+  original_risk_level: medium
+  original_tags: []
+  original_policy_name: stage_agent_tool_policy
+  final_allowed: True
+  final_reason: PolicyGate is audit-only; execution continued.
+
+2026-06-05T15:13:10.494944+00:00 【TOOL_CALL】 mcp tool call
+  server: pentest-tools
+  tool: validation_precheck
+  arguments: {"profile_id": "struts2-s2-045", "target_url": "http://10.20.0.22:8080/"}
+
+2026-06-05T15:13:10.496496+00:00 【TOOL_RESULT】 mcp tool result
+  tool: validation_precheck
+  success: True
+  exit_code: 0
+  summary: {"precheck": true}
+  stdout_excerpt: {"precheck": true}
+  stderr_excerpt: 
+
+2026-06-05T15:13:10.497495+00:00 【LLM_DECISION】 stage agent decision
+  agent: exploit_validation_agent
+  stage: EXPLOIT_STAGE
+  selected_action: finish
+  tool: None
+  rationale_summary: precheck completed
+  confidence: None
+  assumptions: []
+  evidence_refs: []

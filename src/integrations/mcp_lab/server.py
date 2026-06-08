@@ -6,7 +6,7 @@ import json
 import sys
 from typing import Any, TextIO
 
-from src.integrations.mcp_lab.tools import LAB_TOOL_SPECS, call_lab_tool
+from src.integrations.mcp_lab.tools import call_lab_tool, lab_tool_specs
 
 
 SERVER_INFO = {"name": "aegra-mcp-lab", "version": "0.1.0"}
@@ -56,7 +56,7 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
             },
         )
     if method == "tools/list":
-        return _response(request_id, result={"tools": LAB_TOOL_SPECS})
+        return _response(request_id, result={"tools": lab_tool_specs()})
     if method == "tools/call":
         tool_name = str(params.get("name", ""))
         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}

@@ -390,6 +390,14 @@ def _normalize_graph_intent_schema(intent: dict[str, Any]) -> dict[str, Any]:
     elif entity_type == "Fingerprint":
         candidate["entity_type"] = "Observation"
         payload.setdefault("entity_kind", "Fingerprint")
+    elif entity_type in {"VulnerabilityCandidate", "CandidateRejected", "NeedMoreEvidence"}:
+        candidate["entity_type"] = "Finding"
+        payload.setdefault("entity_kind", entity_type)
+        payload.setdefault("finding_kind", entity_type)
+    elif entity_type in {"ValidationPlan", "ValidationProfile"}:
+        candidate["entity_type"] = "Observation"
+        payload.setdefault("entity_kind", entity_type)
+        payload.setdefault("observation_kind", entity_type)
     candidate["payload"] = payload
     return candidate
 

@@ -207,7 +207,7 @@ def _ag_edge(item: dict[str, Any]) -> dict[str, Any]:
 
 def _timeline_events(*, runtime: dict[str, Any], ag_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
-    for node in sorted(ag_nodes, key=lambda item: (item["round"], _phase_order(_phase_for_ag(node)), item["id"])):
+    for node in sorted(ag_nodes, key=lambda item: (item["round"], _phase_order(_phase_for_ag(item)), item["id"])):
         phase = _phase_for_ag(node)
         events.append(
             {

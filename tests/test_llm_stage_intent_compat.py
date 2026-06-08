@@ -44,3 +44,39 @@ def test_graph_update_intent_normalizes_fingerprint_entity_type() -> None:
 
     assert intents[0]["entity_type"] == "Observation"
     assert intents[0]["payload"]["entity_kind"] == "Fingerprint"
+
+
+def test_graph_update_intent_normalizes_vulnerability_candidate_to_finding() -> None:
+    intents = _coerce_graph_update_intents(
+        [
+            {
+                "target_graph": "KG",
+                "operation": "add",
+                "entity_type": "VulnerabilityCandidate",
+                "entity_ref": "candidate-1",
+                "payload": {"candidate_type": "outdated_component"},
+            }
+        ]
+    )
+
+    assert intents[0]["entity_type"] == "Finding"
+    assert intents[0]["payload"]["entity_kind"] == "VulnerabilityCandidate"
+    assert intents[0]["payload"]["finding_kind"] == "VulnerabilityCandidate"
+
+
+def test_graph_update_intent_normalizes_validation_plan_to_observation() -> None:
+    intents = _coerce_graph_update_intents(
+        [
+            {
+                "target_graph": "KG",
+                "operation": "add",
+                "entity_type": "ValidationPlan",
+                "entity_ref": "plan-1",
+                "payload": {"method": "safe_precheck"},
+            }
+        ]
+    )
+
+    assert intents[0]["entity_type"] == "Observation"
+    assert intents[0]["payload"]["entity_kind"] == "ValidationPlan"
+    assert intents[0]["payload"]["observation_kind"] == "ValidationPlan"

@@ -415,6 +415,33 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
 ]
 
+OPTIONAL_TOOL_BINARIES: dict[str, str] = {
+    "nuclei_scan": "nuclei",
+    "whatweb_fingerprint": "whatweb",
+    "ffuf_discover": "ffuf",
+}
+
+
+def lab_tool_specs(*, include_unavailable: bool = False) -> list[dict[str, Any]]:
+    """Return tool specs that reflect binaries available in the current runtime."""
+
+    specs: list[dict[str, Any]] = []
+    for spec in LAB_TOOL_SPECS:
+        name = str(spec.get("name") or "")
+        binary = OPTIONAL_TOOL_BINARIES.get(name)
+        if binary and shutil.which(binary) is None:
+            if not include_unavailable:
+                continue
+            annotated = dict(spec)
+            annotated["available"] = False
+            annotated["unavailable_reason"] = f"{binary} is not installed or not on PATH"
+            specs.append(annotated)
+            continue
+        annotated = dict(spec)
+        annotated["available"] = True
+        specs.append(annotated)
+    return specs
+
 
 def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Dispatch one lab tool and return a unified structured payload."""
@@ -1122,20 +1149,35 @@ def _ffuf_discover(arguments: dict[str, Any]) -> dict[str, Any]:
 def _parse_nmap_output(target: str, stdout: str) -> dict[str, Any]:
     parsed = _default_parsed()
     parsed["writeback_hints"] = {"observation_category": "service_discovery", "target": target}
-    host_id = f"host::{target}"
-    parsed["entities"].append({"type": "Host", "id": host_id, "address": target, "confidence": 0.9})
+    current_host = target
+    host_ids: set[str] = set()
+
+    def ensure_host(address: str) -> str:
+        host_id = f"host::{address}"
+        if host_id not in host_ids:
+            parsed["entities"].append({"type": "Host", "id": host_id, "address": address, "confidence": 0.9})
+            host_ids.add(host_id)
+        return host_id
+
+    ensure_host(target)
     for line in stdout.splitlines():
+        host_match = re.search(r"^Nmap scan report for\s+(?P<host>.+?)\s*$", line)
+        if host_match:
+            current_host = _normalize_nmap_host(host_match.group("host")) or target
+            ensure_host(current_host)
+            continue
         match = re.search(r"(?P<port>\d+)/(?P<protocol>tcp|udp)\s+open\s+(?P<service>\S+)(?:\s+(?P<banner>.*))?", line)
         if not match:
             continue
         banner = (match.group("banner") or "").strip()
         product = banner.split()[0] if banner else ""
         version = banner.split()[1] if len(banner.split()) > 1 else ""
-        service_id = f"service::{target}:{match.group('port')}/{match.group('protocol')}"
+        host_id = ensure_host(current_host)
+        service_id = f"service::{current_host}:{match.group('port')}/{match.group('protocol')}"
         entity = {
             "type": "Service",
             "id": service_id,
-            "host": target,
+            "host": current_host,
             "port": int(match.group("port")),
             "protocol": match.group("protocol"),
             "service": match.group("service"),
@@ -1147,8 +1189,18 @@ def _parse_nmap_output(target: str, stdout: str) -> dict[str, Any]:
         }
         parsed["entities"].append(entity)
         parsed["relations"].append({"type": "HOSTS_SERVICE", "source_ref": {"graph": "kg", "ref_id": host_id, "ref_type": "Host"}, "target_ref": {"graph": "kg", "ref_id": service_id, "ref_type": "Service"}})
-        parsed["evidence"].append({"kind": "scan evidence", "summary": line, "target": target, "confidence": 0.85})
+        parsed["evidence"].append({"kind": "scan evidence", "summary": line, "target": current_host, "confidence": 0.85})
     return parsed
+
+
+def _normalize_nmap_host(value: str) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    paren_match = re.search(r"\((?P<address>(?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]+)\)", text)
+    if paren_match:
+        return paren_match.group("address")
+    return text.split()[0] if text.split() else None
 
 
 def _profile(profile_id: str) -> VulnerabilityProfile:
@@ -1506,4 +1558,4 @@ def _extract_title(html: str) -> str | None:
     return re.sub(r"\s+", " ", match.group(1)).strip()
 
 
-__all__ = ["LAB_TOOL_SPECS", "call_lab_tool", "load_hidden_fixture_from_env"]
+__all__ = ["LAB_TOOL_SPECS", "call_lab_tool", "lab_tool_specs", "load_hidden_fixture_from_env"]

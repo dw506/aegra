@@ -257,6 +257,28 @@ class BaseStageAgent:
         call = self._normalize_tool_call_arguments(call=call, request=request)
         timeout = int(call.timeout_seconds or self._default_timeout_seconds)
         tool_metadata = self._lookup_tool(available_tools, server_id=call.server_id, tool_name=call.tool_name)
+        if not tool_metadata:
+            return ToolTrace(
+                step=step,
+                server_id=call.server_id,
+                tool_name=call.tool_name,
+                tool_category="",
+                input_summary=self._summarize_arguments(call.arguments),
+                arguments=dict(call.arguments),
+                success=False,
+                summary="tool is not present in the supplied MCP tool catalog",
+                stdout="",
+                stderr="tool is not present in the supplied MCP tool catalog",
+                exit_code="tool_not_in_catalog",
+                ended_at=utc_now().isoformat(),
+                policy_check={
+                    "allowed": False,
+                    "reason": "tool is not present in the supplied MCP tool catalog",
+                    "metadata": {"catalog_enforced": True},
+                },
+                parsed_output={"runtime_hints": {"blocked_by": "tool_not_in_catalog", "tool": call.tool_name}},
+                metadata={"content": {"success": False, "exit_code": "tool_not_in_catalog"}},
+            )
         policy_check = self._enforce_policy(
             call=call,
             tool_metadata=tool_metadata,
@@ -343,6 +365,48 @@ class BaseStageAgent:
     def _normalize_tool_call_arguments(cls, *, call: StageToolCall, request: StageExecutionRequest) -> StageToolCall:
         """Fill deterministic tool arguments that can be derived from graph context."""
 
+        if call.tool_name in {"http_probe", "web_fingerprint", "whatweb_fingerprint", "nuclei_scan"}:
+            arguments = dict(call.arguments)
+            url = cls._url_from_ref(arguments.get("url")) or cls._url_from_ref(arguments.get("target"))
+            if url:
+                arguments["url"] = url
+                arguments.pop("target", None)
+                return call.model_copy(update={"arguments": arguments})
+            inferred = cls._infer_target_url(request)
+            if inferred:
+                arguments["url"] = inferred
+                arguments.pop("target", None)
+                return call.model_copy(update={"arguments": arguments})
+            return call
+        if call.tool_name == "web_discover":
+            arguments = dict(call.arguments)
+            base_url = (
+                cls._url_from_ref(arguments.get("base_url"))
+                or cls._url_from_ref(arguments.get("url"))
+                or cls._url_from_ref(arguments.get("target"))
+            )
+            if base_url:
+                arguments["base_url"] = base_url
+                arguments.pop("target", None)
+                return call.model_copy(update={"arguments": arguments})
+            inferred = cls._infer_target_url(request)
+            if inferred:
+                arguments["base_url"] = inferred
+                arguments.pop("target", None)
+                return call.model_copy(update={"arguments": arguments})
+            return call
+        if call.tool_name == "vuln_profile_match":
+            arguments = dict(call.arguments)
+            target_url = cls._url_from_ref(arguments.get("target_url")) or cls._url_from_ref(arguments.get("target"))
+            if target_url:
+                arguments["target_url"] = target_url
+                arguments.pop("target", None)
+                return call.model_copy(update={"arguments": arguments})
+            inferred = cls._infer_target_url(request)
+            if inferred and not arguments.get("target_url"):
+                arguments["target_url"] = inferred
+                return call.model_copy(update={"arguments": arguments})
+            return call
         if call.tool_name not in {"validation_precheck", "safe_vuln_validate"}:
             return call
         if call.arguments.get("target_url"):

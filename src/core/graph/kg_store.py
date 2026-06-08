@@ -716,6 +716,11 @@ class KnowledgeGraph:
         aliases = {
             "Fingerprint": NodeType.OBSERVATION,
             "WebEndpoint": NodeType.SERVICE,
+            "VulnerabilityCandidate": NodeType.FINDING,
+            "CandidateRejected": NodeType.FINDING,
+            "NeedMoreEvidence": NodeType.FINDING,
+            "ValidationPlan": NodeType.OBSERVATION,
+            "ValidationProfile": NodeType.OBSERVATION,
         }
         alias = aliases.get(value)
         return alias if alias is not None else NodeType(value)
@@ -729,6 +734,9 @@ class KnowledgeGraph:
             "HAS_SERVICE": EdgeType.HOSTS,
             "HAS_FINGERPRINT": EdgeType.RELATED_TO,
             "FINGERPRINTS": EdgeType.RELATED_TO,
+            "HAS_VULN_CANDIDATE": EdgeType.RELATED_TO,
+            "HAS_VULNERABILITY_CANDIDATE": EdgeType.RELATED_TO,
+            "SUPPORTED_BY_EVIDENCE": EdgeType.SUPPORTED_BY,
         }
         alias = aliases.get(value)
         return alias if alias is not None else EdgeType(value)

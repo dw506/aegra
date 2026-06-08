@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -36,6 +37,8 @@ class PackyLLMConfig(BaseModel):
     timeout_sec: float = Field(default=30.0, gt=0.0, le=300.0)
     input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
+    max_retries: int = Field(default=2, ge=0, le=5)
+    retry_backoff_sec: float = Field(default=1.0, ge=0.0, le=30.0)
 
     @field_validator("base_url", mode="before")
     @classmethod
@@ -64,6 +67,10 @@ class PackyLLMConfig(BaseModel):
         model = os.getenv("AEGRA_LLM_MODEL") or DEFAULT_PACKY_MODEL
         timeout_value = os.getenv("AEGRA_LLM_TIMEOUT_SEC")
         timeout_sec = float(timeout_value) if timeout_value else 30.0
+        retries_value = os.getenv("AEGRA_LLM_MAX_RETRIES")
+        max_retries = int(retries_value) if retries_value else 2
+        backoff_value = os.getenv("AEGRA_LLM_RETRY_BACKOFF_SEC")
+        retry_backoff_sec = float(backoff_value) if backoff_value else 1.0
         input_cost = _env_float("AEGRA_LLM_INPUT_COST_PER_1M_TOKENS")
         output_cost = _env_float("AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS")
         return cls(
@@ -71,6 +78,8 @@ class PackyLLMConfig(BaseModel):
             base_url=base_url,
             model=model,
             timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
             input_cost_per_1m_tokens=input_cost,
             output_cost_per_1m_tokens=output_cost,
         )
@@ -324,7 +333,7 @@ class PackyLLMClient:
         if temperature is not None:
             payload["temperature"] = temperature
 
-        response = self._http.post("/chat/completions", json=payload)
+        response = self._post_with_retry("/chat/completions", payload)
         self._raise_for_status(response)
 
         raw_text = response.text
@@ -359,6 +368,34 @@ class PackyLLMClient:
             raw_text=raw_text,
             finish_reason=finish_reason,
         )
+
+    def _post_with_retry(self, path: str, payload: dict[str, Any]) -> httpx.Response:
+        attempts = int(self._config.max_retries) + 1
+        last_exc: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self._http.post(path, json=payload)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    raise PackyLLMError(
+                        f"llm_transport_error after {attempt} attempt(s): {exc}"
+                    ) from exc
+                self._sleep_before_retry(attempt)
+                continue
+            if response.status_code in {408, 409, 425, 429, 500, 502, 503, 504} and attempt < attempts:
+                last_exc = None
+                self._sleep_before_retry(attempt)
+                continue
+            return response
+        if last_exc is not None:
+            raise PackyLLMError(f"llm_transport_error: {last_exc}") from last_exc
+        raise PackyLLMError("llm_transport_error: exhausted retries without response")
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        delay = float(self._config.retry_backoff_sec) * max(0, attempt)
+        if delay > 0:
+            time.sleep(delay)
 
     def _estimate_cost_usd(self, usage: dict[str, int] | None) -> float | None:
         if usage is None:

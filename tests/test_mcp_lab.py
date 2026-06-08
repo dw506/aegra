@@ -12,7 +12,7 @@ from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.integrations.mcp_lab.http_server import MCPHTTPHandler
 from src.integrations.mcp_lab.server import handle_request
 from src.integrations.mcp_lab import tools as mcp_tools
-from src.integrations.mcp_lab.tools import LAB_TOOL_SPECS, call_lab_tool, load_hidden_fixture_from_env
+from src.integrations.mcp_lab.tools import LAB_TOOL_SPECS, _parse_nmap_output, call_lab_tool, load_hidden_fixture_from_env
 
 
 def test_lab_tool_specs_include_v1_tools() -> None:
@@ -53,6 +53,27 @@ def test_goal_check_specs_expose_hidden_fixture_marker_id() -> None:
     for name in ("goal_check", "chain_goal_check"):
         properties = specs[name]["inputSchema"]["properties"]
         assert properties["fixture_marker_id"] == {"type": "string"}
+
+
+def test_parse_nmap_output_uses_report_host_for_services() -> None:
+    parsed = _parse_nmap_output(
+        "10.0.0.0/24",
+        "\n".join(
+            [
+                "Nmap scan report for 10.0.0.5",
+                "Host is up.",
+                "80/tcp open  http    Apache httpd 2.4.57",
+                "Nmap scan report for app.local (10.0.0.6)",
+                "8080/tcp open  http    Jetty 9.2.11",
+            ]
+        ),
+    )
+
+    services = [item for item in parsed["entities"] if item["type"] == "Service"]
+
+    assert {item["host"] for item in services} == {"10.0.0.5", "10.0.0.6"}
+    assert "service::10.0.0.5:80/tcp" in {item["id"] for item in services}
+    assert "service::10.0.0.6:8080/tcp" in {item["id"] for item in services}
 
 
 def test_lab_tools_require_lab_mode(monkeypatch) -> None:
