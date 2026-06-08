@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.core.visualization.graph_publisher import graph_delta_publisher
@@ -33,6 +34,26 @@ def register_graph_routes(app: Any, orchestrator: Any, settings: Any) -> None:
             return _build_unified_visualization(orchestrator, operation_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/operations/{operation_id}/trace")
+    def get_operation_trace(operation_id: str) -> dict[str, Any]:
+        try:
+            orchestrator.runtime_store.snapshot(operation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        path = Path(settings.runtime_store_dir) / operation_id / "operation-trace.txt"
+        if not path.exists():
+            return {
+                "operation_id": operation_id,
+                "path": str(path),
+                "text": "",
+                "message": "operation trace file does not exist",
+            }
+        return {
+            "operation_id": operation_id,
+            "path": str(path),
+            "text": path.read_text(encoding="utf-8"),
+        }
 
     @app.websocket("/operations/{operation_id}/visual-graphs/ws")
     async def visual_graph_ws(websocket: WebSocket, operation_id: str) -> None:

@@ -326,5 +326,69 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
     result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
-    assert mcp.calls[0]["arguments"] == {"url": "http://10.0.0.5:8080"}
-    assert result.tool_traces[0].arguments == {"url": "http://10.0.0.5:8080"}
+    assert mcp.calls[0]["arguments"]["url"] == "http://10.0.0.5:8080"
+    assert result.tool_traces[0].arguments["url"] == "http://10.0.0.5:8080"
+    assert result.tool_traces[0].arguments["operation_id"] == "op-url-tool"
+
+
+def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_trace_context() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "tool_name": "nmap_scan",
+                "arguments": {"target": "127.0.0.1"},
+            },
+            {"action": "finish", "status": "succeeded", "summary": "scan completed"},
+        ]
+    )
+    mcp = RecordingMCP()
+    request = StageExecutionRequest(
+        operation_id="op-default-server",
+        cycle_index=4,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Default server id",
+        max_steps=2,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
+    )
+
+    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+
+    assert result.status == "succeeded"
+    assert mcp.calls[0]["server_id"] == "pentest-tools"
+    assert mcp.calls[0]["arguments"]["operation_id"] == "op-default-server"
+    assert mcp.calls[0]["arguments"]["trace_id"] == "4-recon_agent-1-nmap_scan"
+
+
+def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_server() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "tool_name": "nmap_scan",
+                "arguments": {"target": "127.0.0.1"},
+            }
+        ]
+    )
+    mcp = RecordingMCP()
+    request = StageExecutionRequest(
+        operation_id="op-unavailable-server",
+        cycle_index=1,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Unavailable server",
+        max_steps=1,
+        mcp_tool_catalog={
+            "pentest-tools": {
+                "available": False,
+                "error": "MCP is not configured",
+                "tools": [{"name": "nmap_scan"}],
+            }
+        },
+    )
+
+    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+
+    assert mcp.calls == []
+    assert result.tool_traces[0].exit_code == "tool_server_unavailable"

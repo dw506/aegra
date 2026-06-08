@@ -18,8 +18,14 @@
     <nav class="tabs" aria-label="Console pages">
       <button data-view="workspace" class="active">Workspace / Asset</button>
       <button data-view="run">Operation Run</button>
-      <button data-view="knowledge">Knowledge Graph</button>
-      <button data-view="findings">Findings</button>
+      <button data-view="overview">Overview</button>
+      <button data-view="timeline">Timeline</button>
+      <button data-view="agentTrace">Agent Trace</button>
+      <button data-view="kgGraphView">KG Graph</button>
+      <button data-view="agGraphView">AG Graph</button>
+      <button data-view="toolTrace">Tool Trace</button>
+      <button data-view="findings">Evidence & Findings</button>
+      <button data-view="operationTrace">Operation Trace</button>
       <button data-view="approval">Approval</button>
       <button data-view="report">Report Export</button>
     </nav>
@@ -63,10 +69,58 @@
         <div class="panel"><h2>Run Status</h2><pre id="runStatus"></pre></div>
       </section>
 
-      <section id="knowledge" class="view">
+      <section id="overview" class="view">
         <div class="panel">
-          <h2>Knowledge Graph</h2>
-          <div id="knowledgeGraph" class="graph"></div>
+          <h2>Overview</h2>
+          <div id="overviewGrid" class="overview-grid"></div>
+        </div>
+      </section>
+
+      <section id="timeline" class="view">
+        <div class="panel">
+          <h2>Timeline</h2>
+          <div id="timelineList" class="timeline"></div>
+        </div>
+      </section>
+
+      <section id="agentTrace" class="view">
+        <div class="panel">
+          <h2>Agent Trace</h2>
+          <div id="agentTraceList" class="agent-trace"></div>
+        </div>
+      </section>
+
+      <section id="kgGraphView" class="view">
+        <div class="panel">
+          <h2>KG Graph</h2>
+          <div id="kgGraph" class="kg-columns"></div>
+          <h3>Relations</h3>
+          <table>
+            <thead><tr><th>Source</th><th>Relation</th><th>Target</th><th>Evidence</th></tr></thead>
+            <tbody id="kgRelations"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="agGraphView" class="view">
+        <div class="panel">
+          <h2>AG Graph</h2>
+          <div id="agGraph" class="agent-lanes"></div>
+          <h3>Process Links</h3>
+          <table>
+            <thead><tr><th>Source</th><th>Link</th><th>Target</th><th>Evidence</th></tr></thead>
+            <tbody id="agRelations"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="toolTrace" class="view">
+        <div class="panel">
+          <h2>Tool Trace</h2>
+          <table class="tool-table">
+            <thead><tr><th>Cycle</th><th>Agent</th><th>Step</th><th>Tool</th><th>Success</th><th>Exit Code</th><th>Summary</th><th>Raw Output</th></tr></thead>
+            <tbody id="toolTraceTable"></tbody>
+          </table>
         </div>
       </section>
 
@@ -74,9 +128,27 @@
         <div class="panel">
           <h2>Findings</h2>
           <table>
-            <thead><tr><th>Finding</th><th>Severity</th><th>Evidence</th><th>Audit</th></tr></thead>
+            <thead><tr><th>Finding</th><th>Kind</th><th>Severity</th><th>Status</th><th>Confidence</th><th>Target</th><th>Evidence</th><th>Validation</th><th>Action</th></tr></thead>
             <tbody id="findingsTable"></tbody>
           </table>
+        </div>
+        <div class="panel">
+          <h2>Evidence</h2>
+          <table>
+            <thead><tr><th>Evidence</th><th>Kind</th><th>Source Tool</th><th>Cycle</th><th>Agent</th><th>Summary</th><th>Related Finding</th><th>Action</th></tr></thead>
+            <tbody id="evidenceTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="operationTrace" class="view">
+        <div class="panel">
+          <h2>Operation Trace</h2>
+          <div class="form-grid trace-controls">
+            <label>Filter <input id="traceFilter" placeholder="Keyword" /></label>
+            <button id="refreshTrace">Refresh</button>
+          </div>
+          <pre id="operationTraceText" class="operation-trace"></pre>
         </div>
       </section>
 
@@ -103,10 +175,10 @@
       </section>
     </main>
 
-    <aside id="evidenceDrawer" class="drawer" aria-label="Evidence details">
-      <button id="closeEvidence" class="close">Close</button>
-      <h2>Evidence Details</h2>
-      <pre id="evidenceDetails"></pre>
+    <aside id="detailDrawer" class="drawer detail-drawer" aria-label="Details">
+      <button id="closeDetails" class="close">Close</button>
+      <h2>Details</h2>
+      <pre id="detailContent"></pre>
     </aside>
 
     <script src="/ui/app.js"></script>

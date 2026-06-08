@@ -771,23 +771,21 @@ class AppOrchestrator:
                     planning=planning,
                     apply_results=apply_results,
                 )
-            txt_logger.write_block(
-                "GRAPH_WRITE",
-                "graph write completed",
-                {
-                    "cycle": cycle_index,
-                    "stage": stage_result.stage_type,
-                    "agent": stage_result.agent_name,
-                    "stage_status": stage_result.status,
-                    "kg_delta_count": len(stage_apply.kg_state_deltas or []),
-                    "ag_delta_count": len(stage_apply.ag_state_deltas or []),
-                    "tg_delta_count": 0,
-                    "runtime_event_count": len(stage_apply.runtime_event_refs or []),
-                    "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
-                    "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
-                    "evidence_refs": list(stage_result.evidence_refs),
-                },
-            )
+            stage_graph_write_payload = {
+                "cycle": cycle_index,
+                "stage": stage_result.stage_type,
+                "agent": stage_result.agent_name,
+                "stage_status": stage_result.status,
+                "kg_delta_count": len(stage_apply.kg_state_deltas or []),
+                "ag_delta_count": len(stage_apply.ag_state_deltas or []),
+                "tg_delta_count": 0,
+                "runtime_event_count": len(stage_apply.runtime_event_refs or []),
+                "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
+                "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
+                "evidence_refs": list(stage_result.evidence_refs),
+            }
+            txt_logger.write_block("GRAPH_WRITE", "graph write completed", stage_graph_write_payload)
+            operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
             extraction = AttackLogExtractor().extract(
                 decision,
                 stage_result,
@@ -796,40 +794,36 @@ class AppOrchestrator:
                 [],
             )
             log_apply = self.result_applier.apply_log_extraction(extraction, state, ag)
-            txt_logger.write_block(
-                "ATTACK_LOG_EXTRACT",
-                "attack graph extraction completed",
-                {
-                    "cycle": cycle_index,
-                    "stage": stage_result.stage_type,
-                    "agent": stage_result.agent_name,
-                    "status": stage_result.status,
-                    "ag_node_count": len(extraction.ag_nodes),
-                    "ag_edge_count": len(extraction.ag_edges),
-                    "node_roles": [
-                        getattr(node, "node_type", None).value if hasattr(getattr(node, "node_type", None), "value") else str(getattr(node, "node_type", ""))
-                        for node in extraction.ag_nodes
-                    ],
-                    "evidence_refs": list(extraction.evidence_refs),
-                },
-            )
-            txt_logger.write_block(
-                "GRAPH_WRITE",
-                "attack log graph write completed",
-                {
-                    "cycle": cycle_index,
-                    "stage": stage_result.stage_type,
-                    "agent": stage_result.agent_name,
-                    "stage_status": stage_result.status,
-                    "kg_delta_count": 0,
-                    "ag_delta_count": len(extraction.ag_nodes) + len(extraction.ag_edges),
-                    "tg_delta_count": 0,
-                    "runtime_event_count": len(log_apply.runtime_event_refs or []),
-                    "created_ag_nodes": len(extraction.ag_nodes),
-                    "created_ag_edges": len(extraction.ag_edges),
-                    "evidence_refs": list(extraction.evidence_refs),
-                },
-            )
+            attack_log_payload = {
+                "cycle": cycle_index,
+                "stage": stage_result.stage_type,
+                "agent": stage_result.agent_name,
+                "status": stage_result.status,
+                "ag_node_count": len(extraction.ag_nodes),
+                "ag_edge_count": len(extraction.ag_edges),
+                "node_roles": [
+                    getattr(node, "node_type", None).value if hasattr(getattr(node, "node_type", None), "value") else str(getattr(node, "node_type", ""))
+                    for node in extraction.ag_nodes
+                ],
+                "evidence_refs": list(extraction.evidence_refs),
+            }
+            txt_logger.write_block("ATTACK_LOG_EXTRACT", "attack graph extraction completed", attack_log_payload)
+            operation_trace_logger.write_block("ATTACK_LOG_EXTRACT", "attack graph extraction completed", attack_log_payload)
+            attack_log_graph_payload = {
+                "cycle": cycle_index,
+                "stage": stage_result.stage_type,
+                "agent": stage_result.agent_name,
+                "stage_status": stage_result.status,
+                "kg_delta_count": 0,
+                "ag_delta_count": len(extraction.ag_nodes) + len(extraction.ag_edges),
+                "tg_delta_count": 0,
+                "runtime_event_count": len(log_apply.runtime_event_refs or []),
+                "created_ag_nodes": len(extraction.ag_nodes),
+                "created_ag_edges": len(extraction.ag_edges),
+                "evidence_refs": list(extraction.evidence_refs),
+            }
+            txt_logger.write_block("GRAPH_WRITE", "attack log graph write completed", attack_log_graph_payload)
+            operation_trace_logger.write_block("GRAPH_WRITE", "attack log graph write completed", attack_log_graph_payload)
             for applied in (stage_apply, log_apply):
                 for delta in applied.visual_graph_deltas:
                     graph_delta_publisher.publish_nowait(delta)
@@ -927,6 +921,18 @@ class AppOrchestrator:
                 "selected_stage": decision.selected_stage,
                 "status": state.operation_status.value,
                 "stop_reason": stop_reason,
+            },
+        )
+        operation_trace_logger.write_block(
+            "CYCLE_END",
+            "cycle completed",
+            {
+                "cycle": cycle_index,
+                "selected_agent": decision.selected_agent,
+                "selected_stage": decision.selected_stage,
+                "status": state.operation_status.value,
+                "stop_reason": stop_reason,
+                "applied_results": len(apply_results),
             },
         )
         mark_clean_shutdown(state, cycle_index=cycle_index)

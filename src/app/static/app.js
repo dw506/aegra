@@ -2,6 +2,10 @@ const state = {
   workspaceId: null,
   workspaces: [],
   evidence: [],
+  findings: [],
+  visualization: null,
+  trace: null,
+  details: new Map(),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -28,13 +32,16 @@ function currentOperation() {
 async function refreshAll() {
   await refreshWorkspaces();
   if (!currentOperation()) return;
+  state.details.clear();
   await Promise.all([
     refreshAssets(),
     refreshPolicy(),
-    refreshGraph(),
+    refreshVisualization(),
     refreshFindings(),
     refreshApprovals(),
+    refreshOperationTrace(),
   ]);
+  renderVisualization();
 }
 
 async function refreshWorkspaces() {
@@ -69,23 +76,29 @@ async function refreshPolicy() {
   }, null, 2);
 }
 
-async function refreshGraph() {
+async function refreshVisualization() {
   const op = currentOperation();
-  const graph = await api(`/operations/${encodeURIComponent(op)}/graph`);
-  renderGraph("knowledgeGraph", graph.nodes || [], graph.edges || []);
+  try {
+    state.visualization = await api(`/operations/${encodeURIComponent(op)}/visualization`);
+  } catch (error) {
+    const graph = await api(`/operations/${encodeURIComponent(op)}/graph`);
+    state.visualization = {
+      operation: { id: op, status: "unknown", current_round: 0, goal_status: "unknown" },
+      overview: {},
+      kg: { nodes: graph.nodes || [], edges: graph.edges || [] },
+      ag: { nodes: [], edges: [] },
+      timeline: [],
+      tool_trace: [],
+      evidence: [],
+      agent_trace: [],
+    };
+  }
 }
 
 async function refreshFindings() {
   const op = currentOperation();
   state.evidence = await api(`/operations/${encodeURIComponent(op)}/evidence`);
-  const findings = await api(`/operations/${encodeURIComponent(op)}/findings`);
-  $("findingsTable").innerHTML = findings.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.title || item.finding_id)}</td>
-      <td>${escapeHtml(item.severity || "")}</td>
-      <td>${(item.evidence_refs || []).map((id) => `<button data-evidence="${escapeHtml(id)}">${escapeHtml(id)}</button>`).join(" ")}</td>
-      <td><a href="/operations/${op}/audit-report">audit</a></td>
-    </tr>`).join("") || `<tr><td colspan="4">No findings yet.</td></tr>`;
+  state.findings = await api(`/operations/${encodeURIComponent(op)}/findings`);
 }
 
 async function refreshApprovals() {
@@ -101,48 +114,334 @@ async function refreshApprovals() {
     </tr>`).join("") || `<tr><td colspan="5">No approval requests.</td></tr>`;
 }
 
-function renderGraph(containerId, nodes, edges) {
-  const container = $(containerId);
-  container.innerHTML = "";
-  if (!nodes.length) {
-    container.textContent = "No graph data.";
-    return;
+async function refreshOperationTrace() {
+  const op = currentOperation();
+  try {
+    state.trace = await api(`/operations/${encodeURIComponent(op)}/trace`);
+  } catch {
+    state.trace = { operation_id: op, text: "", message: "Trace unavailable." };
   }
-  const widthStep = 210;
-  const heightStep = 92;
-  const points = new Map();
-  nodes.forEach((node, index) => {
-    const x = 24 + (index % 4) * widthStep;
-    const y = 24 + Math.floor(index / 4) * heightStep;
-    points.set(node.id, { x, y });
-    const div = document.createElement("div");
-    div.className = "node";
-    div.style.left = `${x}px`;
-    div.style.top = `${y}px`;
-    div.innerHTML = `<strong>${escapeHtml(node.type || node.kind || "Task")}</strong>${escapeHtml(node.label || node.id)}`;
-    container.appendChild(div);
-  });
-  edges.forEach((edge) => {
-    const a = points.get(edge.source);
-    const b = points.get(edge.target);
-    if (!a || !b) return;
-    const line = document.createElement("div");
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    line.className = "edge";
-    line.style.left = `${a.x + 150}px`;
-    line.style.top = `${a.y + 28}px`;
-    line.style.width = `${Math.max(24, Math.hypot(dx, dy))}px`;
-    line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
-    container.appendChild(line);
-  });
-  container.style.minHeight = `${Math.max(320, 120 + Math.ceil(nodes.length / 4) * heightStep)}px`;
+  renderOperationTrace();
 }
 
-function showEvidence(id) {
-  const items = id === "all" ? state.evidence : state.evidence.filter((item) => item.evidence_id === id);
-  $("evidenceDetails").textContent = JSON.stringify(items, null, 2);
-  $("evidenceDrawer").classList.add("open");
+function renderVisualization() {
+  renderOverview();
+  renderTimeline();
+  renderAgentTrace();
+  renderSemanticKgGraph($("kgGraph"), state.visualization?.kg?.nodes || [], state.visualization?.kg?.edges || []);
+  renderAgentLaneAg($("agGraph"), state.visualization?.ag?.nodes || [], state.visualization?.ag?.edges || []);
+  renderToolTrace();
+  renderFindingsAndEvidence();
+  renderOperationTrace();
+}
+
+function renderOverview() {
+  const operation = state.visualization?.operation || {};
+  const overview = state.visualization?.overview || {};
+  const cards = [
+    ["Operation Status", overview.operation_status || operation.status],
+    ["Current Round", overview.current_round ?? operation.current_round],
+    ["Goal Status", overview.goal_status || operation.goal_status],
+    ["Current Agent", overview.current_agent],
+    ["Asset Count", overview.asset_count],
+    ["Service Count", overview.service_count],
+    ["Finding Count", overview.finding_count],
+    ["Verified Finding Count", overview.verified_finding_count],
+    ["Evidence Count", overview.evidence_count],
+    ["Access Count", overview.access_count],
+    ["Latest Decision", overview.latest_decision?.decision_summary || overview.latest_decision?.decision, overview.latest_decision],
+    ["Latest Evidence", overview.latest_evidence?.summary || overview.latest_evidence?.id, overview.latest_evidence],
+  ];
+  $("overviewGrid").innerHTML = cards.map(([title, value, detail]) => metricCard(title, value, detail)).join("");
+}
+
+function metricCard(title, value, detail) {
+  const id = detail ? registerDetail(detail) : "";
+  return `
+    <button class="metric-card" ${id ? `data-detail="${id}"` : ""}>
+      <span>${escapeHtml(title)}</span>
+      <strong>${escapeHtml(value ?? "-")}</strong>
+      ${detail?.summary ? `<small>${escapeHtml(detail.summary)}</small>` : ""}
+    </button>`;
+}
+
+function renderTimeline() {
+  const events = state.visualization?.timeline || [];
+  const byRound = groupBy(events, (item) => item.round ?? 0);
+  $("timelineList").innerHTML = Object.keys(byRound).sort(numberSort).map((round) => `
+    <section class="timeline-cycle">
+      <h3>Cycle ${escapeHtml(round)}</h3>
+      ${byRound[round].map((event) => {
+        const id = registerDetail(event);
+        return `
+          <button class="timeline-card" data-detail="${id}">
+            <div><strong>${escapeHtml(event.display_name || event.phase)}</strong>${badge(event.status)}</div>
+            <p>${escapeHtml(event.summary || "")}</p>
+            <dl>
+              <dt>Phase</dt><dd>${escapeHtml(event.phase || "")}</dd>
+              <dt>Agent</dt><dd>${escapeHtml(event.agent || "-")}</dd>
+              <dt>Tool</dt><dd>${escapeHtml(event.tool_name || "-")}</dd>
+              <dt>Target</dt><dd>${escapeHtml(event.target || "-")}</dd>
+              <dt>Evidence</dt><dd>${escapeHtml((event.evidence_ids || []).join(", ") || "-")}</dd>
+              <dt>Created</dt><dd>${escapeHtml(event.created_at || "-")}</dd>
+            </dl>
+          </button>`;
+      }).join("")}
+    </section>`).join("") || empty("No timeline events yet.");
+}
+
+function renderAgentTrace() {
+  const traces = state.visualization?.agent_trace || [];
+  $("agentTraceList").innerHTML = traces.map((trace) => {
+    const id = registerDetail(trace);
+    return `
+      <button class="graph-card agent-trace-card" data-detail="${id}">
+        <div><strong>Cycle ${escapeHtml(trace.cycle_index ?? trace.round ?? "-")}: ${escapeHtml(trace.selected_agent || "No agent")}</strong>${badge(trace.status)}</div>
+        <p>${escapeHtml(trace.summary || trace.planner_decision?.decision_summary || "")}</p>
+        <dl>
+          <dt>Stage</dt><dd>${escapeHtml(trace.selected_stage || "-")}</dd>
+          <dt>Objective</dt><dd>${escapeHtml(trace.objective || "-")}</dd>
+          <dt>Task</dt><dd>${escapeHtml(trace.task_brief || "-")}</dd>
+          <dt>Tools</dt><dd>${escapeHtml(trace.tool_count ?? (trace.tool_traces || []).length)}</dd>
+          <dt>Evidence</dt><dd>${escapeHtml(trace.evidence_count ?? 0)}</dd>
+          <dt>Findings</dt><dd>${escapeHtml(trace.finding_count ?? 0)}</dd>
+        </dl>
+      </button>`;
+  }).join("") || empty("No agent trace yet.");
+}
+
+function renderSemanticKgGraph(container, kgNodes, kgEdges) {
+  const columns = [
+    ["Network / Host", ["Network", "Host"]],
+    ["Service / WebEndpoint / Technology", ["Service", "WebEndpoint", "Technology"]],
+    ["Vulnerability / Finding", ["Vulnerability", "Finding"]],
+    ["Evidence / Observation", ["Evidence", "Observation"]],
+    ["Credential / Session / PivotRoute / Goal", ["Credential", "Session", "PivotRoute", "Goal"]],
+  ];
+  container.innerHTML = columns.map(([title, types]) => {
+    const nodes = kgNodes.filter((node) => types.includes(node.type));
+    return `
+      <section class="kg-column">
+        <h3>${escapeHtml(title)}</h3>
+        ${nodes.map(renderKgNodeCard).join("") || `<p class="empty">No nodes.</p>`}
+      </section>`;
+  }).join("");
+  const names = nodeNameMap(kgNodes);
+  $("kgRelations").innerHTML = kgEdges.map((edge) => {
+    const id = registerDetail(edge);
+    return `
+      <tr data-detail="${id}">
+        <td>${escapeHtml(names.get(edge.source) || edge.source)}</td>
+        <td>${escapeHtml(edge.display_name || edge.type)}</td>
+        <td>${escapeHtml(names.get(edge.target) || edge.target)}</td>
+        <td>${escapeHtml((edge.evidence_ids || []).join(", "))}</td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="4">No KG relations.</td></tr>`;
+}
+
+function renderKgNodeCard(node) {
+  const id = registerDetail(node);
+  return `
+    <button class="graph-card ${kgClass(node.type)}" data-detail="${id}">
+      <strong>${escapeHtml(node.display_name || node.label || node.id)}</strong>
+      <dl>
+        <dt>Type</dt><dd>${escapeHtml(node.type || "-")}</dd>
+        <dt>Status</dt><dd>${escapeHtml(node.status || "-")}</dd>
+        <dt>Confidence</dt><dd>${escapeHtml(node.confidence ?? "-")}</dd>
+        <dt>Target</dt><dd>${escapeHtml(node.target || "-")}</dd>
+        <dt>Evidence</dt><dd>${escapeHtml((node.evidence_ids || []).length)}</dd>
+      </dl>
+    </button>`;
+}
+
+function renderAgentLaneAg(container, agNodes, agEdges) {
+  const lanes = ["Planner", "ReconAgent", "VulnAnalysisAgent", "ExploitValidationAgent", "AccessPivotAgent", "GoalAgent", "Other"];
+  container.innerHTML = lanes.map((lane) => {
+    const nodes = agNodes
+      .filter((node) => lane === "Planner" ? node.type === "ReplanStep" : (node.agent || "Other") === lane)
+      .sort((a, b) => (a.round ?? 0) - (b.round ?? 0));
+    return `
+      <section class="agent-lane">
+        <h3>${escapeHtml(lane)}</h3>
+        ${nodes.map(renderAgNodeCard).join("") || `<p class="empty">No steps.</p>`}
+      </section>`;
+  }).join("");
+  const names = nodeNameMap(agNodes);
+  $("agRelations").innerHTML = agEdges.map((edge) => {
+    const id = registerDetail(edge);
+    return `
+      <tr data-detail="${id}">
+        <td>${escapeHtml(names.get(edge.source) || edge.source)}</td>
+        <td>${escapeHtml(edge.display_name || edge.type)}</td>
+        <td>${escapeHtml(names.get(edge.target) || edge.target)}</td>
+        <td>${escapeHtml((edge.evidence_ids || []).join(", "))}</td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="4">No AG process links.</td></tr>`;
+}
+
+function renderAgNodeCard(node) {
+  const id = registerDetail(node);
+  return `
+    <button class="graph-card ag-node" data-detail="${id}">
+      <div><strong>${escapeHtml(node.display_name || node.id)}</strong>${badge(node.status)}</div>
+      <p>${escapeHtml(node.result_summary || node.action_summary || "")}</p>
+      <dl>
+        <dt>Round</dt><dd>${escapeHtml(node.round ?? "-")}</dd>
+        <dt>Type</dt><dd>${escapeHtml(node.type || "-")}</dd>
+        <dt>Agent</dt><dd>${escapeHtml(node.agent || "-")}</dd>
+        <dt>Target</dt><dd>${escapeHtml(node.target || "-")}</dd>
+        <dt>Evidence</dt><dd>${escapeHtml((node.evidence_ids || []).join(", ") || "-")}</dd>
+      </dl>
+    </button>`;
+}
+
+function renderToolTrace() {
+  const traces = state.visualization?.tool_trace || [];
+  $("toolTraceTable").innerHTML = traces.map((trace) => {
+    const id = registerDetail(trace);
+    return `
+      <tr data-detail="${id}">
+        <td>${escapeHtml(trace.round ?? "")}</td>
+        <td>${escapeHtml(trace.agent || "")}</td>
+        <td>${escapeHtml(trace.step ?? "")}</td>
+        <td>${escapeHtml(trace.tool_name || "")}</td>
+        <td>${badge(trace.success === true ? "success" : trace.success === false ? "failed" : "pending")}</td>
+        <td>${escapeHtml(trace.exit_code ?? "")}</td>
+        <td>${escapeHtml(trace.summary || "")}</td>
+        <td>${escapeHtml(trace.raw_output_ref || "")}</td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="8">No tool traces yet.</td></tr>`;
+}
+
+function renderFindingsAndEvidence() {
+  const op = currentOperation();
+  $("findingsTable").innerHTML = state.findings.map((item) => {
+    const id = registerDetail(item);
+    const evidenceRefs = item.evidence_refs || item.evidence_ids || [];
+    return `
+      <tr>
+        <td>${escapeHtml(item.title || item.finding_id)}</td>
+        <td>${escapeHtml(item.kind || item.finding_kind || "")}</td>
+        <td>${escapeHtml(item.severity || "")}</td>
+        <td>${escapeHtml(item.status || "")}</td>
+        <td>${escapeHtml(item.confidence ?? "")}</td>
+        <td>${escapeHtml(item.target || item.asset_id || "")}</td>
+        <td>${evidenceRefs.map((evidenceId) => detailButton(evidenceId, findEvidence(evidenceId))).join(" ")}</td>
+        <td>${escapeHtml(item.validation_status || item.validation?.status || "")}</td>
+        <td><button data-detail="${id}">details</button> <a href="/operations/${op}/audit-report">audit</a></td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="9">No findings yet.</td></tr>`;
+
+  const visualizationEvidence = state.visualization?.evidence || [];
+  const evidenceRows = mergeEvidence(visualizationEvidence, state.evidence);
+  $("evidenceTable").innerHTML = evidenceRows.map((item) => {
+    const id = registerDetail(item);
+    return `
+      <tr>
+        <td>${escapeHtml(item.id || item.evidence_id)}</td>
+        <td>${escapeHtml(item.kind || item.source || "")}</td>
+        <td>${escapeHtml(item.source_name || item.source_tool || item.tool_name || "")}</td>
+        <td>${escapeHtml(item.round ?? item.cycle_index ?? "")}</td>
+        <td>${escapeHtml(item.created_by || item.agent || "")}</td>
+        <td>${escapeHtml(item.summary || "")}</td>
+        <td>${escapeHtml(relatedFinding(item) || "")}</td>
+        <td><button data-detail="${id}">details</button></td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="8">No evidence yet.</td></tr>`;
+}
+
+function renderOperationTrace() {
+  if (!$("operationTraceText")) return;
+  const text = state.trace?.text || state.trace?.message || "";
+  const filter = ($("traceFilter")?.value || "").trim().toLowerCase();
+  const lines = text.split(/\r?\n/).filter((line) => !filter || line.toLowerCase().includes(filter));
+  $("operationTraceText").innerHTML = lines.map(highlightTraceLine).join("\n");
+}
+
+function highlightTraceLine(line) {
+  const escaped = escapeHtml(line);
+  const keywords = ["CYCLE_START", "PLANNER_DECISION", "LLM_DECISION", "TOOL_CALL", "TOOL_RESULT", "STAGE_FINISH", "ERROR"];
+  return keywords.reduce((text, keyword) => text.replaceAll(keyword, `<mark>${keyword}</mark>`), escaped);
+}
+
+function showDetails(id) {
+  const value = state.details.get(id);
+  $("detailContent").textContent = JSON.stringify(value, null, 2);
+  $("detailDrawer").classList.add("open");
+}
+
+function registerDetail(value) {
+  const id = `detail-${state.details.size + 1}`;
+  state.details.set(id, value);
+  return id;
+}
+
+function detailButton(label, detail) {
+  const id = registerDetail(detail || { id: label });
+  return `<button data-detail="${id}">${escapeHtml(label)}</button>`;
+}
+
+function findEvidence(id) {
+  return mergeEvidence(state.visualization?.evidence || [], state.evidence).find((item) => (item.id || item.evidence_id) === id);
+}
+
+function mergeEvidence(...groups) {
+  const byId = new Map();
+  groups.flat().forEach((item) => {
+    const id = item?.id || item?.evidence_id;
+    if (!id) return;
+    byId.set(id, { ...(byId.get(id) || {}), ...item, id });
+  });
+  return Array.from(byId.values());
+}
+
+function relatedFinding(evidence) {
+  const id = evidence.id || evidence.evidence_id;
+  const finding = state.findings.find((item) => (item.evidence_refs || item.evidence_ids || []).includes(id));
+  return finding?.title || finding?.finding_id;
+}
+
+function nodeNameMap(nodes) {
+  return new Map(nodes.map((node) => [node.id, node.display_name || node.label || node.id]));
+}
+
+function groupBy(items, keyFn) {
+  return items.reduce((groups, item) => {
+    const key = keyFn(item);
+    groups[key] = groups[key] || [];
+    groups[key].push(item);
+    return groups;
+  }, {});
+}
+
+function numberSort(a, b) {
+  return Number(a) - Number(b);
+}
+
+function kgClass(type) {
+  return {
+    Host: "kg-host",
+    Network: "kg-host",
+    Service: "kg-service",
+    WebEndpoint: "kg-service",
+    Technology: "kg-service",
+    Finding: "kg-finding",
+    Vulnerability: "kg-finding",
+    Evidence: "kg-evidence",
+    Observation: "kg-evidence",
+    Session: "kg-session",
+    Credential: "kg-credential",
+  }[type] || "";
+}
+
+function badge(status) {
+  const normalized = String(status ?? "pending").toLowerCase();
+  const cls = ["success", "failed", "blocked", "running", "pending"].includes(normalized) ? normalized : "pending";
+  return `<span class="badge ${cls}">${escapeHtml(status ?? "pending")}</span>`;
+}
+
+function empty(message) {
+  return `<p class="empty">${escapeHtml(message)}</p>`;
 }
 
 function escapeHtml(value) {
@@ -152,10 +451,6 @@ function escapeHtml(value) {
 }
 
 document.querySelectorAll(".tabs button").forEach((button) => {
-  if (button.dataset.view === "tasks" && !state.legacyTg) {
-    button.hidden = true;
-    return;
-  }
   button.addEventListener("click", () => {
     document.querySelectorAll(".tabs button, .view").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
@@ -218,10 +513,16 @@ $("stopOperation").addEventListener("click", async () => {
   await refreshAll();
 });
 
+$("closeDetails").addEventListener("click", () => $("detailDrawer").classList.remove("open"));
+$("refreshTrace").addEventListener("click", refreshOperationTrace);
+$("traceFilter").addEventListener("input", renderOperationTrace);
+
 document.body.addEventListener("click", async (event) => {
-  const target = event.target;
+  const source = event.target;
+  if (!(source instanceof Element)) return;
+  const target = source.closest("[data-detail], [data-approve]");
   if (!(target instanceof HTMLElement)) return;
-  if (target.dataset.evidence) showEvidence(target.dataset.evidence);
+  if (target.dataset.detail) showDetails(target.dataset.detail);
   if (target.dataset.approve) {
     const op = currentOperation();
     await api(`/operations/${op}/approve`, {
@@ -236,8 +537,6 @@ document.body.addEventListener("click", async (event) => {
     await refreshAll();
   }
 });
-
-$("closeEvidence").addEventListener("click", () => $("evidenceDrawer").classList.remove("open"));
 
 document.querySelectorAll(".exportReport").forEach((button) => {
   button.addEventListener("click", async () => {

@@ -125,6 +125,10 @@ def test_visual_snapshot_api_and_websocket(tmp_path) -> None:
     visualization_response = client.get("/operations/op-vis/visualization")
     assert visualization_response.status_code == 200
     assert visualization_response.json()["kg"]["nodes"][0]["display_name"] == "10.20.0.30"
+    trace_response = client.get("/operations/op-vis/trace")
+    assert trace_response.status_code == 200
+    assert trace_response.json()["operation_id"] == "op-vis"
+    assert "operation-trace.txt" in trace_response.json()["path"]
     assert client.get("/operations/missing/visual-graphs/snapshot").status_code == 404
 
     with client.websocket_connect("/operations/op-vis/visual-graphs/ws") as websocket:

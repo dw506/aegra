@@ -639,7 +639,7 @@ def _nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     if ports:
         argv.extend(["-p", ",".join(str(port) for port in ports) if isinstance(ports, list) else str(ports)])
     argv.append(str(target))
-    result = _run_command({"argv": argv, "timeout_seconds": timeout})
+    result = _run_command(_command_args_from_tool(arguments, argv=argv, timeout_seconds=timeout))
     parsed = _parse_nmap_output(str(target), result.get("stdout", ""))
     result["parsed"] = parsed
     return result
@@ -1166,7 +1166,7 @@ def _nuclei_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     argv.extend(["-rl", str(rate_limit)])
     for template in _string_items(arguments.get("templates")):
         argv.extend(["-t", template])
-    result = _run_command({"argv": argv, "timeout_seconds": timeout, "max_output_chars": MAX_OUTPUT_CHARS})
+    result = _run_command(_command_args_from_tool(arguments, argv=argv, timeout_seconds=timeout, max_output_chars=MAX_OUTPUT_CHARS))
     parsed = _parse_nuclei_jsonl(url, result.get("stdout", ""))
     result["parsed"] = parsed
     return result
@@ -1178,7 +1178,13 @@ def _whatweb_fingerprint(arguments: dict[str, Any]) -> dict[str, Any]:
         return _tool_unavailable("whatweb_fingerprint", "whatweb")
     url = _required(arguments, "url")
     timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
-    result = _run_command({"argv": [binary, "--no-errors", "--log-json=-", url], "timeout_seconds": timeout})
+    result = _run_command(
+        _command_args_from_tool(
+            arguments,
+            argv=[binary, "--no-errors", "--log-json=-", url],
+            timeout_seconds=timeout,
+        )
+    )
     parsed = _parse_whatweb_json(url, result.get("stdout", ""))
     result["parsed"] = parsed
     return result
@@ -1201,7 +1207,7 @@ def _ffuf_discover(arguments: dict[str, Any]) -> dict[str, Any]:
         wordlist = str(temp_wordlist)
     match_status = ",".join(str(item) for item in (arguments.get("match_status") or [200, 204, 301, 302, 307, 401, 403]))
     argv = [binary, "-u", f"{base_url}/FUZZ", "-w", wordlist, "-mc", match_status, "-of", "json"]
-    result = _run_command({"argv": argv, "timeout_seconds": timeout, "max_output_chars": MAX_OUTPUT_CHARS})
+    result = _run_command(_command_args_from_tool(arguments, argv=argv, timeout_seconds=timeout, max_output_chars=MAX_OUTPUT_CHARS))
     parsed = _parse_ffuf_json(base_url, result.get("stdout", ""))
     result["parsed"] = parsed
     if temp_wordlist is not None:
@@ -1500,6 +1506,24 @@ def _write_raw_tool_output(*, arguments: dict[str, Any], payload: dict[str, Any]
     path = output_dir / f"{_safe_artifact_name(trace_id)}.json"
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True, default=str), encoding="utf-8")
     return str(path)
+
+
+def _command_args_from_tool(
+    arguments: dict[str, Any],
+    *,
+    argv: list[str],
+    timeout_seconds: int,
+    max_output_chars: int | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "argv": argv,
+        "timeout_seconds": timeout_seconds,
+        "operation_id": arguments.get("operation_id"),
+        "trace_id": arguments.get("trace_id"),
+    }
+    if max_output_chars is not None:
+        payload["max_output_chars"] = max_output_chars
+    return payload
 
 
 def _default_parsed() -> dict[str, Any]:

@@ -44,8 +44,9 @@ def build_unified_visualization(
     ag_nodes = [_ag_node(node) for node in _list(ag.get("nodes"))]
     ag_edges = [_ag_edge(edge) for edge in _list(ag.get("edges"))]
     timeline = _timeline_events(runtime=runtime, ag_nodes=ag_nodes)
+    tool_trace = _tool_trace(runtime=runtime, ag_nodes=ag_nodes, timeline=timeline)
     evidence = _evidence_items(kg_nodes=kg_nodes, ag_nodes=ag_nodes, timeline=timeline)
-    agent_trace = _agent_trace(ag_nodes=ag_nodes, runtime=runtime)
+    agent_trace = _agent_trace(ag_nodes=ag_nodes, runtime=runtime, tool_trace=tool_trace)
     attack_path = _attack_path(ag_nodes=ag_nodes, ag_edges=ag_edges)
     operation = _operation(operation_id=operation_id, runtime=runtime)
     overview = _overview(
@@ -62,6 +63,7 @@ def build_unified_visualization(
         "kg": {"nodes": kg_nodes, "edges": kg_edges},
         "ag": {"nodes": ag_nodes, "edges": ag_edges},
         "timeline": timeline,
+        "tool_trace": tool_trace,
         "evidence": evidence,
         "agent_trace": agent_trace,
         "attack_path": attack_path,
@@ -220,6 +222,7 @@ def _timeline_events(*, runtime: dict[str, Any], ag_nodes: list[dict[str, Any]])
                 "summary": node["result_summary"] or node["action_summary"] or "No summary available",
                 "status": node["status"],
                 "tool_name": _string(node["metadata"].get("tool_name")),
+                "tool_trace_refs": _tool_trace_refs_for_node(node),
                 "evidence_ids": list(node["evidence_ids"]),
                 "kg_updates": _list(node["metadata"].get("kg_updates") or node["metadata"].get("kg_node_ids")),
                 "ag_updates": [node["id"]],
@@ -240,6 +243,7 @@ def _timeline_events(*, runtime: dict[str, Any], ag_nodes: list[dict[str, Any]])
                 "summary": _string(event.get("summary")) or "No summary available",
                 "status": "failed" if _runtime_event_is_error(event) else "success",
                 "tool_name": None,
+                "tool_trace_refs": [],
                 "evidence_ids": _event_refs(event),
                 "kg_updates": [],
                 "ag_updates": [],
@@ -248,6 +252,36 @@ def _timeline_events(*, runtime: dict[str, Any], ag_nodes: list[dict[str, Any]])
             }
         )
     return sorted(events, key=lambda item: (item["round"], _phase_order(item["phase"]), item["id"]))
+
+
+def _tool_trace(
+    *,
+    runtime: dict[str, Any],
+    ag_nodes: list[dict[str, Any]],
+    timeline: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    traces: dict[str, dict[str, Any]] = {}
+    stage_by_round = _stage_context_by_round(ag_nodes)
+    for node in ag_nodes:
+        if node["raw_type"] != "TOOL_CALL" and not _string(node["metadata"].get("tool_name")):
+            continue
+        trace = _tool_trace_from_ag_node(node, stage_by_round.get(node["round"], {}))
+        traces[trace["id"]] = trace
+    execution = _mapping(runtime.get("execution"))
+    metadata = _mapping(execution.get("metadata"))
+    for item in _list(metadata.get("audit_log")):
+        event = _mapping(item)
+        if event.get("event_type") != "stage_tool_trace":
+            continue
+        trace = _tool_trace_from_audit_event(event, stage_by_round.get(_current_round(runtime), {}), len(traces))
+        traces.setdefault(trace["id"], trace)
+    for event in timeline:
+        for trace_id in event.get("tool_trace_refs", []):
+            if trace_id in traces:
+                traces[trace_id]["timeline_event_ids"].append(event["id"])
+    for trace in traces.values():
+        trace["timeline_event_ids"] = sorted(set(trace["timeline_event_ids"]))
+    return sorted(traces.values(), key=lambda item: (_int(item.get("round")) or -1, _int(item.get("step")) or 0, item["id"]))
 
 
 def _evidence_items(
@@ -280,14 +314,24 @@ def _evidence_items(
     return sorted(items.values(), key=lambda item: (_int(item.get("round")) or -1, item["id"]))
 
 
-def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any]) -> list[dict[str, Any]]:
+def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any], tool_trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rounds = sorted({node["round"] for node in ag_nodes} | ({_current_round(runtime)} if runtime else set()))
     result: list[dict[str, Any]] = []
     for round_no in rounds:
         nodes = [node for node in ag_nodes if node["round"] == round_no]
         planner = next((node for node in nodes if node["type"] == "ReplanStep" or node["raw_type"] == "PLANNER_DECISION"), None)
+        stage_result = next((node for node in nodes if node["raw_type"] == "STAGE_RESULT"), None)
         selected_agents = sorted({node["agent"] for node in nodes if node["agent"] != "Other" and node["type"] != "ReplanStep"})
+        round_traces = [trace for trace in tool_trace if trace["round"] == round_no]
+        evidence_ids = sorted({evidence_id for node in nodes for evidence_id in node["evidence_ids"]} | {evidence_id for trace in round_traces for evidence_id in trace["evidence_ids"]})
+        finding_count = sum(1 for node in nodes if node["type"] in {"AnalysisStep", "ValidationStep"} and node["status"] == "success")
         decision_summary = planner["result_summary"] if planner else "No planner decision recorded"
+        selected_agent = selected_agents[0] if selected_agents else _string((planner or {}).get("metadata", {}).get("selected_agent"))
+        selected_stage = _string((planner or {}).get("metadata", {}).get("selected_stage") or (stage_result or {}).get("metadata", {}).get("stage_type"))
+        objective = _string((planner or {}).get("metadata", {}).get("objective") or (stage_result or {}).get("metadata", {}).get("objective"))
+        task_brief = _string((planner or {}).get("metadata", {}).get("task_brief"))
+        status = _agent_trace_status(nodes)
+        summary = _string((stage_result or {}).get("result_summary") or decision_summary) or "No summary available"
         agent_states = []
         for agent in AGENTS:
             matching = [node for node in nodes if node["agent"] == agent]
@@ -301,6 +345,21 @@ def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any]) -> 
         result.append(
             {
                 "id": f"agent-trace::{round_no}",
+                "cycle_index": round_no,
+                "round": round_no,
+                "selected_agent": selected_agent,
+                "selected_stage": selected_stage,
+                "objective": objective,
+                "task_brief": task_brief,
+                "status": status,
+                "summary": summary,
+                "handoff_suggestion": _handoff_suggestion(nodes),
+                "replan_recommendation": _replan_recommendation(nodes),
+                "stage_result": stage_result,
+                "tool_traces": round_traces,
+                "tool_count": len(round_traces),
+                "evidence_count": len(evidence_ids),
+                "finding_count": finding_count,
                 "round": round_no,
                 "planner_decision": {
                     "selected_agents": selected_agents,
@@ -315,6 +374,96 @@ def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any]) -> 
             }
         )
     return result
+
+
+def _tool_trace_from_ag_node(node: dict[str, Any], stage_context: dict[str, Any]) -> dict[str, Any]:
+    metadata = _mapping(node.get("metadata"))
+    trace_id = _string(metadata.get("trace_id") or node.get("id")) or "tool-trace"
+    return {
+        "id": trace_id,
+        "round": node["round"],
+        "agent": node["agent"],
+        "stage": _string(metadata.get("stage_type") or stage_context.get("stage")),
+        "step": _int(metadata.get("step") or metadata.get("step_index")),
+        "server_id": _string(metadata.get("server_id")),
+        "tool_name": _string(metadata.get("tool_name") or node.get("display_name")) or "tool",
+        "arguments": _mapping(metadata.get("arguments")),
+        "success": _bool(metadata.get("success")) if metadata.get("success") is not None else node["status"] == "success",
+        "exit_code": metadata.get("exit_code"),
+        "summary": _string(metadata.get("output_summary") or metadata.get("visual_summary") or node.get("result_summary")) or "No summary available",
+        "stdout_excerpt": _string(metadata.get("stdout_excerpt") or metadata.get("stdout")) or "",
+        "stderr_excerpt": _string(metadata.get("stderr_excerpt") or metadata.get("stderr")) or "",
+        "raw_output_ref": _string(metadata.get("raw_output_ref")),
+        "evidence_ids": list(node["evidence_ids"]),
+        "created_at": _string(metadata.get("started_at") or node.get("started_at")),
+        "timeline_event_ids": [],
+        "metadata": metadata,
+    }
+
+
+def _tool_trace_from_audit_event(event: dict[str, Any], stage_context: dict[str, Any], index: int) -> dict[str, Any]:
+    trace_id = _string(event.get("trace_id") or event.get("raw_output_ref")) or f"audit-tool-trace::{index}"
+    return {
+        "id": trace_id,
+        "round": _int(event.get("cycle_index") or stage_context.get("round")) or 0,
+        "agent": _string(event.get("agent_name") or stage_context.get("agent")),
+        "stage": _string(event.get("stage_type") or stage_context.get("stage")),
+        "step": _int(event.get("step") or event.get("step_index")),
+        "server_id": _string(event.get("server_id")),
+        "tool_name": _string(event.get("tool_name")) or "tool",
+        "arguments": _mapping(event.get("arguments")),
+        "success": _bool(event.get("success")) if event.get("success") is not None else None,
+        "exit_code": event.get("exit_code"),
+        "summary": _string(event.get("summary")) or "No summary available",
+        "stdout_excerpt": _string(event.get("stdout_excerpt") or event.get("stdout")) or "",
+        "stderr_excerpt": _string(event.get("stderr_excerpt") or event.get("stderr")) or "",
+        "raw_output_ref": _string(event.get("raw_output_ref")),
+        "evidence_ids": _event_refs(event),
+        "created_at": _string(event.get("at") or event.get("created_at")),
+        "timeline_event_ids": [],
+        "metadata": event,
+    }
+
+
+def _stage_context_by_round(ag_nodes: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    result: dict[int, dict[str, Any]] = {}
+    for node in ag_nodes:
+        if node["raw_type"] != "STAGE_RESULT":
+            continue
+        result[node["round"]] = {
+            "round": node["round"],
+            "agent": node["agent"],
+            "stage": _string(node["metadata"].get("stage_type")),
+        }
+    return result
+
+
+def _tool_trace_refs_for_node(node: dict[str, Any]) -> list[str]:
+    metadata = _mapping(node.get("metadata"))
+    refs = []
+    for key in ("trace_id", "tool_trace_id", "raw_output_ref"):
+        value = _string(metadata.get(key))
+        if value:
+            refs.append(value)
+    return sorted(set(refs))
+
+
+def _agent_trace_status(nodes: list[dict[str, Any]]) -> str:
+    statuses = {node["status"] for node in nodes}
+    for status in ("running", "blocked", "failed", "success", "skipped", "pending"):
+        if status in statuses:
+            return status
+    return "pending"
+
+
+def _handoff_suggestion(nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    node = next((item for item in nodes if item["raw_type"] == "HANDOFF_SUGGESTION"), None)
+    return node
+
+
+def _replan_recommendation(nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    node = next((item for item in nodes if item["type"] == "ReplanStep" or item["raw_type"] in {"PLANNER_DECISION", "STOP_DECISION"}), None)
+    return node
 
 
 def _attack_path(*, ag_nodes: list[dict[str, Any]], ag_edges: list[dict[str, Any]]) -> dict[str, Any]:

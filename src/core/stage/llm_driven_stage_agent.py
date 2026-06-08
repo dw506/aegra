@@ -157,13 +157,16 @@ class LLMDrivenStageAgent:
         decision: dict[str, Any],
         logger: TxtTraceLogger,
     ) -> ToolTrace:
+        arguments = dict(decision.get("arguments") or {})
         call = LLMDrivenToolCall(
-            server_id=str(decision.get("server_id") or "mcp"),
+            server_id=str(decision.get("server_id") or self._default_server_id(request.mcp_tool_catalog)),
             tool_name=str(decision.get("tool_name") or ""),
-            arguments=dict(decision.get("arguments") or {}),
-            timeout_seconds=int((decision.get("arguments") or {}).get("timeout_seconds") or self._default_timeout_seconds),
+            arguments=arguments,
+            timeout_seconds=int(arguments.get("timeout_seconds") or self._default_timeout_seconds),
         )
         call = self._normalize_tool_call_arguments(call=call, request=request)
+        call = self._with_trace_arguments(call=call, request=request, step=step)
+        server_metadata = self._lookup_server(request.mcp_tool_catalog, server_id=call.server_id)
         tool_metadata = self._lookup_tool(request.mcp_tool_catalog, server_id=call.server_id, tool_name=call.tool_name)
         logger.write_block(
             "TOOL_CALL",
@@ -179,6 +182,26 @@ class LLMDrivenStageAgent:
                 "timeout_seconds": call.timeout_seconds,
             },
         )
+        if server_metadata and server_metadata.get("available") is False:
+            trace = ToolTrace(
+                step=step,
+                server_id=call.server_id,
+                tool_name=call.tool_name or "unknown_tool",
+                arguments=dict(call.arguments),
+                success=False,
+                summary="MCP tool server is unavailable",
+                stderr=str(server_metadata.get("error") or "MCP tool server is unavailable"),
+                exit_code="tool_server_unavailable",
+                ended_at=utc_now().isoformat(),
+                policy_check={
+                    "allowed": False,
+                    "reason": "MCP tool server is unavailable",
+                    "metadata": {"catalog_enforced": True, "server_available": False},
+                },
+                metadata={"content": {"success": False, "exit_code": "tool_server_unavailable"}},
+            )
+            self._log_tool_result(logger, trace)
+            return trace
         if not tool_metadata:
             trace = ToolTrace(
                 step=step,
@@ -391,6 +414,11 @@ class LLMDrivenStageAgent:
         )
 
     @staticmethod
+    def _lookup_server(catalog: dict[str, Any], *, server_id: str) -> dict[str, Any]:
+        server = catalog.get(server_id)
+        return dict(server) if isinstance(server, dict) else {}
+
+    @staticmethod
     def _lookup_tool(catalog: dict[str, Any], *, server_id: str, tool_name: str) -> dict[str, Any]:
         server = catalog.get(server_id)
         if not isinstance(server, dict):
@@ -399,6 +427,22 @@ class LLMDrivenStageAgent:
             if isinstance(item, dict) and str(item.get("name") or item.get("tool_name")) == tool_name:
                 return dict(item)
         return {}
+
+    @staticmethod
+    def _default_server_id(catalog: dict[str, Any]) -> str:
+        if isinstance(catalog.get("pentest-tools"), dict):
+            return "pentest-tools"
+        for server_id, server in catalog.items():
+            if isinstance(server, dict):
+                return str(server_id)
+        return "pentest-tools"
+
+    @staticmethod
+    def _with_trace_arguments(*, call: LLMDrivenToolCall, request: StageExecutionRequest, step: int) -> LLMDrivenToolCall:
+        arguments = dict(call.arguments)
+        arguments.setdefault("operation_id", request.operation_id)
+        arguments.setdefault("trace_id", f"{request.cycle_index}-{request.agent_name}-{step}-{call.tool_name}")
+        return call.model_copy(update={"arguments": arguments})
 
     @classmethod
     def _normalize_tool_call_arguments(cls, *, call: LLMDrivenToolCall, request: StageExecutionRequest) -> LLMDrivenToolCall:

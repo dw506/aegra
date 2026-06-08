@@ -89,13 +89,51 @@ def test_lab_tools_require_lab_mode(monkeypatch) -> None:
 def test_lab_run_command_returns_unified_payload(monkeypatch) -> None:
     monkeypatch.setenv("AEGRA_LAB_MODE", "1")
 
-    payload = call_lab_tool("run_command", {"argv": [sys.executable, "-c", "print('lab-ok')"]})
+    payload = call_lab_tool(
+        "run_command",
+        {
+            "argv": [sys.executable, "-c", "print('lab-ok')"],
+            "operation_id": "op-run-command",
+            "trace_id": "trace-1",
+        },
+    )
 
     assert payload["success"] is True
     assert payload["stdout"].strip() == "lab-ok"
     assert payload["exit_code"] == 0
     assert payload["parsed"]["writeback_hints"]["observation_category"] == "command_execution"
+    assert payload["metadata"]["raw_output_ref"].replace("\\", "/").endswith(
+        "var/runtime/op-run-command/tool-outputs/trace-1.json"
+    )
+    assert Path(payload["metadata"]["raw_output_ref"]).exists()
     assert payload["artifacts"] == []
+
+
+def test_nmap_scan_passes_operation_context_to_run_command(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    captured: dict[str, Any] = {}
+
+    def fake_run_command(arguments: dict[str, Any]) -> dict[str, Any]:
+        captured.update(arguments)
+        return {
+            "success": True,
+            "stdout": "",
+            "stderr": "",
+            "exit_code": 0,
+            "parsed": {},
+            "metadata": {"raw_output_ref": "raw.json"},
+        }
+
+    monkeypatch.setattr(mcp_tools, "_run_command", fake_run_command)
+
+    payload = call_lab_tool(
+        "nmap_scan",
+        {"target": "127.0.0.1", "operation_id": "op-nmap", "trace_id": "trace-nmap"},
+    )
+
+    assert payload["success"] is True
+    assert captured["operation_id"] == "op-nmap"
+    assert captured["trace_id"] == "trace-nmap"
 
 
 def test_hidden_fixture_loads_only_inside_mcp_tool_env(tmp_path, monkeypatch) -> None:
