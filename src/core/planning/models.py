@@ -29,6 +29,11 @@ class PlannerDecision(BaseModel):
     success_criteria: list[str] = Field(default_factory=list)
     risk_level: PlannerRiskLevel
     max_steps: int = Field(ge=1)
+    task_brief: str | None = None
+    autonomy_level: str | None = None
+    allowed_tool_names: list[str] | str | None = None
+    target_selection: str | None = None
+    handoff_policy: str | None = None
     reasoning_summary: str = ""
     handoff_acceptance: dict[str, Any] | list[Any] | str | None = None
     stop_condition: str | None = None

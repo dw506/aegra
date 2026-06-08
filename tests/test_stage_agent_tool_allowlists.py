@@ -1,29 +1,40 @@
 from __future__ import annotations
 
+import json
+from typing import Any
+
+from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.stage.agents import GoalAgent, ReconAgent
-from src.core.stage.base_stage_agent import StageAgentDecision, StageToolCall
 from src.core.stage.models import StageExecutionRequest
 
 
-class StaticAdvisor:
+class StaticLLM:
     def __init__(self, tool_name: str) -> None:
         self.tool_name = tool_name
+        self.config = type("Config", (), {"model": "gpt-test"})()
 
-    def decide(self, **_):
-        return StageAgentDecision(
-            action="call_tool",
-            rationale="try tool",
-            tool_call=StageToolCall(server_id="mcp", tool_name=self.tool_name, arguments={}),
+    def complete_chat(self, **_: Any) -> PackyLLMResponse:
+        return PackyLLMResponse(
+            model="gpt-test",
+            text=json.dumps(
+                {
+                    "action": "call_mcp_tool",
+                    "server_id": "mcp",
+                    "tool_name": self.tool_name,
+                    "arguments": {},
+                    "reasoning_summary": "try tool",
+                }
+            ),
         )
 
 
 class MCP:
-    def call_tool(self, **_):
+    def call_tool(self, **_: Any) -> dict[str, Any]:
         return {"success": True, "stdout": "ok", "metadata": {}}
 
 
 def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> None:
-    result = ReconAgent(advisor=StaticAdvisor("safe_vuln_validate"), mcp_client=MCP()).run(
+    result = ReconAgent(llm_client=StaticLLM("safe_vuln_validate"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=1,
@@ -43,7 +54,7 @@ def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> 
 
 
 def test_policy_denylist_is_audit_only_without_blocking() -> None:
-    result = GoalAgent(advisor=StaticAdvisor("pivot_route_probe"), mcp_client=MCP()).run(
+    result = GoalAgent(llm_client=StaticLLM("pivot_route_probe"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=1,

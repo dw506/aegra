@@ -25,10 +25,42 @@ SENSITIVE_KEYS = {
 class TxtTraceLogger:
     """Write compact, human-readable operation trace blocks."""
 
-    def __init__(self, operation_id: str, log_dir: str | Path = "runs") -> None:
+    def __init__(
+        self,
+        operation_id: str,
+        log_dir: str | Path = "runs",
+        *,
+        filename: str | None = None,
+        operation_subdir: bool = False,
+    ) -> None:
         self.operation_id = operation_id
-        self.path = Path(log_dir) / f"{operation_id}.run.txt"
+        base = Path(log_dir) / operation_id if operation_subdir else Path(log_dir)
+        self.path = base / (filename or f"{operation_id}.run.txt")
         self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def operation_trace(cls, operation_id: str, runtime_root: str | Path = "var/runtime") -> "TxtTraceLogger":
+        """Return the canonical human-readable operation trace logger."""
+
+        return cls(
+            operation_id,
+            log_dir=runtime_root,
+            filename="operation-trace.txt",
+            operation_subdir=True,
+        )
+
+    def write_header(self, title: str, data: dict[str, Any] | None = None) -> None:
+        payload = self._redact(data or {})
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write("\n")
+            handle.write("=" * 60 + "\n")
+            handle.write(f"{title}\n")
+            for key, value in payload.items():
+                value = self._json_safe(value)
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                handle.write(f"{key}: {value}\n")
+            handle.write("=" * 60 + "\n")
 
     def write(self, category: str, message: str) -> None:
         with self.path.open("a", encoding="utf-8") as handle:

@@ -143,6 +143,11 @@ class LLMMissionPlannerAdvisor:
             "success_criteria": [],
             "risk_level": "low | medium | high | critical",
             "max_steps": 3,
+            "task_brief": "autonomous task brief for the selected StageAgent",
+            "autonomy_level": "agent_decides",
+            "allowed_tool_names": "*",
+            "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+            "handoff_policy": "stage_agent_may_suggest_next_agent",
             "reasoning_summary": "short summary, no chain of thought",
             "handoff_acceptance": None,
             "stop_condition": None,
@@ -177,6 +182,8 @@ class LLMMissionPlannerAdvisor:
             "Read KG, AG, Runtime and Policy before choosing. "
             "AG is the attack process graph: it records each Planner decision, Agent execution, Tool call and Result. "
             "Do not output shell commands. Do not output MCP tool arguments. "
+            "Do not micro-control tool calls; give the selected StageAgent an autonomous task_brief. "
+            "StageAgents may autonomously choose any available MCP tool in ToolCatalog, including run_command. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
             "The execution layer is a parallel capability pool, not a pipeline. "
             "Do not use a fixed stage sequence and do not require every agent to run. "
@@ -189,6 +196,7 @@ class LLMMissionPlannerAdvisor:
             "choose stop_success with stop_condition=goal_satisfied. "
             "If goal_satisfied=true exists without complete evidence, select an appropriate registered agent or choose replan. "
             "For dispatch_agent, selected_agent and selected_stage must be non-null. "
+            "For dispatch_agent, include task_brief, allowed_tool_names, target_selection, handoff_policy and max_steps. "
             "For non-dispatch decisions, selected_agent may be null. "
             "Use reasoning_summary for a concise justification without chain-of-thought.\n\n"
             f"{context}"
@@ -276,6 +284,11 @@ def _normalize_decision_payload(payload: dict[str, Any], *, goal: str) -> dict[s
         "success_criteria",
         "risk_level",
         "max_steps",
+        "task_brief",
+        "autonomy_level",
+        "allowed_tool_names",
+        "target_selection",
+        "handoff_policy",
         "reasoning_summary",
         "handoff_acceptance",
         "stop_condition",
@@ -296,6 +309,11 @@ def _normalize_decision_payload(payload: dict[str, Any], *, goal: str) -> dict[s
     normalized.setdefault("success_criteria", [])
     normalized.setdefault("risk_level", "medium")
     normalized.setdefault("max_steps", 3)
+    normalized.setdefault("task_brief", None)
+    normalized.setdefault("autonomy_level", None)
+    normalized.setdefault("allowed_tool_names", None)
+    normalized.setdefault("target_selection", None)
+    normalized.setdefault("handoff_policy", None)
     normalized.setdefault("reasoning_summary", payload.get("summary") or "")
     normalized.setdefault("handoff_acceptance", None)
     normalized.setdefault("stop_condition", None)
@@ -363,6 +381,11 @@ def _legacy_selected_task_fields(selected_task: Any) -> dict[str, Any]:
         "success_criteria": selected_task.get("success_criteria") or [],
         "risk_level": selected_task.get("risk_level") or "medium",
         "max_steps": selected_task.get("max_steps") or 3,
+        "task_brief": selected_task.get("task_brief"),
+        "autonomy_level": selected_task.get("autonomy_level"),
+        "allowed_tool_names": selected_task.get("allowed_tool_names"),
+        "target_selection": selected_task.get("target_selection"),
+        "handoff_policy": selected_task.get("handoff_policy"),
     }
 
 

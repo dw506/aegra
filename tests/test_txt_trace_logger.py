@@ -39,3 +39,17 @@ def test_txt_trace_logger_redacts_sensitive_key_fragments(tmp_path) -> None:
     assert "bearer-1" not in text
     assert "cookie-1" not in text
     assert "key-1" not in text
+
+
+def test_txt_trace_logger_operation_trace_path(tmp_path) -> None:
+    logger = TxtTraceLogger.operation_trace("op-1", runtime_root=tmp_path)
+
+    logger.write_header("Operation: op-1", {"cycle_index": 1})
+    logger.write_block("LLM_DECISION", "stage agent decision", {"action": "finish"})
+
+    text = tmp_path.joinpath("op-1", "operation-trace.txt").read_text(encoding="utf-8")
+
+    assert "Operation: op-1" in text
+    assert "cycle_index" in text
+    assert "LLM_DECISION" in text
+    assert "finish" in text

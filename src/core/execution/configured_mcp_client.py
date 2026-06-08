@@ -207,6 +207,8 @@ class ConfiguredMCPClient:
         exit_code = self._payload_field(content, "exit_code")
         payload_success = self._payload_field(content, "success")
         parsed_output = self._payload_field(content, "parsed")
+        payload_metadata = self._payload_field(content, "metadata")
+        metadata = payload_metadata if isinstance(payload_metadata, dict) else {}
         if isinstance(payload_success, bool):
             success = (not is_error) and payload_success
         else:
@@ -217,7 +219,12 @@ class ConfiguredMCPClient:
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,
-            metadata={"server_id": server_id, "raw_mcp": raw, "parsed_output": parsed_output or {}},
+            metadata={
+                "server_id": server_id,
+                "raw_mcp": raw,
+                "parsed_output": parsed_output or {},
+                **metadata,
+            },
         )
 
     @staticmethod

@@ -10,6 +10,8 @@ import socket
 import ssl
 import subprocess
 import hashlib
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,8 @@ from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityP
 
 DEFAULT_DISCOVERY_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/admin", "/login"]
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 120
+MAX_COMMAND_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 20000
 DEFAULT_FFUF_WORDS = ["admin", "login", "robots.txt", "sitemap.xml", "api", "debug", "health"]
 SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
@@ -511,51 +515,113 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_command(arguments: dict[str, Any]) -> dict[str, Any]:
-    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
+    timeout = max(1, min(_int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS), MAX_COMMAND_TIMEOUT_SECONDS))
     max_output = _int(arguments.get("max_output_chars"), MAX_OUTPUT_CHARS)
     cwd = arguments.get("cwd")
+    cwd_text = str(cwd) if cwd else None
+    if cwd_text and not Path(cwd_text).exists():
+        return _payload(
+            success=False,
+            stderr=f"cwd does not exist: {cwd_text}",
+            exit_code="cwd_error",
+            parsed={"runtime_hints": {"blocked_by": "cwd_error", "cwd": cwd_text}},
+        )
     env = os.environ.copy()
+    env_keys: list[str] = []
     if isinstance(arguments.get("env"), dict):
+        env_keys = sorted(str(key) for key in arguments["env"])
         env.update({str(key): str(value) for key, value in arguments["env"].items()})
 
     argv = arguments.get("argv")
+    started = time.perf_counter()
+    shell_command_used = False
+    command_label = ""
+    argv_list: list[str] | None = None
     if isinstance(argv, list) and argv:
-        completed = subprocess.run(
-            [str(part) for part in argv],
-            cwd=str(cwd) if cwd else None,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-        command_label = " ".join(str(part) for part in argv)
+        argv_list = [str(part) for part in argv]
+        command_label = " ".join(argv_list)
+        run_target: str | list[str] = argv_list
     else:
         command = str(arguments.get("command", "")).strip()
         if not command:
             return _payload(success=False, stderr="run_command requires command or argv", exit_code="missing_command")
+        shell_command_used = True
+        command_label = command
+        run_target = command
+
+    try:
         completed = subprocess.run(
-            command,
-            cwd=str(cwd) if cwd else None,
+            run_target,
+            cwd=cwd_text,
             env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=True,
+            shell=shell_command_used,
             encoding="utf-8",
             errors="replace",
         )
-        command_label = command
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        returncode: int | str = completed.returncode
+        success = completed.returncode == 0
+    except subprocess.TimeoutExpired as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        stdout = _decode_timeout_output(exc.stdout)
+        stderr = _decode_timeout_output(exc.stderr) or f"command timed out after {timeout} seconds"
+        returncode = "timeout"
+        success = False
+    except (OSError, subprocess.SubprocessError) as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        stdout = ""
+        stderr = str(exc)
+        returncode = "command_error"
+        success = False
+
+    raw_output_ref = _write_raw_tool_output(
+        arguments=arguments,
+        payload={
+            "command": command_label,
+            "argv": argv_list,
+            "cwd": cwd_text,
+            "timeout_seconds": timeout,
+            "returncode": returncode,
+            "duration_ms": duration_ms,
+            "stdout": stdout,
+            "stderr": stderr,
+            "shell_command_used": shell_command_used,
+            "env_keys": env_keys,
+        },
+    )
+    stdout_excerpt = _limit(stdout, max_output)
+    stderr_excerpt = _limit(stderr, max_output)
 
     parsed = _default_parsed()
-    parsed["writeback_hints"] = {"observation_category": "command_execution", "command": command_label}
+    parsed["writeback_hints"] = {
+        "observation_category": "command_execution",
+        "command": command_label,
+        "raw_output_ref": raw_output_ref,
+    }
     return _payload(
-        success=completed.returncode == 0,
-        stdout=_limit(completed.stdout, max_output),
-        stderr=_limit(completed.stderr, max_output),
-        exit_code=completed.returncode,
+        success=success,
+        stdout=stdout_excerpt,
+        stderr=stderr_excerpt,
+        exit_code=returncode,
         parsed=parsed,
+        metadata={
+            "command": command_label,
+            "argv": argv_list,
+            "cwd": cwd_text,
+            "timeout_seconds": timeout,
+            "returncode": returncode,
+            "duration_ms": duration_ms,
+            "stdout_excerpt": stdout_excerpt,
+            "stderr_excerpt": stderr_excerpt,
+            "raw_output_ref": raw_output_ref,
+            "shell_command_used": shell_command_used,
+            "env_keys": env_keys,
+        },
     )
 
 
@@ -1401,6 +1467,7 @@ def _payload(
     exit_code: int | str | None = None,
     parsed: dict[str, Any] | None = None,
     artifacts: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "success": success,
@@ -1409,8 +1476,30 @@ def _payload(
         "exit_code": 0 if exit_code is None and success else exit_code,
         "parsed": _merge_parsed(parsed),
         "artifacts": artifacts or [],
+        "metadata": metadata or {},
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _decode_timeout_output(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _write_raw_tool_output(*, arguments: dict[str, Any], payload: dict[str, Any]) -> str:
+    operation_id = _string(arguments.get("operation_id") or os.getenv("AEGRA_OPERATION_ID"))
+    trace_id = _string(arguments.get("trace_id")) or f"tool-{uuid.uuid4().hex}"
+    if operation_id:
+        output_dir = Path("var/runtime") / operation_id / "tool-outputs"
+    else:
+        output_dir = Path("var/runtime/_tool_outputs")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{_safe_artifact_name(trace_id)}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    return str(path)
 
 
 def _default_parsed() -> dict[str, Any]:

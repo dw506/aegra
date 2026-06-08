@@ -2,6 +2,7 @@
 
 from src.core.stage.adapters import StageResultAdapter
 from src.core.stage.base_stage_agent import BaseStageAgent, StageAgentAdvisor, StageAgentDecision, StageToolCall
+from src.core.stage.llm_driven_stage_agent import LLMDrivenStageAgent
 from src.core.stage.llm_stage_advisor import LLMStageAdvisor, LLMStageAdvisorConfig
 from src.core.stage.models import (
     GraphStateSnapshot,
@@ -22,6 +23,7 @@ __all__ = [
     "GraphUpdateIntent",
     "LLMStageAdvisor",
     "LLMStageAdvisorConfig",
+    "LLMDrivenStageAgent",
     "StageAgentAdvisor",
     "StageAgentDecision",
     "StageAgentRegistry",

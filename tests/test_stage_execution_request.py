@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
 from src.core.planning.models import PlannerDecision
 from src.core.stage.agents import ExploitValidationAgent, ReconAgent
@@ -121,6 +123,18 @@ class RecordingMCP:
         }
 
 
+class FakeStageLLM:
+    def __init__(self, decisions: list[dict[str, Any]]) -> None:
+        self.decisions = list(decisions)
+        self.calls: list[dict[str, Any]] = []
+        self.config = type("Config", (), {"model": "gpt-test"})()
+
+    def complete_chat(self, **kwargs: Any) -> PackyLLMResponse:
+        self.calls.append(kwargs)
+        payload = self.decisions.pop(0)
+        return PackyLLMResponse(model="gpt-test", text=json.dumps(payload), usage=None)
+
+
 def test_stage_agent_registry_still_registers_five_agents() -> None:
     registry = StageAgentRegistry.default()
 
@@ -151,8 +165,24 @@ def test_exploit_validation_agent_name_matches_planner_and_dispatcher() -> None:
     assert decision.selected_agent == agent.agent_name
 
 
-def test_base_stage_agent_runs_stage_execution_request_main_path() -> None:
-    advisor = FinishAdvisor()
+def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "finish",
+                "status": "succeeded",
+                "summary": "finished Collect service evidence",
+                "confidence": 0.9,
+                "handoff_suggestion": {
+                    "suggested_agent": "vuln_analysis_agent",
+                    "suggested_stage": "VULN_ANALYSIS_STAGE",
+                    "reason": "service evidence is ready for vulnerability analysis",
+                    "confidence": 0.8,
+                    "required_context_refs": ["kg:svc-1"],
+                },
+            }
+        ]
+    )
     request = StageExecutionRequest(
         operation_id="op-1",
         cycle_index=2,
@@ -171,12 +201,12 @@ def test_base_stage_agent_runs_stage_execution_request_main_path() -> None:
         mcp_tool_catalog={},
     )
 
-    result = ReconAgent(advisor=advisor).run(request)
+    result = ReconAgent(llm_client=llm).run(request)
 
     assert isinstance(result, StageResult)
     assert result.stage_task_id == "stage-op-1-2-recon_agent"
     assert result.summary == "finished Collect service evidence"
-    assert advisor.requests == [request]
+    assert len(llm.calls) == 1
     assert result.handoff_suggestion is not None
     assert result.handoff_suggestion.suggested_agent == "vuln_analysis_agent"
     assert result.handoff_suggestion.required_context_refs == ["kg:svc-1"]
@@ -190,7 +220,18 @@ def test_base_stage_agent_main_path_has_no_task_graph_dependency() -> None:
 
 
 def test_exploit_validation_precheck_infers_missing_target_url() -> None:
-    advisor = ValidationPrecheckAdvisor()
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "server_id": "pentest-tools",
+                "tool_name": "validation_precheck",
+                "arguments": {"profile_id": "struts2-s2-045"},
+                "reasoning_summary": "run bounded precheck",
+            },
+            {"action": "finish", "status": "succeeded", "summary": "validation precheck completed"},
+        ]
+    )
     mcp = RecordingMCP()
     request = StageExecutionRequest(
         operation_id="op-validation-url",
@@ -222,7 +263,7 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
         },
     )
 
-    result = ExploitValidationAgent(advisor=advisor, mcp_client=mcp).run(request)
+    result = ExploitValidationAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
@@ -230,7 +271,17 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
 
 
 def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
-    advisor = MissingToolAdvisor()
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "server_id": "pentest-tools",
+                "tool_name": "optional_missing_tool",
+                "arguments": {"url": "http://example.test/"},
+            },
+            {"action": "finish", "status": "partial", "summary": "missing catalog tool recorded"},
+        ]
+    )
     mcp = RecordingMCP()
     request = StageExecutionRequest(
         operation_id="op-missing-tool",
@@ -242,7 +293,7 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "http_probe"}]}},
     )
 
-    result = ReconAgent(advisor=advisor, mcp_client=mcp).run(request)
+    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "partial"
     assert mcp.calls == []
@@ -250,7 +301,17 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
 
 
 def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
-    advisor = UrlTargetAdvisor()
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "server_id": "pentest-tools",
+                "tool_name": "web_fingerprint",
+                "arguments": {"target": "http://10.0.0.5:8080"},
+            },
+            {"action": "finish", "status": "succeeded", "summary": "fingerprint completed"},
+        ]
+    )
     mcp = RecordingMCP()
     request = StageExecutionRequest(
         operation_id="op-url-tool",
@@ -262,7 +323,7 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "web_fingerprint"}]}},
     )
 
-    result = ReconAgent(advisor=advisor, mcp_client=mcp).run(request)
+    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"] == {"url": "http://10.0.0.5:8080"}

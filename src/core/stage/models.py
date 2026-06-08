@@ -144,6 +144,11 @@ class StageExecutionRequest(BaseModel):
     runtime_context: dict[str, Any] = Field(default_factory=dict)
     policy_context: dict[str, Any] = Field(default_factory=dict)
     mcp_tool_catalog: dict[str, Any] = Field(default_factory=dict)
+    task_brief: str | None = None
+    autonomy_level: str | None = None
+    allowed_tool_names: list[str] | str | None = None
+    target_selection: str | None = None
+    handoff_policy: str | None = None
 
     @field_validator("stage_type", mode="before")
     @classmethod

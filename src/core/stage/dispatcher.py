@@ -57,6 +57,11 @@ class StageDispatcher:
                 runtime_context=dict(runtime_context or {}),
                 policy_context=dict(policy_context or {}),
                 mcp_tool_catalog=dict(mcp_tool_catalog or {}),
+                task_brief=decision.task_brief,
+                autonomy_level=decision.autonomy_level,
+                allowed_tool_names=decision.allowed_tool_names,
+                target_selection=decision.target_selection,
+                handoff_policy=decision.handoff_policy,
             )
         except ValueError as exc:
             return self._needs_replan_result(decision, str(exc))

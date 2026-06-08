@@ -46,6 +46,7 @@ from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
 from src.core.visualization.graph_publisher import graph_delta_publisher
+from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
 
 
 class TargetHost(BaseModel):
@@ -162,7 +163,7 @@ class AppOrchestrator:
         llm_client_config = self.settings.to_packy_llm_config()
         stage_llm_client = (
             PackyLLMClient(llm_client_config)
-            if llm_client_config is not None and self._planner_llm_enabled(self.settings)
+            if llm_client_config is not None
             else None
         )
         self.stage_registry = StageAgentRegistry.default(
@@ -555,6 +556,7 @@ class AppOrchestrator:
 
         cycle_index = self._next_cycle_index(state)
         txt_logger = TxtTraceLogger(operation_id)
+        operation_trace_logger = TxtTraceLogger.operation_trace(operation_id)
         txt_logger.write_block(
             "SYSTEM",
             "operation cycle started",
@@ -567,6 +569,16 @@ class AppOrchestrator:
                 "graph_write": True,
                 "result_applier": "enabled",
                 "attack_log_extractor": "enabled",
+            },
+        )
+        operation_trace_logger.write_block(
+            "CYCLE_START",
+            "operation cycle started",
+            {
+                "operation_id": operation_id,
+                "cycle_index": cycle_index,
+                "policy_gate": "audit_only_non_blocking",
+                "txt_trace": True,
             },
         )
         state.execution.metadata["graph_memory"] = {
@@ -623,6 +635,19 @@ class AppOrchestrator:
                 graph_context=graph_snapshot,
                 policy_context=policy_context,
                 recent_stage_results=self._planner_recent_stage_results(state),
+            )
+            operation_trace_logger.write_block(
+                "PLANNER_DECISION",
+                "planner decision",
+                {
+                    "cycle_index": cycle_index,
+                    "decision": decision.decision,
+                    "selected_agent": decision.selected_agent,
+                    "selected_stage": decision.selected_stage,
+                    "objective": decision.objective,
+                    "task_brief": decision.task_brief,
+                    "max_steps": decision.max_steps,
+                },
             )
         except Exception as exc:
             return self._fail_operation_cycle(
@@ -1450,8 +1475,11 @@ class AppOrchestrator:
 
     def _load_tool_catalog(self) -> dict[str, Any]:
         if self.mcp_client is None:
-            return {"available": False, "error": "MCP is not configured"}
-        return self.mcp_client.list_tools()
+            catalog = build_default_lab_tool_catalog()
+            catalog["pentest-tools"]["available"] = False
+            catalog["pentest-tools"]["error"] = "MCP is not configured"
+            return catalog
+        return self.mcp_client.list_tools() or build_default_lab_tool_catalog()
 
     @staticmethod
     def _lab_activation_metadata(lab_profile: dict[str, Any]) -> dict[str, Any]:
