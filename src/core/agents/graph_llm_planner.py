@@ -207,7 +207,7 @@ class GraphLLMPlannerAdvisor:
                     {
                         "proposal_id": "optional stable id",
                         "task_type": "one allowed TaskType value",
-                        "target_refs": [{"graph": "kg|ag|tg|query", "ref_id": "visible ref id", "ref_type": "optional"}],
+                        "target_refs": [{"graph": "kg|ag|query", "ref_id": "visible ref id", "ref_type": "optional"}],
                         "rationale": "short reason, no commands",
                         "expected_evidence": ["evidence this task should produce"],
                         "tool_hint": "one tool_catalog tool_hint value, not command syntax",

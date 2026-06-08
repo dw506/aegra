@@ -25,7 +25,7 @@ def test_extend_lease_updates_expiry() -> None:
 
 def test_bind_task_to_session_updates_metadata_and_task_runtime() -> None:
     state = build_state()
-    state.execution.tasks["task-1"] = TaskRuntime(task_id="task-1", tg_node_id="tg-1")
+    state.execution.tasks["task-1"] = TaskRuntime(task_id="task-1", execution_node_id="exec-1")
     manager = RuntimeSessionManager()
     manager.open_session(state, "sess-1", "alice", "host-1", lease_seconds=30, reusability="shared")
 
@@ -55,4 +55,5 @@ def test_extend_lease_on_expired_session_raises() -> None:
 
     with pytest.raises(ValueError):
         manager.extend_lease(state, "sess-1", extra_seconds=60)
+
 

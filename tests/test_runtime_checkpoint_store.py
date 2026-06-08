@@ -29,7 +29,7 @@ def test_collect_recovery_context_prefers_task_checkpoint_ref() -> None:
     manager.create_checkpoint(state, "cp-1", ["task-1"], summary="stable")
     state.execution.tasks["task-2"] = TaskRuntime(
         task_id="task-2",
-        tg_node_id="tg-2",
+        execution_node_id="exec-2",
         checkpoint_ref="cp-1",
     )
 
@@ -43,4 +43,5 @@ def test_latest_stable_checkpoint_returns_none_when_absent() -> None:
     manager = RuntimeCheckpointManager()
 
     assert manager.latest_stable_checkpoint(state) is None
+
 

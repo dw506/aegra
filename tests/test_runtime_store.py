@@ -44,8 +44,8 @@ def test_list_events_respects_after_cursor() -> None:
     store = InMemoryRuntimeStore()
     store.create_operation("op-1")
 
-    first = TaskQueuedEvent(operation_id="op-1", task_id="task-1", tg_node_id="tg-1")
-    second = TaskQueuedEvent(operation_id="op-1", task_id="task-2", tg_node_id="tg-2")
+    first = TaskQueuedEvent(operation_id="op-1", task_id="task-1", execution_node_id="exec-1")
+    second = TaskQueuedEvent(operation_id="op-1", task_id="task-2", execution_node_id="exec-2")
     store.append_event("op-1", first)
     store.append_event("op-1", second)
 
@@ -60,7 +60,7 @@ def test_apply_event_persists_reduced_state() -> None:
 
     updated = store.apply_event(
         "op-1",
-        TaskQueuedEvent(operation_id="op-1", task_id="task-1", tg_node_id="tg-1"),
+        TaskQueuedEvent(operation_id="op-1", task_id="task-1", execution_node_id="exec-1"),
     )
 
     assert updated.execution.tasks["task-1"].status == TaskRuntimeStatus.QUEUED
@@ -73,7 +73,7 @@ def test_file_store_persists_state_and_events(tmp_path) -> None:
 
     updated = store.apply_event(
         "op-1",
-        TaskQueuedEvent(operation_id="op-1", task_id="task-1", tg_node_id="tg-1"),
+        TaskQueuedEvent(operation_id="op-1", task_id="task-1", execution_node_id="exec-1"),
     )
     reloaded = FileRuntimeStore(tmp_path / "runtime-store")
 
@@ -91,7 +91,7 @@ def test_store_recovery_and_audit_export(tmp_path) -> None:
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status=TaskRuntimeStatus.RUNNING,
             assigned_worker="worker-1",
         )
@@ -126,7 +126,7 @@ def test_store_recovery_normalizes_sessions_locks_leases_and_pending_events(tmp_
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status=TaskRuntimeStatus.RUNNING,
             assigned_worker="worker-1",
             started_at=now,
@@ -195,7 +195,7 @@ def test_inmemory_store_exports_recovery_snapshot_after_recovery() -> None:
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status=TaskRuntimeStatus.CLAIMED,
             assigned_worker="worker-1",
             started_at=now,
@@ -256,7 +256,7 @@ def test_store_recovery_persists_replay_plan_and_event_log_annotations(tmp_path)
     }
     store.create_operation("op-replay", initial_state=state)
 
-    queued = TaskQueuedEvent(operation_id="op-replay", task_id="task-1", tg_node_id="task-1")
+    queued = TaskQueuedEvent(operation_id="op-replay", task_id="task-1", execution_node_id="task-1")
     store.append_event("op-replay", queued)
     updated = store.get_state("op-replay")
     assert updated is not None
@@ -331,3 +331,4 @@ def test_audit_export_redacts_and_caps_logs(tmp_path) -> None:
     assert "(truncated" in audit_report["audit_log"][-1]["evidence_chain"]["summary"]
     assert audit_report["audit_log"][-1]["evidence_chain"]["steps"][-1]["truncated_item_count"] == 5
     assert persisted["audit_log"] == audit_report["audit_log"]
+

@@ -27,7 +27,7 @@ def _client(tmp_path):
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status=TaskRuntimeStatus.WAITING_APPROVAL,
             metadata={
                 "policy_decision": {
@@ -68,3 +68,4 @@ def test_approval_api_lists_and_applies_approvals(tmp_path) -> None:
     assert state.budgets.approval_cache["task:task-1:approved"] is True
     assert state.execution.tasks["task-1"].status == TaskRuntimeStatus.PENDING
     assert any(entry["event_type"] == "approval_decision" for entry in state.execution.metadata["audit_log"])
+

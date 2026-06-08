@@ -52,10 +52,6 @@ def test_product_api_contract_workspace_assets_tasks_and_validators(tmp_path) ->
     assert client.get("/workspaces").json()[0]["asset_count"] == 1
     assert client.get("/workspaces/ws-product/assets").json()[0]["links"]["audit"]
 
-    tasks = client.get("/operations/ws-product/tasks")
-    assert tasks.status_code == 200
-    assert set(tasks.json()) >= {"nodes", "edges", "runtime_tasks", "high_risk_tasks", "links"}
-
     validators = client.get("/validators")
     assert validators.status_code == 200
     assert {item["id"] for item in validators.json()} >= {"http-fingerprint", "struts2-s2-045"}
@@ -94,10 +90,11 @@ def test_frontend_smoke_serves_required_pages(tmp_path) -> None:
     for label in (
         "Workspace / Asset",
         "Operation Run",
-        "Legacy TG",
-        "Knowledge Graph",
-        "Findings",
-        "Evidence Details",
+        "KG Graph",
+        "AG Graph",
+        "Tool Trace",
+        "Evidence & Findings",
+        "Operation Trace",
         "Approval",
         "Report Export",
     ):

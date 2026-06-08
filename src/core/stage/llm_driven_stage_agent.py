@@ -157,10 +157,10 @@ class LLMDrivenStageAgent:
         decision: dict[str, Any],
         logger: TxtTraceLogger,
     ) -> ToolTrace:
-        arguments = dict(decision.get("arguments") or {})
+        arguments = dict(decision.get("arguments") or decision.get("input") or {})
         call = LLMDrivenToolCall(
-            server_id=str(decision.get("server_id") or self._default_server_id(request.mcp_tool_catalog)),
-            tool_name=str(decision.get("tool_name") or ""),
+            server_id=str(decision.get("server_id") or decision.get("server") or self._default_server_id(request.mcp_tool_catalog)),
+            tool_name=str(decision.get("tool_name") or decision.get("tool") or ""),
             arguments=arguments,
             timeout_seconds=int(arguments.get("timeout_seconds") or self._default_timeout_seconds),
         )
@@ -312,7 +312,10 @@ class LLMDrivenStageAgent:
             try:
                 payload = json.loads(candidate)
             except json.JSONDecodeError:
-                continue
+                try:
+                    payload, _ = json.JSONDecoder().raw_decode(candidate)
+                except json.JSONDecodeError:
+                    continue
             if isinstance(payload, dict):
                 return payload
         return None
@@ -324,25 +327,27 @@ class LLMDrivenStageAgent:
         memory: list[dict[str, Any]],
         tool_traces: list[ToolTrace],
     ) -> StageResult:
+        payload = self._normalized_finish_payload(payload)
         try:
             return StageResult(
                 operation_id=request.operation_id,
                 stage_task_id=self._request_id(request),
                 stage_type=request.stage_type,
                 agent_name=self.agent_name,
-                status=str(payload.get("status") or "succeeded"),  # type: ignore[arg-type]
+                status=self._normalized_status(payload.get("status")),  # type: ignore[arg-type]
                 summary=str(payload.get("summary") or f"{self.agent_name} finished"),
                 observations=list(payload.get("observations") or memory),
-                evidence=list(payload.get("evidence") or []),
-                findings=list(payload.get("findings") or []),
-                discovered_entities=list(payload.get("discovered_entities") or []),
-                discovered_relations=list(payload.get("discovered_relations") or []),
+                evidence=self._normalized_evidence(payload),
+                findings=self._normalized_dict_list(payload.get("findings"), default_kind="stage_finding"),
+                discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
+                discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
                 capabilities_gained=list(payload.get("capabilities_gained") or []),
                 credentials=list(payload.get("credentials") or []),
                 sessions=list(payload.get("sessions") or []),
                 pivot_routes=list(payload.get("pivot_routes") or []),
                 next_stage_candidates=list(payload.get("next_stage_candidates") or []),
                 handoff_suggestion=payload.get("handoff_suggestion"),
+                evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
                 tool_trace=list(tool_traces),
                 tool_traces=list(tool_traces),
                 confidence=float(payload.get("confidence") or 0.5),
@@ -351,6 +356,89 @@ class LLMDrivenStageAgent:
             )
         except (TypeError, ValueError, ValidationError) as exc:
             return self._replan_result(request, f"invalid finish payload: {exc}", memory, tool_traces)
+
+    @staticmethod
+    def _normalized_finish_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        nested = payload.get("result") or payload.get("data") or payload.get("output")
+        if not isinstance(nested, dict):
+            return dict(payload)
+        merged = {key: value for key, value in payload.items() if key not in {"result", "data", "output"}}
+        merged.update(nested)
+        return merged
+
+    @staticmethod
+    def _normalized_status(value: Any) -> str:
+        status = str(value or "succeeded").strip().lower()
+        return {
+            "completed": "succeeded",
+            "complete": "succeeded",
+            "ok": "succeeded",
+            "needs_replan": "needs_replan",
+            "need_replan": "needs_replan",
+        }.get(status, status)
+
+    @classmethod
+    def _normalized_evidence(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        evidence = cls._normalized_dict_list(payload.get("evidence"), default_kind="stage_evidence")
+        if evidence:
+            return evidence
+        refs = payload.get("evidence_refs")
+        normalized: list[dict[str, Any]] = []
+        for index, item in enumerate(refs if isinstance(refs, list) else []):
+            if isinstance(item, dict):
+                normalized.append(
+                    {
+                        "evidence_id": str(item.get("evidence_id") or item.get("id") or f"stage-evidence-{index}"),
+                        "kind": str(item.get("kind") or "stage_evidence"),
+                        "summary": str(item.get("summary") or item.get("description") or item),
+                        "payload_ref": str(item.get("payload_ref") or item.get("raw_output_ref") or item.get("evidence_id") or ""),
+                    }
+                )
+            elif item:
+                normalized.append(
+                    {
+                        "evidence_id": f"stage-evidence-{index}",
+                        "kind": "stage_evidence_ref",
+                        "summary": str(item),
+                        "payload_ref": str(item),
+                    }
+                )
+        return normalized
+
+    @staticmethod
+    def _normalized_dict_list(value: Any, *, default_kind: str) -> list[dict[str, Any]]:
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return [dict(value)]
+        if isinstance(value, list):
+            normalized: list[dict[str, Any]] = []
+            for index, item in enumerate(value):
+                if isinstance(item, dict):
+                    normalized.append(dict(item))
+                elif item:
+                    normalized.append(
+                        {
+                            "type": default_kind,
+                            "summary": str(item),
+                            "value": item,
+                            "index": index,
+                        }
+                    )
+            return normalized
+        return [{"type": default_kind, "summary": str(value), "value": value}]
+
+    @staticmethod
+    def _normalized_evidence_refs(value: Any) -> list[str]:
+        refs: list[str] = []
+        for item in value if isinstance(value, list) else []:
+            if isinstance(item, dict):
+                ref = item.get("payload_ref") or item.get("raw_output_ref") or item.get("evidence_id") or item.get("id")
+                if ref:
+                    refs.append(str(ref))
+            elif item:
+                refs.append(str(item))
+        return refs
 
     def _replan_result(
         self,
@@ -448,7 +536,7 @@ class LLMDrivenStageAgent:
     def _normalize_tool_call_arguments(cls, *, call: LLMDrivenToolCall, request: StageExecutionRequest) -> LLMDrivenToolCall:
         if call.tool_name in {"http_probe", "web_fingerprint", "whatweb_fingerprint", "nuclei_scan"}:
             arguments = dict(call.arguments)
-            url = cls._url_from_ref(arguments.get("url")) or cls._url_from_ref(arguments.get("target"))
+            url = cls._url_from_ref(arguments.get("url")) or cls._url_from_http_arguments(arguments)
             if not url:
                 url = cls._infer_target_url(request)
             if url:
@@ -512,6 +600,26 @@ class LLMDrivenStageAgent:
         port = int(match.group("port"))
         scheme = "https" if port == 443 else "http"
         return f"{scheme}://{match.group('host')}:{port}/"
+
+    @staticmethod
+    def _url_from_http_arguments(arguments: dict[str, Any]) -> str | None:
+        target = str(arguments.get("target") or arguments.get("host") or "").strip()
+        if not target:
+            return None
+        parsed = urlparse(target)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return target
+        if "/" in target and not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", target):
+            return None
+        scheme = str(arguments.get("scheme") or "http").strip() or "http"
+        port = arguments.get("port")
+        path = str(arguments.get("path") or "/").strip() or "/"
+        if not path.startswith("/"):
+            path = "/" + path
+        netloc = target
+        if port is not None and ":" not in target:
+            netloc = f"{target}:{int(port)}"
+        return f"{scheme}://{netloc}{path}"
 
     @staticmethod
     def _summarize_arguments(arguments: dict[str, Any]) -> str:

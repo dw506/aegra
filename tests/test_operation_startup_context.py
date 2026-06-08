@@ -89,7 +89,7 @@ def test_settings_loads_lab_profile_from_json_file(tmp_path: Path) -> None:
     }
 
 
-def test_planner_receives_startup_lab_profile_policy_and_tool_catalog(tmp_path: Path) -> None:
+def test_planner_receives_blackbox_policy_and_tool_catalog_without_lab_topology(tmp_path: Path) -> None:
     settings = AppSettings(
         runtime_store_backend="memory",
         runtime_store_dir=tmp_path / "runtime",
@@ -113,9 +113,12 @@ def test_planner_receives_startup_lab_profile_policy_and_tool_catalog(tmp_path: 
 
     assert planner.graph_context is not None
     assert planner.policy_context is not None
-    assert planner.graph_context["lab_profile"]["profile_id"] == "docker-multihost"
-    assert planner.policy_context["authorized_hosts"] == ["10.20.0.0/24"]
+    assert "lab_profile" not in planner.graph_context
+    assert planner.policy_context["scope_source"] == "imported_targets"
+    assert [item["value"] for item in planner.policy_context["authorized_targets"]] == ["10.20.0.20"]
     assert planner.graph_context["mcp_tool_catalog"]["pentest-tools"]["tools"][0]["name"] == "nmap_scan"
+    state = orchestrator.get_operation_state("op-startup-context")
+    assert state.execution.metadata["lab_profile"] == {"profile_id": "docker-multihost"}
 
 
 def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> None:

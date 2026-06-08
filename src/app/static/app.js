@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   workspaceId: null,
   workspaces: [],
   evidence: [],
@@ -550,3 +550,4 @@ document.querySelectorAll(".exportReport").forEach((button) => {
 refreshAll().catch((error) => {
   $("runStatus").textContent = error.message;
 });
+

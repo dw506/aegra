@@ -160,7 +160,6 @@ class LLMMissionPlannerAdvisor:
                 "kg": graph_context.get("kg") or graph_context.get("kg_summary") or {},
                 "ag_process": graph_context.get("ag_process_summary") or graph_context.get("ag") or graph_context.get("ag_summary") or {},
                 "runtime": graph_context.get("runtime") or graph_context.get("runtime_summary") or {},
-                "lab_profile": graph_context.get("lab_profile") or {},
                 "policy": policy_context,
                 "recent_evidence": graph_context.get("recent_evidence") or [],
                 "known_assets": graph_context.get("known_assets") or [],
@@ -187,7 +186,7 @@ class LLMMissionPlannerAdvisor:
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
             "The execution layer is a parallel capability pool, not a pipeline. "
             "Do not use a fixed stage sequence and do not require every agent to run. "
-            "Select the next agent from evidence gaps in KG, AG, Runtime, LabProfile, Policy and ToolCatalog. "
+            "Select the next agent from evidence gaps in KG, AG, Runtime, Policy and ToolCatalog. "
             "Use agent_capabilities as the only source for valid agent/stage pairs. "
             "If evidence is insufficient, select an appropriate registered agent or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "

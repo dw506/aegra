@@ -27,7 +27,7 @@ def test_create_and_extend_lease_updates_expiry() -> None:
 def test_bind_lease_updates_task_and_session_metadata() -> None:
     state = build_state()
     state.add_session(SessionRuntime(session_id="sess-1", status=SessionStatus.ACTIVE))
-    state.register_task(TaskRuntime(task_id="task-1", tg_node_id="tg-1"))
+    state.register_task(TaskRuntime(task_id="task-1", execution_node_id="exec-1"))
     manager = RuntimeLeaseManager()
     manager.create_lease(state, "lease-1", "sess-1", "task-0", lease_seconds=30)
 
@@ -60,3 +60,4 @@ def test_extend_released_lease_raises() -> None:
 
     with pytest.raises(ValueError):
         manager.extend_lease(state, "lease-1", extra_seconds=60)
+

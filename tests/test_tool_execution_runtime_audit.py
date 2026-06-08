@@ -7,7 +7,7 @@ from src.core.runtime.result_applier import PhaseTwoResultApplier
 
 def _state() -> RuntimeState:
     state = RuntimeState(operation_id="op-tool-audit", execution=OperationRuntime(operation_id="op-tool-audit"))
-    state.register_task(TaskRuntime(task_id="task-1", tg_node_id="task-1"))
+    state.register_task(TaskRuntime(task_id="task-1", execution_node_id="task-1"))
     return state
 
 
@@ -17,7 +17,7 @@ def _result(**kwargs) -> AgentTaskResult:
         "agent_role": AgentRole.ACCESS_WORKER,
         "operation_id": "op-tool-audit",
         "task_id": "task-1",
-        "tg_node_id": "task-1",
+        "execution_node_id": "task-1",
         "status": AgentResultStatus.SUCCEEDED,
         "summary": "access validation completed",
     }
@@ -120,3 +120,4 @@ def test_tool_execution_audit_is_adapter_name_agnostic_and_reads_evidence_metada
     assert entries[0]["adapter"] == "external_c2_alpha"
     assert entries[0]["tool"] == "operator_task"
     assert entries[0]["command_id"] == "cmd-42"
+

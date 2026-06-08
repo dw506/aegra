@@ -627,6 +627,7 @@ def _run_command(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     target = _required(arguments, "target")
+    targets = _target_list(target)
     timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
     ports = arguments.get("ports")
     argv = ["nmap"]
@@ -638,11 +639,32 @@ def _nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
         argv.append("-sV")
     if ports:
         argv.extend(["-p", ",".join(str(port) for port in ports) if isinstance(ports, list) else str(ports)])
-    argv.append(str(target))
+    argv.extend(targets)
     result = _run_command(_command_args_from_tool(arguments, argv=argv, timeout_seconds=timeout))
-    parsed = _parse_nmap_output(str(target), result.get("stdout", ""))
+    parsed = _parse_nmap_output(",".join(targets), result.get("stdout", ""))
     result["parsed"] = parsed
+    stdout = str(result.get("stdout") or "")
+    stderr = str(result.get("stderr") or "")
+    if (
+        "Failed to resolve" in stderr
+        or "No targets were specified" in stderr
+        or "0 IP addresses" in stdout
+        or "0 hosts up" in stdout
+    ):
+        result["success"] = False
+        result["exit_code"] = result.get("exit_code") or "no_targets_scanned"
+        result.setdefault("parsed", {}).setdefault("runtime_hints", {})["blocked_by"] = "nmap_no_targets_scanned"
     return result
+
+
+def _target_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        targets = [str(item).strip() for item in value if str(item).strip()]
+    else:
+        targets = [item.strip() for item in str(value).split(",") if item.strip()]
+    if not targets:
+        raise ValueError("target must contain at least one target")
+    return targets
 
 
 def _http_probe(arguments: dict[str, Any]) -> dict[str, Any]:

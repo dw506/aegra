@@ -1,0 +1,212 @@
+
+2026-06-08T08:13:04.113229+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-flow
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T08:13:04.115014+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T08:13:04.257090+00:00 【MISSION】 mission context
+  mission_goal: collect environment facts
+  targets: [{"address": "127.0.0.1", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "127.0.0.1"}]
+  scope: {"authorized_hosts": "[REDACTED]", "blocked_hosts": [], "cidr_whitelist": [], "command_allowlist": [], "default_task_timeout_sec": 900, "deny_egress": false, "disabled_tools": [], "engagement": {"assets": [{"address": "127.0.0.1", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "127.0.0.1"}], "denylist": [], "engagement_id": "engagement::op-flow", "metadata": {}, "name": null, "rate_limit": {"max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64, "max_concurrent_per_host": 1, "max_tasks_per_minute": null}, "risk_policy": {"approval_required_tags": ["active_exploit"], "block_active_exploit": true, "block_command_execution": true, "block_destructive": true, "block_file_write": true, "block_reverse_callback": true, "max_risk_level": "low", "require_approval_for_active_exploit": true}, "scan_windows": [], "scope_rules": [{"action": "allow", "kind": "host", "reason": "imported target", "rule_id": "allow::0", "value": "127.0.0.1"}]}, "loaded_at": "2026-06-08T08:13:04.043373Z", "loaded_from": "settings", "max_concurrent_per_host": {}, "policy_version": "v1", "rate_limit_per_subnet_per_min": {}, "retry_backoff_base_sec": 0, "safety_stop": false, "sensitive_tags": [], "sensitive_task_types": [], "session_policies": {}}
+  lab_profile: {"loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"available": false, "tools": [{"name": "run_command", "description": "Run one shell command in the isolated lab environment.", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}, "argv": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"}, "env": {"type": "object", "additionalProperties": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}, "max_output_chars": {"type": "integer", "minimum": 100}}, "additionalProperties": true}, "available": true}, {"name": "nmap_scan", "description": "Run an nmap service discovery scan against one lab target.", "inputSchema": {"type": "object", "required": ["target"], "properties": {"target": {"type": "string"}, "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "service_detection": {"type": "boolean", "default": true}, "skip_ping": {"type": "boolean", "default": true}, "no_dns": {"type": "boolean", "default": true}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_probe", "description": "Probe one HTTP endpoint and return status, headers and a short body excerpt.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "method": {"type": "string", "default": "GET"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_fingerprint", "description": "Fetch a web page and extract title, server header and content type.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_discover", "description": "Probe common paths on a lab web target.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "paths": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "dns_lookup", "description": "Resolve hostnames in the lab environment.", "inputSchema": {"type": "object", "required": ["hostname"], "properties": {"hostname": {"type": "string"}, "record_type": {"type": "string", "default": "A"}}, "additionalProperties": true}, "available": true}, {"name": "tls_probe", "description": "Inspect a TLS endpoint certificate in the lab environment.", "inputSchema": {"type": "object", "required": ["host"], "properties": {"host": {"type": "string"}, "port": {"type": "integer", "default": 443}, "server_name": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "tcp_connect_probe", "description": "Check whether one TCP host:port is reachable from the lab environment.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_basic_auth_check", "description": "Validate one provided HTTP Basic credential against one endpoint; no brute forcing.", "inputSchema": {"type": "object", "required": ["url", "username", "password"], "properties": {"url": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "vuln_profile_match", "description": "Match known bounded vulnerability validation profiles to observed lab service metadata.", "inputSchema": {"type": "object", "properties": {"service": {"type": "string"}, "product": {"type": "string"}, "version": {"type": "string"}, "target_url": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "validation_precheck", "description": "Check non-destructive preconditions for a safe validation profile against a lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "safe_vuln_validate", "description": "Run one bounded non-destructive vulnerability validation profile against an authorized lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}, "safe_mode": {"type": "boolean", "default": true}}, "additionalProperties": true}, "available": true}, {"name": "credential_check", "description": "Validate one provided credential against one lab auth service; no brute forcing.", "inputSchema": {"type": "object", "required": ["auth_method", "target_url", "credential_id", "username", "password"], "properties": {"auth_method": "[REDACTED]", "target_url": {"type": "string"}, "credential_id": {"type": "string"}, "target_service_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "session_probe", "description": "Check whether a lab session handle has enough metadata to be reused.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "session_open_lab", "description": "Register a bounded lab session handle for runtime coordination.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}, "lease_seconds": {"type": "integer", "minimum": 1}, "reuse_policy": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "identity_context_probe", "description": "Return declared lab identity context facts for a session or host.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "privilege_context_probe", "description": "Return declared lab privilege context facts without running escalation payloads.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "pivot_route_probe", "description": "Verify a candidate lab pivot route with bounded TCP or HTTP reachability checks.", "inputSchema": {"type": "object", "required": ["destination_host", "destination_port"], "properties": {"route_id": {"type": "string"}, "source_host": {"type": "string"}, "via_host": {"type": "string"}, "session_id": {"type": "string"}, "destination_host": {"type": "string"}, "destination_port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "internal_service_discover", "description": "Probe one internal lab service using bounded TCP or HTTP checks.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "chain_goal_check", "description": "Alias for bounded goal condition checks used at the end of an attack-chain validation.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "goal_check", "description": "Check a bounded goal condition such as HTTP status or body substring.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "artifact_store", "description": "Store bounded evidence text or JSON as a local artifact and return an artifact reference.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "content": {"type": "string"}, "json_content": {"type": "object"}, "content_type": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "nuclei_scan", "description": "Run a bounded nuclei scan against one lab URL when nuclei is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "templates": {"type": "array", "items": {"type": "string"}}, "severity": {"type": "array", "items": {"type": "string"}}, "rate_limit": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "nuclei is not installed or not on PATH"}, {"name": "whatweb_fingerprint", "description": "Run whatweb fingerprinting against one lab URL when whatweb is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "whatweb is not installed or not on PATH"}, {"name": "ffuf_discover", "description": "Run a bounded ffuf path discovery against one lab base URL when ffuf is installed.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "url": {"type": "string"}, "wordlist": {"type": "string"}, "words": {"type": "array", "items": {"type": "string"}}, "match_status": {"type": "array", "items": {"type": "integer"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "ffuf is not installed or not on PATH"}], "error": "MCP is not configured"}}
+
+2026-06-08T08:13:04.270307+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  objective: collect environment facts
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T08:13:04.279973+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 5
+  ag_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 6
+  created_ag_edges: 4
+  evidence_refs: []
+
+2026-06-08T08:13:04.285519+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 5
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "TOOL_CALL", "STAGE_RESULT"]
+  evidence_refs: []
+
+2026-06-08T08:13:04.288097+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 10
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 5
+  evidence_refs: []
+
+2026-06-08T08:13:04.289823+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:57:51.333353+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-flow
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:57:51.345952+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:57:51.565804+00:00 【MISSION】 mission context
+  mission_goal: collect environment facts
+  targets: [{"address": "127.0.0.1", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "127.0.0.1"}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"available": false, "tools": [{"name": "run_command", "description": "Run one shell command in the isolated lab environment.", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}, "argv": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"}, "env": {"type": "object", "additionalProperties": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}, "max_output_chars": {"type": "integer", "minimum": 100}}, "additionalProperties": true}, "available": true}, {"name": "nmap_scan", "description": "Run an nmap service discovery scan against one lab target.", "inputSchema": {"type": "object", "required": ["target"], "properties": {"target": {"type": "string"}, "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "service_detection": {"type": "boolean", "default": true}, "skip_ping": {"type": "boolean", "default": true}, "no_dns": {"type": "boolean", "default": true}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_probe", "description": "Probe one HTTP endpoint and return status, headers and a short body excerpt.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "method": {"type": "string", "default": "GET"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_fingerprint", "description": "Fetch a web page and extract title, server header and content type.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_discover", "description": "Probe common paths on a lab web target.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "paths": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "dns_lookup", "description": "Resolve hostnames in the lab environment.", "inputSchema": {"type": "object", "required": ["hostname"], "properties": {"hostname": {"type": "string"}, "record_type": {"type": "string", "default": "A"}}, "additionalProperties": true}, "available": true}, {"name": "tls_probe", "description": "Inspect a TLS endpoint certificate in the lab environment.", "inputSchema": {"type": "object", "required": ["host"], "properties": {"host": {"type": "string"}, "port": {"type": "integer", "default": 443}, "server_name": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "tcp_connect_probe", "description": "Check whether one TCP host:port is reachable from the lab environment.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_basic_auth_check", "description": "Validate one provided HTTP Basic credential against one endpoint; no brute forcing.", "inputSchema": {"type": "object", "required": ["url", "username", "password"], "properties": {"url": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "vuln_profile_match", "description": "Match known bounded vulnerability validation profiles to observed lab service metadata.", "inputSchema": {"type": "object", "properties": {"service": {"type": "string"}, "product": {"type": "string"}, "version": {"type": "string"}, "target_url": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "validation_precheck", "description": "Check non-destructive preconditions for a safe validation profile against a lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "safe_vuln_validate", "description": "Run one bounded non-destructive vulnerability validation profile against an authorized lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}, "safe_mode": {"type": "boolean", "default": true}}, "additionalProperties": true}, "available": true}, {"name": "credential_check", "description": "Validate one provided credential against one lab auth service; no brute forcing.", "inputSchema": {"type": "object", "required": ["auth_method", "target_url", "credential_id", "username", "password"], "properties": {"auth_method": "[REDACTED]", "target_url": {"type": "string"}, "credential_id": {"type": "string"}, "target_service_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "session_probe", "description": "Check whether a lab session handle has enough metadata to be reused.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "session_open_lab", "description": "Register a bounded lab session handle for runtime coordination.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}, "lease_seconds": {"type": "integer", "minimum": 1}, "reuse_policy": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "identity_context_probe", "description": "Return declared lab identity context facts for a session or host.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "privilege_context_probe", "description": "Return declared lab privilege context facts without running escalation payloads.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "pivot_route_probe", "description": "Verify a candidate lab pivot route with bounded TCP or HTTP reachability checks.", "inputSchema": {"type": "object", "required": ["destination_host", "destination_port"], "properties": {"route_id": {"type": "string"}, "source_host": {"type": "string"}, "via_host": {"type": "string"}, "session_id": {"type": "string"}, "destination_host": {"type": "string"}, "destination_port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "internal_service_discover", "description": "Probe one internal lab service using bounded TCP or HTTP checks.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "chain_goal_check", "description": "Alias for bounded goal condition checks used at the end of an attack-chain validation.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "goal_check", "description": "Check a bounded goal condition such as HTTP status or body substring.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "artifact_store", "description": "Store bounded evidence text or JSON as a local artifact and return an artifact reference.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "content": {"type": "string"}, "json_content": {"type": "object"}, "content_type": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "nuclei_scan", "description": "Run a bounded nuclei scan against one lab URL when nuclei is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "templates": {"type": "array", "items": {"type": "string"}}, "severity": {"type": "array", "items": {"type": "string"}}, "rate_limit": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "nuclei is not installed or not on PATH"}, {"name": "whatweb_fingerprint", "description": "Run whatweb fingerprinting against one lab URL when whatweb is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "whatweb is not installed or not on PATH"}, {"name": "ffuf_discover", "description": "Run a bounded ffuf path discovery against one lab base URL when ffuf is installed.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "url": {"type": "string"}, "wordlist": {"type": "string"}, "words": {"type": "array", "items": {"type": "string"}}, "match_status": {"type": "array", "items": {"type": "integer"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "ffuf is not installed or not on PATH"}], "error": "MCP is not configured"}}
+
+2026-06-08T09:57:51.568346+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  objective: collect environment facts
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:57:51.582871+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 5
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 6
+  created_ag_edges: 4
+  evidence_refs: []
+
+2026-06-08T09:57:51.586773+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 5
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "TOOL_CALL", "STAGE_RESULT"]
+  evidence_refs: []
+
+2026-06-08T09:57:51.588273+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 10
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 5
+  evidence_refs: []
+
+2026-06-08T09:57:51.594651+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  status: ready
+  stop_reason: None
+
+2026-06-08T10:05:10.116043+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-flow
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T10:05:10.118128+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T10:05:10.234283+00:00 【MISSION】 mission context
+  mission_goal: collect environment facts
+  targets: [{"address": "127.0.0.1", "asset_id": null, "hostname": null, "kind": "host", "metadata": {}, "platform": null, "port": null, "protocol": null, "tags": [], "url": null, "value": "127.0.0.1"}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"available": false, "tools": [{"name": "run_command", "description": "Run one shell command in the isolated lab environment.", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}, "argv": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"}, "env": {"type": "object", "additionalProperties": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}, "max_output_chars": {"type": "integer", "minimum": 100}}, "additionalProperties": true}, "available": true}, {"name": "nmap_scan", "description": "Run an nmap service discovery scan against one lab target.", "inputSchema": {"type": "object", "required": ["target"], "properties": {"target": {"type": "string"}, "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "service_detection": {"type": "boolean", "default": true}, "skip_ping": {"type": "boolean", "default": true}, "no_dns": {"type": "boolean", "default": true}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_probe", "description": "Probe one HTTP endpoint and return status, headers and a short body excerpt.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "method": {"type": "string", "default": "GET"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_fingerprint", "description": "Fetch a web page and extract title, server header and content type.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "web_discover", "description": "Probe common paths on a lab web target.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "target": {"type": "string"}, "scheme": {"type": "string", "default": "http"}, "port": {"type": "integer"}, "paths": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "dns_lookup", "description": "Resolve hostnames in the lab environment.", "inputSchema": {"type": "object", "required": ["hostname"], "properties": {"hostname": {"type": "string"}, "record_type": {"type": "string", "default": "A"}}, "additionalProperties": true}, "available": true}, {"name": "tls_probe", "description": "Inspect a TLS endpoint certificate in the lab environment.", "inputSchema": {"type": "object", "required": ["host"], "properties": {"host": {"type": "string"}, "port": {"type": "integer", "default": 443}, "server_name": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "tcp_connect_probe", "description": "Check whether one TCP host:port is reachable from the lab environment.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "http_basic_auth_check", "description": "Validate one provided HTTP Basic credential against one endpoint; no brute forcing.", "inputSchema": {"type": "object", "required": ["url", "username", "password"], "properties": {"url": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "vuln_profile_match", "description": "Match known bounded vulnerability validation profiles to observed lab service metadata.", "inputSchema": {"type": "object", "properties": {"service": {"type": "string"}, "product": {"type": "string"}, "version": {"type": "string"}, "target_url": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "validation_precheck", "description": "Check non-destructive preconditions for a safe validation profile against a lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "safe_vuln_validate", "description": "Run one bounded non-destructive vulnerability validation profile against an authorized lab target.", "inputSchema": {"type": "object", "required": ["target_url", "profile_id"], "properties": {"target_url": {"type": "string"}, "profile_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}, "safe_mode": {"type": "boolean", "default": true}}, "additionalProperties": true}, "available": true}, {"name": "credential_check", "description": "Validate one provided credential against one lab auth service; no brute forcing.", "inputSchema": {"type": "object", "required": ["auth_method", "target_url", "credential_id", "username", "password"], "properties": {"auth_method": "[REDACTED]", "target_url": {"type": "string"}, "credential_id": {"type": "string"}, "target_service_id": {"type": "string"}, "username": {"type": "string"}, "password": "[REDACTED]", "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "session_probe", "description": "Check whether a lab session handle has enough metadata to be reused.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "session_open_lab", "description": "Register a bounded lab session handle for runtime coordination.", "inputSchema": {"type": "object", "required": ["session_id"], "properties": {"session_id": {"type": "string"}, "bound_target": {"type": "string"}, "bound_identity": {"type": "string"}, "lease_seconds": {"type": "integer", "minimum": 1}, "reuse_policy": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "identity_context_probe", "description": "Return declared lab identity context facts for a session or host.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "privilege_context_probe", "description": "Return declared lab privilege context facts without running escalation payloads.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": true}, "available": true}, {"name": "pivot_route_probe", "description": "Verify a candidate lab pivot route with bounded TCP or HTTP reachability checks.", "inputSchema": {"type": "object", "required": ["destination_host", "destination_port"], "properties": {"route_id": {"type": "string"}, "source_host": {"type": "string"}, "via_host": {"type": "string"}, "session_id": {"type": "string"}, "destination_host": {"type": "string"}, "destination_port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "internal_service_discover", "description": "Probe one internal lab service using bounded TCP or HTTP checks.", "inputSchema": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer"}, "protocol": {"type": "string", "default": "tcp"}, "path": {"type": "string", "default": "/"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "chain_goal_check", "description": "Alias for bounded goal condition checks used at the end of an attack-chain validation.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "goal_check", "description": "Check a bounded goal condition such as HTTP status or body substring.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "expected_status": {"type": "integer"}, "body_contains": {"type": "string"}, "fixture_marker_id": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": true}, {"name": "artifact_store", "description": "Store bounded evidence text or JSON as a local artifact and return an artifact reference.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "content": {"type": "string"}, "json_content": {"type": "object"}, "content_type": {"type": "string"}}, "additionalProperties": true}, "available": true}, {"name": "nuclei_scan", "description": "Run a bounded nuclei scan against one lab URL when nuclei is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "templates": {"type": "array", "items": {"type": "string"}}, "severity": {"type": "array", "items": {"type": "string"}}, "rate_limit": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "nuclei is not installed or not on PATH"}, {"name": "whatweb_fingerprint", "description": "Run whatweb fingerprinting against one lab URL when whatweb is installed.", "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "whatweb is not installed or not on PATH"}, {"name": "ffuf_discover", "description": "Run a bounded ffuf path discovery against one lab base URL when ffuf is installed.", "inputSchema": {"type": "object", "properties": {"base_url": {"type": "string"}, "url": {"type": "string"}, "wordlist": {"type": "string"}, "words": {"type": "array", "items": {"type": "string"}}, "match_status": {"type": "array", "items": {"type": "integer"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}, "additionalProperties": true}, "available": false, "unavailable_reason": "ffuf is not installed or not on PATH"}], "error": "MCP is not configured"}}
+
+2026-06-08T10:05:10.236302+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  objective: collect environment facts
+  risk_level: low
+  confidence: 0.9
+  reasoning_summary: 
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T10:05:10.245032+00:00 【GRAPH_WRITE】 graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 5
+  ag_delta_count: 0
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 6
+  created_ag_edges: 4
+  evidence_refs: []
+
+2026-06-08T10:05:10.247750+00:00 【ATTACK_LOG_EXTRACT】 attack graph extraction completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  status: succeeded
+  ag_node_count: 5
+  ag_edge_count: 5
+  node_roles: ["ATTACK_CYCLE", "PLANNER_DECISION", "AGENT_EXECUTION", "TOOL_CALL", "STAGE_RESULT"]
+  evidence_refs: []
+
+2026-06-08T10:05:10.249444+00:00 【GRAPH_WRITE】 attack log graph write completed
+  cycle: 1
+  stage: RECON_STAGE
+  agent: recon_agent
+  stage_status: succeeded
+  kg_delta_count: 0
+  ag_delta_count: 10
+  tg_delta_count: 0
+  runtime_event_count: 0
+  created_ag_nodes: 5
+  created_ag_edges: 5
+  evidence_refs: []
+
+2026-06-08T10:05:10.251254+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: recon_agent
+  selected_stage: RECON_STAGE
+  status: ready
+  stop_reason: None

@@ -69,9 +69,10 @@ class TargetHost(BaseModel):
         value = self.value or self.address or self.url or self.hostname
         if not value:
             raise ValueError("target requires one of value, address, url or hostname")
+        kind = self._normalized_kind(value)
         return Asset(
             asset_id=str(self.metadata.get("asset_id")) if self.metadata.get("asset_id") else None,
-            kind=self.kind,  # type: ignore[arg-type]
+            kind=kind,  # type: ignore[arg-type]
             value=value,
             address=self.address,
             hostname=self.hostname,
@@ -82,6 +83,18 @@ class TargetHost(BaseModel):
             tags=list(self.tags),
             metadata=dict(self.metadata),
         )
+
+    def _normalized_kind(self, value: str) -> str:
+        kind = str(self.kind or "").strip().lower()
+        if kind in {"network", "cidr_range"}:
+            return "cidr"
+        if kind == "host_or_network_or_url":
+            if "://" in value:
+                return "url"
+            if "/" in value:
+                return "cidr"
+            return "host"
+        return kind or "host"
 
 
 class OperationSummary(BaseModel):
@@ -183,6 +196,7 @@ class AppOrchestrator:
 
         runtime_policy = self.settings.load_runtime_policy()
         lab_profile = self.settings.load_lab_profile()
+        public_lab_profile = self._public_lab_profile_metadata(lab_profile)
         operation_metadata = {
             "control_plane": {
                 "audit_enabled": self.settings.audit_enabled,
@@ -203,14 +217,14 @@ class AppOrchestrator:
             # 中文注释：
             # operation metadata 中只落稳定 JSON 结构，避免把 Pydantic 对象直接塞进 state。
             "runtime_policy": runtime_policy.to_runtime_metadata(),
-            "lab_profile": lab_profile,
+            "lab_profile": public_lab_profile,
             "target_inventory": [],
             "target_count": 0,
             "llm_decision_history": [],
         }
         if metadata:
             operation_metadata.update(metadata)
-        operation_metadata["lab_activation"] = self._lab_activation_metadata(operation_metadata["lab_profile"])
+        operation_metadata["lab_activation"] = self._lab_activation_metadata(lab_profile)
         state = RuntimeState(
             operation_id=operation_id,
             operation_status=RuntimeStatus.CREATED,
@@ -344,7 +358,10 @@ class AppOrchestrator:
 
         state = self.runtime_store.snapshot(operation_id)
         progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
-        success = state.operation_status == RuntimeStatus.COMPLETED and bool(progress.get("all_required_satisfied"))
+        success = state.operation_status == RuntimeStatus.COMPLETED and (
+            bool(progress.get("all_required_satisfied"))
+            or self._goal_satisfied(state, cycle_results or [])
+        )
         status = self._result_status(state=state, success=success, progress=progress)
         stop_reason = self._result_stop_reason(
             state=state,
@@ -600,10 +617,7 @@ class AppOrchestrator:
             planner_payload.get("policy_context")
             or state.execution.metadata.get("runtime_policy")
         )
-        lab_profile = self._mapping(
-            planner_payload.get("lab_profile")
-            or state.execution.metadata.get("lab_profile")
-        )
+        blackbox_policy_context = self._blackbox_policy_context(policy_context, state)
         tool_catalog = self._load_tool_catalog()
         state.execution.metadata["tool_catalog"] = tool_catalog
         txt_logger.write_block(
@@ -612,11 +626,11 @@ class AppOrchestrator:
             {
                 "mission_goal": goal,
                 "targets": state.execution.metadata.get("target_inventory", []),
-                "scope": policy_context,
-                "lab_profile": lab_profile,
+                "scope": blackbox_policy_context,
                 "tool_catalog": tool_catalog,
             },
         )
+        planner_payload_for_snapshot = {**planner_payload, "policy_context": blackbox_policy_context}
         graph_snapshot = self._kg_ag_runtime_snapshot(
             operation_id=operation_id,
             cycle_index=cycle_index,
@@ -624,16 +638,15 @@ class AppOrchestrator:
             kg=kg,
             ag=ag,
             runtime_state=state,
-            extra=planner_payload,
+            extra=planner_payload_for_snapshot,
         )
         graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
-        graph_snapshot["lab_profile"] = lab_profile
         graph_snapshot["mcp_tool_catalog"] = tool_catalog
         try:
             decision = self.mission_planner.run(
                 goal=goal,
                 graph_context=graph_snapshot,
-                policy_context=policy_context,
+                policy_context=blackbox_policy_context,
                 recent_stage_results=self._planner_recent_stage_results(state),
             )
             operation_trace_logger.write_block(
@@ -737,8 +750,8 @@ class AppOrchestrator:
                     decision,
                     kg_snapshot=graph_snapshot,
                     ag_process_history={},
-                    runtime_context=state.model_dump(mode="json"),
-                    policy_context=policy_context,
+                    runtime_context=self._blackbox_runtime_context(state),
+                    policy_context=blackbox_policy_context,
                     mcp_tool_catalog=tool_catalog,
                 )
                 if stage_result.operation_id != operation_id:
@@ -1036,6 +1049,8 @@ class AppOrchestrator:
             )
             results.append(cycle_result)
             planner_decision = self._cycle_planner_decision(cycle_result)
+            if planner_decision in {"stop_success", "stop_failed", "pause_for_review"} or cycle_result.stopped:
+                break
             if planner_decision == "replan":
                 planner_replan_count += 1
                 if planner_replan_count > max_replans:
@@ -1469,6 +1484,67 @@ class AppOrchestrator:
         }
 
     @staticmethod
+    def _blackbox_policy_context(policy_context: dict[str, Any], state: RuntimeState) -> dict[str, Any]:
+        targets = [
+            dict(item)
+            for item in state.execution.metadata.get("target_inventory", [])
+            if isinstance(item, dict)
+        ]
+        risk_policy = AppOrchestrator._mapping(policy_context.get("risk_policy"))
+        safe_risk_policy = {
+            key: risk_policy[key]
+            for key in (
+                "max_risk_level",
+                "block_destructive",
+                "block_file_write",
+                "block_reverse_callback",
+                "block_command_execution",
+                "block_active_exploit",
+                "require_approval_for_active_exploit",
+            )
+            if key in risk_policy
+        }
+        return {
+            "authorized_targets": targets,
+            "allow_fingerprint": bool(policy_context.get("allow_fingerprint", True)),
+            "allow_safe_probe": bool(policy_context.get("allow_safe_probe", True)),
+            "deny_egress": bool(policy_context.get("deny_egress", False)),
+            "risk_policy": safe_risk_policy,
+            "scope_source": "imported_targets",
+        }
+
+    @staticmethod
+    def _blackbox_runtime_context(state: RuntimeState) -> dict[str, Any]:
+        metadata = state.execution.metadata
+        recent_outcomes = [
+            {
+                "task_id": outcome.task_id,
+                "outcome_type": outcome.outcome_type,
+                "summary": outcome.summary,
+                "payload_ref": outcome.payload_ref,
+            }
+            for outcome in state.recent_outcomes[-8:]
+        ]
+        return {
+            "operation_id": state.operation_id,
+            "operation_status": state.operation_status.value,
+            "execution_status": state.execution.status.value,
+            "target_inventory": [
+                dict(item)
+                for item in metadata.get("target_inventory", [])
+                if isinstance(item, dict)
+            ],
+            "cycle_count": len(metadata.get("control_cycle_history", [])),
+            "goal_state": AppOrchestrator._mapping(metadata.get("goal_state")),
+            "finding_count": len(metadata.get("findings", [])) if isinstance(metadata.get("findings"), list) else 0,
+            "evidence_artifact_count": len(metadata.get("evidence_artifacts", []))
+            if isinstance(metadata.get("evidence_artifacts"), list)
+            else 0,
+            "recent_outcomes": recent_outcomes,
+            "replan_request_count": len(state.replan_requests),
+        }
+
+    @staticmethod
     def _cycle_planner_decision(cycle_result: OperationCycleResult) -> str | None:
         if cycle_result.planning is None:
             return None
@@ -1502,6 +1578,17 @@ class AppOrchestrator:
             "profile_id": profile_id or None,
             "source": "lab_profile.profile_id",
         }
+
+    @staticmethod
+    def _public_lab_profile_metadata(lab_profile: dict[str, Any]) -> dict[str, Any]:
+        """Expose non-topology lab metadata without leaking hidden targets."""
+
+        public: dict[str, Any] = {}
+        for key in ("profile_id", "mode"):
+            value = lab_profile.get(key)
+            if value:
+                public[key] = value
+        return public
 
     @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:
@@ -1561,6 +1648,20 @@ class AppOrchestrator:
         if control.get("stop_reason"):
             return str(control["stop_reason"])
         return "blocked"
+
+    @staticmethod
+    def _goal_satisfied(state: RuntimeState, cycle_results: list[OperationCycleResult] | None = None) -> bool:
+        goal_state = AppOrchestrator._mapping(state.execution.metadata.get("goal_state"))
+        if bool(goal_state.get("goal_satisfied")) or str(goal_state.get("status", "")).lower() in {"satisfied", "completed"}:
+            return True
+        for result in reversed(cycle_results or []):
+            if result.stop_reason == "goal_satisfied":
+                return True
+            decision = AppOrchestrator._cycle_planner_decision(result)
+            if decision == "stop_success":
+                return True
+        control = AppOrchestrator._mapping(state.execution.metadata.get("last_control_cycle"))
+        return str(control.get("stop_reason") or "").lower() == "goal_satisfied"
 
     @staticmethod
     def _next_cycle_index(state: RuntimeState) -> int:

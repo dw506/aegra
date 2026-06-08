@@ -43,7 +43,7 @@ def test_task_events_drive_successful_state_transition() -> None:
 
     state = reducer.apply_event(
         state,
-        TaskQueuedEvent(operation_id="op-1", task_id="task-1", tg_node_id="tg-1"),
+        TaskQueuedEvent(operation_id="op-1", task_id="task-1", execution_node_id="exec-1"),
     )
     assert state.execution.tasks["task-1"].status == TaskRuntimeStatus.QUEUED
 
@@ -52,7 +52,7 @@ def test_task_events_drive_successful_state_transition() -> None:
         TaskStartedEvent(
             operation_id="op-1",
             task_id="task-1",
-            tg_node_id="tg-1",
+            execution_node_id="exec-1",
             worker_id="worker-1",
         ),
     )
@@ -64,7 +64,7 @@ def test_task_events_drive_successful_state_transition() -> None:
         TaskCompletedEvent(
             operation_id="op-1",
             task_id="task-1",
-            tg_node_id="tg-1",
+            execution_node_id="exec-1",
             outcome_id="outcome-1",
             outcome_ref="outcome://1",
         ),
@@ -79,7 +79,7 @@ def test_task_failed_increments_attempt_count() -> None:
     reducer = RuntimeStateReducer()
     state.execution.tasks["task-1"] = TaskRuntime(
         task_id="task-1",
-        tg_node_id="tg-1",
+        execution_node_id="exec-1",
         status=TaskRuntimeStatus.RUNNING,
         attempt_count=0,
         max_attempts=2,
@@ -90,7 +90,7 @@ def test_task_failed_increments_attempt_count() -> None:
         TaskFailedEvent(
             operation_id="op-1",
             task_id="task-1",
-            tg_node_id="tg-1",
+            execution_node_id="exec-1",
             error_message="boom",
             attempt_count=1,
         ),
@@ -213,7 +213,6 @@ def test_checkpoint_manager_create_and_get_checkpoint() -> None:
         created_after_tasks=["task-1"],
         kg_version="kg-v1",
         ag_version="ag-v1",
-        tg_version="tg-v1",
         summary="stable",
     )
     loaded = manager.get_checkpoint(state, "cp-1")
@@ -240,7 +239,7 @@ def test_checkpoint_manager_writes_replan_marker_into_recovery_metadata() -> Non
 def test_store_append_event_does_not_update_state_but_apply_event_does() -> None:
     store = InMemoryRuntimeStore()
     store.create_operation("op-1")
-    event = TaskQueuedEvent(operation_id="op-1", task_id="task-1", tg_node_id="tg-1")
+    event = TaskQueuedEvent(operation_id="op-1", task_id="task-1", execution_node_id="exec-1")
 
     store.append_event("op-1", event)
     state_after_append = store.get_state("op-1")
@@ -274,3 +273,4 @@ def test_store_snapshot_does_not_mutate_original_state() -> None:
     original = store.get_state("op-1")
     assert original is not None
     assert [item.request_id for item in original.replan_requests] == ["replan-1"]
+

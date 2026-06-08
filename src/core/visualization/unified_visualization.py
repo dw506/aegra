@@ -46,6 +46,7 @@ def build_unified_visualization(
     timeline = _timeline_events(runtime=runtime, ag_nodes=ag_nodes)
     tool_trace = _tool_trace(runtime=runtime, ag_nodes=ag_nodes, timeline=timeline)
     evidence = _evidence_items(kg_nodes=kg_nodes, ag_nodes=ag_nodes, timeline=timeline)
+    findings = _runtime_findings(runtime)
     agent_trace = _agent_trace(ag_nodes=ag_nodes, runtime=runtime, tool_trace=tool_trace)
     attack_path = _attack_path(ag_nodes=ag_nodes, ag_edges=ag_edges)
     operation = _operation(operation_id=operation_id, runtime=runtime)
@@ -54,6 +55,7 @@ def build_unified_visualization(
         kg_nodes=kg_nodes,
         ag_nodes=ag_nodes,
         evidence=evidence,
+        findings=findings,
         agent_trace=agent_trace,
         attack_path=attack_path,
     )
@@ -65,6 +67,7 @@ def build_unified_visualization(
         "timeline": timeline,
         "tool_trace": tool_trace,
         "evidence": evidence,
+        "findings": findings,
         "agent_trace": agent_trace,
         "attack_path": attack_path,
     }
@@ -91,6 +94,7 @@ def _overview(
     kg_nodes: list[dict[str, Any]],
     ag_nodes: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
     agent_trace: list[dict[str, Any]],
     attack_path: dict[str, Any],
 ) -> dict[str, Any]:
@@ -103,7 +107,7 @@ def _overview(
     return {
         "asset_count": sum(1 for node in kg_nodes if node["type"] in {"Host", "Network", "Identity"}),
         "service_count": sum(1 for node in kg_nodes if node["type"] == "Service"),
-        "finding_count": sum(1 for node in kg_nodes if node["type"] in {"Finding", "Vulnerability"}),
+        "finding_count": len(findings) or sum(1 for node in kg_nodes if node["type"] in {"Finding", "Vulnerability"}),
         "verified_finding_count": sum(
             1 for node in kg_nodes if node["type"] in {"Finding", "Vulnerability"} and node["status"] == "verified"
         ),
@@ -312,6 +316,36 @@ def _evidence_items(
         item["linked_kg_node_ids"] = sorted(set(item["linked_kg_node_ids"]))
         item["linked_ag_node_ids"] = sorted(set(item["linked_ag_node_ids"]))
     return sorted(items.values(), key=lambda item: (_int(item.get("round")) or -1, item["id"]))
+
+
+def _runtime_findings(runtime: dict[str, Any]) -> list[dict[str, Any]]:
+    execution = _mapping(runtime.get("execution"))
+    metadata = _mapping(execution.get("metadata"))
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(_list(metadata.get("findings"))):
+        if not isinstance(item, dict):
+            continue
+        props = _merged_properties(item)
+        finding_id = _string(item.get("finding_id") or item.get("id")) or f"finding::{index}"
+        result.append(
+            {
+                "id": finding_id,
+                "finding_id": finding_id,
+                "title": _string(props.get("title") or props.get("summary")) or finding_id,
+                "summary": _summary(item, props),
+                "kind": _string(props.get("kind") or props.get("category") or props.get("type")) or "finding",
+                "severity": _string(props.get("severity")) or "info",
+                "status": _string(props.get("status") or props.get("validation_status")) or "observed",
+                "confidence": props.get("confidence"),
+                "target": _target(item, props),
+                "evidence_ids": _evidence_ids(item, props),
+                "source_agent": _string(props.get("source_agent")),
+                "stage_task_id": _string(props.get("stage_task_id")),
+                "recorded_at": _string(props.get("recorded_at")),
+                "metadata": props,
+            }
+        )
+    return result
 
 
 def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any], tool_trace: list[dict[str, Any]]) -> list[dict[str, Any]]:

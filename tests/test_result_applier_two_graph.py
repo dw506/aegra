@@ -45,8 +45,6 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
     )
     stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
 
-    assert planner_apply.tg_graph is None
-    assert stage_apply.tg_graph is None
     assert {delta.graph for delta in planner_apply.visual_graph_deltas + stage_apply.visual_graph_deltas} <= {
         "kg",
         "ag",

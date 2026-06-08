@@ -502,3 +502,354 @@
   selected_stage: None
   status: ready
   stop_reason: None
+
+2026-06-08T08:13:00.275923+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T08:13:00.277347+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T08:13:00.279648+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-08T08:13:00.227198Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  lab_profile: {"profile_id": "docker-multihost", "zones": ["dmz", "internal"], "loaded_from": "settings"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T08:13:00.282109+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T08:13:00.284347+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:12:10.813487+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:12:10.817146+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:12:10.820863+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-08T09:12:10.766441Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:12:10.822712+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:12:10.825434+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:14:34.982211+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:14:34.987681+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:14:34.989427+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"safety_stop": false, "blocked_hosts": [], "authorized_hosts": "[REDACTED]", "cidr_whitelist": [], "deny_egress": false, "sensitive_task_types": [], "sensitive_tags": [], "session_policies": {}, "max_concurrent_per_host": {}, "rate_limit_per_subnet_per_min": {}, "disabled_tools": [], "command_allowlist": [], "retry_backoff_base_sec": 0, "default_task_timeout_sec": 900, "policy_version": "v1", "loaded_from": "settings", "loaded_at": "2026-06-08T09:14:34.918614Z", "engagement": {"engagement_id": "engagement::op-startup-context", "name": null, "assets": [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}], "scope_rules": [{"rule_id": "allow::0", "action": "allow", "kind": "host", "value": "10.20.0.20", "reason": "imported target"}], "denylist": [], "scan_windows": [], "rate_limit": {"max_concurrent_per_host": 1, "max_tasks_per_minute": null, "max_cidr_prefix_v4": 24, "max_cidr_prefix_v6": 64}, "risk_policy": {"max_risk_level": "low", "block_active_exploit": true, "block_destructive": true, "block_command_execution": true, "block_file_write": true, "block_reverse_callback": true, "require_approval_for_active_exploit": true, "approval_required_tags": ["active_exploit"]}, "metadata": {}}}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:14:34.992551+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:14:34.995640+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:35:24.599686+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:35:24.601788+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:35:24.603368+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:35:24.605385+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:35:24.607947+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:36:42.583524+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:36:42.584638+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:36:42.586118+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:36:42.588486+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:36:42.590131+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:42:23.931492+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:42:23.934022+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:42:23.934521+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:42:23.938571+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:42:23.940311+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:55:19.463765+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:55:19.465420+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:55:19.466418+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:55:19.468609+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:55:19.471415+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T09:57:45.528655+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T09:57:45.530698+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T09:57:45.532497+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T09:57:45.535951+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T09:57:45.550708+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T10:04:30.451721+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T10:04:30.454529+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T10:04:30.458498+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T10:04:30.461065+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T10:04:30.470214+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None
+
+2026-06-08T10:05:05.795441+00:00 【SYSTEM】 operation cycle started
+  operation_id: op-startup-context
+  cycle: 1
+  policy_gate: audit_only_non_blocking
+  json_run_file: disabled_or_secondary
+  txt_trace: True
+  graph_write: True
+  result_applier: enabled
+  attack_log_extractor: enabled
+2026-06-08T10:05:05.796632+00:00 【CYCLE】 cycle=1 started
+
+2026-06-08T10:05:05.797701+00:00 【MISSION】 mission context
+  mission_goal: validate authorized internal reachability
+  targets: [{"asset_id": null, "kind": "host", "value": "10.20.0.20", "address": "10.20.0.20", "hostname": null, "port": null, "protocol": null, "url": null, "platform": null, "tags": [], "metadata": {}}]
+  scope: {"authorized_targets": "[REDACTED]", "allow_fingerprint": true, "allow_safe_probe": true, "deny_egress": false, "risk_policy": {}, "scope_source": "imported_targets"}
+  tool_catalog: {"pentest-tools": {"tools": [{"name": "nmap_scan"}, {"name": "http_probe"}]}}
+
+2026-06-08T10:05:05.799362+00:00 【PLANNER】 planner decision
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  objective: validate authorized internal reachability
+  risk_level: low
+  confidence: 0.7
+  reasoning_summary: captured startup context
+  success_criteria: []
+  target_refs: []
+
+2026-06-08T10:05:05.802061+00:00 【CYCLE】 cycle completed
+  cycle: 1
+  selected_agent: None
+  selected_stage: None
+  status: ready
+  stop_reason: None

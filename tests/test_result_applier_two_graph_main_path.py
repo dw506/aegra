@@ -45,9 +45,6 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
     log_apply = applier.apply_log_extraction(AttackLogExtractor().extract(stage_result), state, ag)
 
-    assert planner_apply.tg_graph is None
-    assert stage_apply.tg_graph is None
-    assert log_apply.tg_graph is None
     assert state.execution.metadata["last_planner_decision"]["decision"] == "dispatch_agent"
     assert kg.get_node("host-1").label == "host 1"
     assert any(node.node_type.value == "STAGE_RESULT" for node in ag.find_process_nodes())

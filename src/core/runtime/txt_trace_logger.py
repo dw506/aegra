@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -39,12 +40,13 @@ class TxtTraceLogger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def operation_trace(cls, operation_id: str, runtime_root: str | Path = "var/runtime") -> "TxtTraceLogger":
+    def operation_trace(cls, operation_id: str, runtime_root: str | Path | None = None) -> "TxtTraceLogger":
         """Return the canonical human-readable operation trace logger."""
 
+        root = runtime_root or os.getenv("AEGRA_RUNTIME_STORE_DIR") or "var/runtime"
         return cls(
             operation_id,
-            log_dir=runtime_root,
+            log_dir=root,
             filename="operation-trace.txt",
             operation_subdir=True,
         )

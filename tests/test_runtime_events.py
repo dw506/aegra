@@ -15,7 +15,7 @@ def test_coerce_runtime_event_builds_typed_event() -> None:
             "event_type": "TaskQueued",
             "operation_id": "op-1",
             "task_id": "task-1",
-            "tg_node_id": "tg-1",
+            "execution_node_id": "exec-1",
             "payload": {"source": "scheduler"},
         }
     )
@@ -50,4 +50,5 @@ def test_event_to_ref_handles_replan_request() -> None:
 
     assert ref.payload_ref == "rp-1"
     assert "ReplanRequested" in ref.summary
+
 
