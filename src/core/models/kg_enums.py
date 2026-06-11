@@ -31,6 +31,15 @@ class NodeType(str, Enum):
     FINDING = "Finding"
     NETWORK_ZONE = "NetworkZone"
     GOAL = "Goal"
+    # Extended types for profile-driven evaluation
+    VULNERABILITY_CANDIDATE = "VulnerabilityCandidate"
+    EXPLOIT_CAPABILITY = "ExploitCapability"
+    POST_ACCESS_OBSERVATION = "PostAccessObservation"
+    LAB_HINT = "LabHint"
+    LAB_FLAG = "LabFlag"
+    GOAL_CHECK = "GoalCheck"
+    GOAL_PROOF = "GoalProof"
+    PIVOT_ROUTE = "PivotRoute"
 
 
 class EdgeType(str, Enum):

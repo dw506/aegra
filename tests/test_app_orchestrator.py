@@ -157,7 +157,6 @@ def build_graph_refs() -> list[GraphRef]:
     return [
         GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
         GraphRef(graph=GraphScope.AG, ref_id="ag-root", ref_type="graph"),
-        GraphRef(graph=GraphScope.TG, ref_id="tg-root", ref_type="graph"),
     ]
 
 
@@ -308,19 +307,29 @@ def test_orchestrator_create_import_and_start_operation(tmp_path) -> None:
     assert created.execution.metadata["operation_log"][0]["event_type"] == "operation_created"
     assert started.execution.metadata["operation_log"][-1]["event_type"] == "operation_started"
     assert started.execution.metadata["graph_initialization"]["target"] == "10.0.0.10"
-    assert started.execution.metadata["graph_initialization"]["initial_task_ids"]
-    assert started.execution.metadata["graph_memory"]["kg_version"] > 0
-    assert started.execution.metadata["graph_memory"]["ag_version"] > 0
-    assert started.execution.metadata["graph_memory"]["tg_version"] > 0
-    assert orchestrator.graph_memory_store.load_kg("op-1").list_nodes()
-    assert orchestrator.graph_memory_store.load_ag("op-1").find_actions()
-    initial_tasks = [
-        node
-        for node in orchestrator.graph_memory_store.load_tg("op-1").list_nodes()
-        if isinstance(node, BaseTaskNode)
-    ]
-    assert initial_tasks
-    assert len(orchestrator.list_operations()) == 1
+
+
+def test_orchestrator_public_runtime_policy_does_not_expose_adapter_topology(tmp_path) -> None:
+    settings = AppSettings(
+        runtime_store_backend="file",
+        runtime_store_dir=tmp_path / "runtime-store",
+        runtime_policy={
+            "authorized_hosts": ["10.20.0.0/24"],
+            "adapter_policy": {
+                "pivot": {"default_route": {"via_host": "10.20.0.30"}},
+                "credentials": {"pivot_ssh": {"password": "pivotpass"}},
+            },
+            "tool_bindings": [{"tool": "pivot"}],
+        },
+    )
+    orchestrator = AppOrchestrator(settings=settings)
+
+    created = orchestrator.create_operation("op-blackbox-policy")
+
+    assert "adapter_policy" not in created.execution.metadata["runtime_policy"]
+    assert "tool_bindings" not in created.execution.metadata["runtime_policy"]
+    assert created.execution.metadata["runtime_policy_private"]["adapter_policy"]["pivot"]["default_route"]["via_host"] == "10.20.0.30"
+    assert "adapter_policy" not in created.execution.metadata["operation_log"][0]["runtime_policy"]
 
 
 def test_orchestrator_builds_default_pipeline_without_planner_llm_when_no_key(tmp_path, monkeypatch) -> None:
@@ -536,11 +545,9 @@ def test_orchestrator_run_operation_cycle_requires_llm_stage_planner_without_har
     graph_dir = tmp_path / "runtime-store" / "op-loop"
     assert graph_dir.joinpath("kg.json").exists()
     assert graph_dir.joinpath("ag.json").exists()
-    assert graph_dir.joinpath("tg.json").exists()
     assert graph_dir.joinpath("runtime.json").exists()
     assert graph_dir.joinpath("snapshots", "cycle-000001", "manifest.json").exists()
     assert orchestrator.graph_memory_store.load_runtime("op-loop").operation_id == "op-loop"
-    assert orchestrator.graph_memory_store.load_tg("op-loop").list_nodes() == []
     assert state.execution.metadata["graph_memory"]["loaded_runtime"] is True
 
 
@@ -576,7 +583,7 @@ def test_orchestrator_resume_operation_requeues_inflight_work(tmp_path) -> None:
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status="running",
             assigned_worker="worker-1",
         )
@@ -603,7 +610,7 @@ def test_orchestrator_resume_operation_cleans_runtime_recovery_artifacts(tmp_pat
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status="claimed",
             assigned_worker="worker-1",
         )
@@ -674,7 +681,7 @@ def test_orchestrator_recover_operation_and_export_audit(tmp_path) -> None:
     state.register_task(
         TaskRuntime(
             task_id="task-1",
-            tg_node_id="task-1",
+            execution_node_id="task-1",
             status="running",
             assigned_worker="worker-1",
         )

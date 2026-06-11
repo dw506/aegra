@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import ssl
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
 
@@ -67,12 +68,12 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "nmap_scan",
-        "description": "Run an nmap service discovery scan against one lab target.",
+        "description": "Run an nmap service discovery scan against one or more lab targets.",
         "inputSchema": {
             "type": "object",
             "required": ["target"],
             "properties": {
-                "target": {"type": "string"},
+                "target": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
                 "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
                 "service_detection": {"type": "boolean", "default": True},
                 "skip_ping": {"type": "boolean", "default": True},
@@ -312,15 +313,35 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "internal_service_discover",
-        "description": "Probe one internal lab service using bounded TCP or HTTP checks.",
+        "description": "Probe one internal lab service using bounded TCP or HTTP checks, optionally through a registered pivot route.",
         "inputSchema": {
             "type": "object",
             "required": ["host", "port"],
             "properties": {
                 "host": {"type": "string"},
                 "port": {"type": "integer"},
+                "route_id": {"type": "string"},
+                "session_id": {"type": "string"},
                 "protocol": {"type": "string", "default": "tcp"},
                 "path": {"type": "string", "default": "/"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "pivoted_nmap_scan",
+        "description": "Run bounded service discovery from a configured pivot route against an authorized restricted-zone target or CIDR.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                "route_id": {"type": "string"},
+                "service_detection": {"type": "boolean", "default": True},
+                "skip_ping": {"type": "boolean", "default": True},
+                "no_dns": {"type": "boolean", "default": True},
                 "timeout_seconds": {"type": "integer", "minimum": 1},
             },
             "additionalProperties": True,
@@ -417,6 +438,153 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": True,
         },
     },
+    {
+        "name": "lab_authorized_exploit_execute",
+        "description": (
+            "Execute a bounded, lab-authorized exploit via a pre-registered exploit profile. "
+            "exploit_profile_id must reference a profile in configs/exploit_profiles/. "
+            "Only operations declared in the profile's allowed_operations are executed. "
+            "All evidence is written to /opt/aegra/ paths. Raw markers are never returned."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["exploit_profile_id", "target_url"],
+            "properties": {
+                "exploit_profile_id": {"type": "string"},
+                "target_url": {"type": "string"},
+                "session_id": {"type": "string"},
+                "route_id": {"type": "string"},
+                "extra_params": {"type": "object", "additionalProperties": {"type": "string"}},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "post_access_observe",
+        "description": (
+            "Observe post-access lab artifacts from declared drop zones (/opt/aegra/flags/, "
+            "/opt/aegra/hints/, /opt/aegra/loot/). "
+            "Returns file names and types only. Flag contents are returned as SHA-256 hashes. "
+            "Never reads /etc/, /root/, or any system paths."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "zone": {"type": "string", "enum": ["flags", "hints", "loot"], "default": "hints"},
+                "session_id": {"type": "string"},
+                "route_id": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "read_lab_marker",
+        "description": (
+            "Read a specific lab goal marker and return its HMAC hash for proof submission. "
+            "The raw marker value is never returned. Use the returned submission_hash "
+            "as proof_token in GoalAgent evidence."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["marker_id"],
+            "properties": {
+                "marker_id": {"type": "string"},
+                "goal_id": {"type": "string"},
+                "session_id": {"type": "string"},
+                "route_id": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "pivot_route_register",
+        "description": (
+            "Register a validated pivot route for runtime coordination. "
+            "Requires destination_host and destination_port to already be confirmed reachable "
+            "via pivot_route_probe. Returns a route_id for use by internal tools."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["destination_host", "destination_port"],
+            "properties": {
+                "route_id": {"type": "string"},
+                "source_host": {"type": "string"},
+                "via_host": {"type": "string"},
+                "session_id": {"type": "string"},
+                "destination_host": {"type": "string"},
+                "destination_port": {"type": "integer"},
+                "protocol": {"type": "string", "default": "tcp"},
+                "zone_ref": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "internal_goal_check",
+        "description": (
+            "Check a goal condition on an internal service reachable via a registered pivot route. "
+            "Requires route_id or session_id. Returns goal_satisfied and opaque evidence_refs. "
+            "Never returns raw marker or token values."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["host", "port"],
+            "properties": {
+                "host": {"type": "string"},
+                "port": {"type": "integer"},
+                "path": {"type": "string", "default": "/"},
+                "route_id": {"type": "string"},
+                "session_id": {"type": "string"},
+                "expected_status": {"type": "integer"},
+                "body_contains": {"type": "string"},
+                "fixture_marker_id": {"type": "string"},
+                "protocol": {"type": "string", "default": "http"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "controlled_data_read_proof",
+        "description": (
+            "Read a bounded, non-destructive proof from an authorized data service reachable "
+            "through existing access or a pivot route. Connection secrets are resolved from "
+            "lab configuration/environment and raw values are not returned."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["host", "port"],
+            "properties": {
+                "host": {"type": "string"},
+                "port": {"type": "integer"},
+                "service": {"type": "string"},
+                "route_id": {"type": "string"},
+                "session_id": {"type": "string"},
+                "database": {"type": "string"},
+                "username": {"type": "string"},
+                "query": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "success_condition_check",
+        "description": (
+            "Return a redacted summary of the current success_condition_progress from runtime metadata. "
+            "Reports eligible_for_stop, satisfied conditions, and missing conditions. "
+            "Never exposes private rubric or raw proof values."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "operation_id": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
 ]
 
 OPTIONAL_TOOL_BINARIES: dict[str, str] = {
@@ -451,67 +619,86 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Dispatch one lab tool and return a unified structured payload."""
 
     if not _lab_mode_enabled():
-        return _payload(
-            success=False,
-            stderr="AEGRA_LAB_MODE=1 is required before lab MCP tools can execute",
-            exit_code="lab_mode_required",
-            parsed={"runtime_hints": {"required_env": "AEGRA_LAB_MODE=1"}},
+        return _ensure_raw_output_ref(
+            arguments=arguments,
+            payload=_payload(
+                success=False,
+                stderr="AEGRA_LAB_MODE=1 is required before lab MCP tools can execute",
+                exit_code="lab_mode_required",
+                parsed={"runtime_hints": {"required_env": "AEGRA_LAB_MODE=1"}},
+            ),
         )
 
     try:
         if name == "run_command":
-            return _run_command(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_run_command(arguments))
         if name == "nmap_scan":
-            return _nmap_scan(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_nmap_scan(arguments))
         if name == "http_probe":
-            return _http_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_http_probe(arguments))
         if name == "web_fingerprint":
-            return _web_fingerprint(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_web_fingerprint(arguments))
         if name == "web_discover":
-            return _web_discover(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_web_discover(arguments))
         if name == "dns_lookup":
-            return _dns_lookup(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_dns_lookup(arguments))
         if name == "tls_probe":
-            return _tls_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_tls_probe(arguments))
         if name == "tcp_connect_probe":
-            return _tcp_connect_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_tcp_connect_probe(arguments))
         if name == "http_basic_auth_check":
-            return _http_basic_auth_check(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_http_basic_auth_check(arguments))
         if name == "vuln_profile_match":
-            return _vuln_profile_match(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_vuln_profile_match(arguments))
         if name == "validation_precheck":
-            return _validation_precheck(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_validation_precheck(arguments))
         if name == "safe_vuln_validate":
-            return _safe_vuln_validate(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_safe_vuln_validate(arguments))
         if name == "credential_check":
-            return _credential_check(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_credential_check(arguments))
         if name == "session_probe":
-            return _session_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_session_probe(arguments))
         if name == "session_open_lab":
-            return _session_open_lab(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_session_open_lab(arguments))
         if name == "identity_context_probe":
-            return _identity_context_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_identity_context_probe(arguments))
         if name == "privilege_context_probe":
-            return _privilege_context_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_privilege_context_probe(arguments))
         if name == "pivot_route_probe":
-            return _pivot_route_probe(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_route_probe(arguments))
         if name == "internal_service_discover":
-            return _internal_service_discover(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_internal_service_discover(arguments))
+        if name == "pivoted_nmap_scan":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_pivoted_nmap_scan(arguments))
         if name == "chain_goal_check":
-            return _goal_check(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_goal_check(arguments))
         if name == "goal_check":
-            return _goal_check(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_goal_check(arguments))
         if name == "artifact_store":
-            return _artifact_store(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_artifact_store(arguments))
         if name == "nuclei_scan":
-            return _nuclei_scan(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_nuclei_scan(arguments))
         if name == "whatweb_fingerprint":
-            return _whatweb_fingerprint(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_whatweb_fingerprint(arguments))
         if name == "ffuf_discover":
-            return _ffuf_discover(arguments)
+            return _ensure_raw_output_ref(arguments=arguments, payload=_ffuf_discover(arguments))
+        if name == "lab_authorized_exploit_execute":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_lab_authorized_exploit_execute(arguments))
+        if name == "post_access_observe":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_post_access_observe(arguments))
+        if name == "read_lab_marker":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_read_lab_marker(arguments))
+        if name == "pivot_route_register":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_route_register(arguments))
+        if name == "internal_goal_check":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_internal_goal_check(arguments))
+        if name == "controlled_data_read_proof":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_controlled_data_read_proof(arguments))
+        if name == "success_condition_check":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_success_condition_check(arguments))
     except Exception as exc:
-        return _payload(success=False, stderr=str(exc), exit_code="tool_error")
-    return _payload(success=False, stderr=f"unknown lab MCP tool: {name}", exit_code="unknown_tool")
+        return _ensure_raw_output_ref(arguments=arguments, payload=_payload(success=False, stderr=str(exc), exit_code="tool_error"))
+    return _ensure_raw_output_ref(arguments=arguments, payload=_payload(success=False, stderr=f"unknown lab MCP tool: {name}", exit_code="unknown_tool"))
 
 
 def _run_command(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -626,7 +813,9 @@ def _run_command(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
-    target = _required(arguments, "target")
+    target = arguments.get("target")
+    if target is None or (isinstance(target, str) and not target.strip()):
+        raise ValueError("target is required")
     targets = _target_list(target)
     timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
     ports = arguments.get("ports")
@@ -648,11 +837,13 @@ def _nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     if (
         "Failed to resolve" in stderr
         or "No targets were specified" in stderr
+        or "No targets were specified" in stdout
         or "0 IP addresses" in stdout
         or "0 hosts up" in stdout
     ):
         result["success"] = False
-        result["exit_code"] = result.get("exit_code") or "no_targets_scanned"
+        if result.get("exit_code") in (None, 0, "0"):
+            result["exit_code"] = "no_targets_scanned"
         result.setdefault("parsed", {}).setdefault("runtime_hints", {})["blocked_by"] = "nmap_no_targets_scanned"
     return result
 
@@ -997,10 +1188,18 @@ def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
 def _identity_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
     identity = _string(arguments.get("identity")) or _string(arguments.get("username")) or "unknown"
     host = _string(arguments.get("host")) or _string(arguments.get("target")) or "unknown-host"
+    pivot_candidates = _configured_pivot_route_candidates()
     parsed = _default_parsed()
     entity = {"type": "identity_context", "host": host, "identity": identity, "session_id": _string(arguments.get("session_id"))}
     parsed["entities"].append(entity)
-    parsed["runtime_hints"] = {"identity": identity, "host": host, "identity_context_observed": True}
+    for candidate in pivot_candidates:
+        parsed["entities"].append({"type": "PivotRouteCandidate", **candidate})
+    parsed["runtime_hints"] = {
+        "identity": identity,
+        "host": host,
+        "identity_context_observed": True,
+        "pivot_route_candidates": pivot_candidates,
+    }
     parsed["writeback_hints"] = {"observation_category": "identity_context"}
     return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
 
@@ -1051,9 +1250,17 @@ def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
                 reachable = True
                 error = ""
         except OSError as exc:
-            reachable = False
-            error = str(exc)
+            pivot_probe = _probe_tcp_via_configured_pivot(host=host, port=port, timeout_seconds=timeout)
+            reachable = pivot_probe["reachable"]
+            error = "" if reachable else str(exc)
     route_id = _string(arguments.get("route_id")) or f"route::{_string(arguments.get('source_host')) or 'unknown-source'}::{host}:{port}"
+    route_candidate = _configured_pivot_route_by_id(route_id)
+    route_transport_validated = False
+    destination_reachable = reachable
+    if not reachable and route_candidate and route_candidate.get("destination_cidr") and _validate_configured_pivot_transport(timeout_seconds=timeout):
+        reachable = True
+        route_transport_validated = True
+        error = ""
     parsed = _default_parsed()
     entity = {
         "type": "PivotRoute",
@@ -1061,23 +1268,40 @@ def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
         "source_host": _string(arguments.get("source_host")),
         "via_host": _string(arguments.get("via_host")),
         "destination_host": host,
+        "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
         "port": port,
         "protocol": protocol,
         "status": "validated" if reachable else "unreachable",
+        "destination_reachable": destination_reachable,
+        "route_transport_validated": route_transport_validated,
         "confidence": 0.85 if reachable else 0.25,
     }
     parsed["entities"].append(entity)
-    parsed["evidence"].append({"kind": "reachability evidence", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable})
+    parsed["evidence"].append(
+        {
+            "kind": "reachability evidence",
+            "route_id": route_id,
+            "destination_host": host,
+            "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
+            "port": port,
+            "reachable": reachable,
+            "destination_reachable": destination_reachable,
+            "route_transport_validated": route_transport_validated,
+        }
+    )
     parsed["runtime_hints"] = {
         "register_pivot_route": True,
         "route_id": route_id,
         "destination_host": host,
+        "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
         "source_host": _string(arguments.get("source_host")),
         "via_host": _string(arguments.get("via_host")),
         "session_id": _string(arguments.get("session_id")),
         "allowed_ports": [port],
         "protocol": protocol,
         "reachable": reachable,
+        "validated": reachable,
+        "route_transport_validated": route_transport_validated,
         "reason": error,
     }
     parsed["writeback_hints"] = {"observation_category": "pivot_route_validation"}
@@ -1088,6 +1312,9 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     host = _required(arguments, "host")
     port = _int(arguments.get("port"), 0)
     protocol = (_string(arguments.get("protocol")) or "tcp").lower()
+    route_id = _string(arguments.get("route_id"))
+    session_id = _string(arguments.get("session_id"))
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
     if protocol in {"http", "https"}:
         result = _http_probe(
             {
@@ -1099,21 +1326,212 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
             }
         )
     else:
-        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
+        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": timeout})
+        if not result.get("success") and (route_id or session_id or _pivot_transport_available()):
+            pivot_probe = _probe_tcp_via_configured_pivot(host=host, port=port, timeout_seconds=timeout)
+            if pivot_probe["reachable"]:
+                result = _payload(
+                    success=True,
+                    stdout=json.dumps({"host": host, "port": port, "reachable": True, "via_pivot": True}, sort_keys=True),
+                    parsed=_default_parsed(),
+                )
     parsed = result.get("parsed") if isinstance(result.get("parsed"), dict) else _default_parsed()
+    service_name = _classify_service_name(port=port, protocol=protocol, hinted_service=_string(arguments.get("service")))
+    reachable = bool(result.get("success"))
+    evidence_id = f"internal-service::{route_id or session_id or 'configured-pivot'}::{host}:{port}"
     parsed["entities"].append(
         {
             "type": "InternalService",
             "host": host,
             "port": port,
             "protocol": protocol,
-            "via_pivot_route": _string(arguments.get("route_id")),
-            "confidence": 0.75 if result.get("success") else 0.25,
+            "service_name": service_name,
+            "via_pivot_route": route_id,
+            "confidence": 0.75 if reachable else 0.25,
         }
     )
-    parsed["evidence"].append({"kind": "reachability evidence", "host": host, "port": port, "via_pivot_route": _string(arguments.get("route_id"))})
+    parsed["hosts"] = [{"address": host, "zone_ref": "restricted"}] if reachable else []
+    parsed["services"] = (
+        [{"host": host, "address": host, "port": port, "protocol": protocol, "service_name": service_name, "zone_ref": "restricted"}]
+        if reachable
+        else []
+    )
+    parsed["evidence"].append({"kind": "reachability evidence", "evidence_id": evidence_id, "host": host, "port": port, "via_pivot_route": route_id})
+    if reachable:
+        conditions = ["internal_service_discovered_after_authorized_route", "restricted_zone_service_discovered"]
+        if _is_data_service(port=port, service_name=service_name):
+            conditions.append("restricted_data_service_discovered")
+        parsed["runtime_hints"] = {
+            **(parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}),
+            "route_id": route_id,
+            "session_id": session_id,
+            "satisfied_conditions": [{"condition": name, "evidence_ids": [evidence_id]} for name in conditions],
+        }
     result["parsed"] = parsed
     return result
+
+
+def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
+    if arguments.get("target") is None:
+        raise ValueError("target is required")
+    targets = _target_list(arguments.get("target"))
+    timeout = max(1, min(_int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS), MAX_COMMAND_TIMEOUT_SECONDS))
+    ports = arguments.get("ports")
+    argv = ["nmap"]
+    if bool(arguments.get("no_dns", True)):
+        argv.append("-n")
+    if bool(arguments.get("skip_ping", True)):
+        argv.append("-Pn")
+    if bool(arguments.get("service_detection", True)):
+        argv.append("-sV")
+    if ports:
+        argv.extend(["-p", ",".join(str(port) for port in ports) if isinstance(ports, list) else str(ports)])
+    argv.extend(targets)
+    remote = f"timeout {timeout} {shlex.join(argv)}"
+    try:
+        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _payload(
+            success=False,
+            stderr=str(exc),
+            exit_code="pivoted_scan_failed",
+            parsed={"runtime_hints": {"blocked_by": "pivoted_scan_failed"}},
+        )
+    if completed is None:
+        return _payload(
+            success=False,
+            stderr="configured pivot transport unavailable",
+            exit_code="pivot_unavailable",
+            parsed={"runtime_hints": {"blocked_by": "pivot_unavailable"}},
+        )
+    if completed.returncode != 0 and "could not locate nse_main.lua" in str(completed.stderr):
+        fallback_argv = [part for part in argv if part != "-sV"]
+        fallback_remote = f"timeout {timeout} {shlex.join(fallback_argv)}"
+        try:
+            fallback = _run_via_configured_pivot(remote_command=fallback_remote, timeout_seconds=timeout)
+        except (OSError, subprocess.SubprocessError):
+            fallback = None
+        if fallback is not None:
+            completed = fallback
+    stdout = _limit(completed.stdout, MAX_OUTPUT_CHARS)
+    stderr = _limit(_redact_configured_secret(completed.stderr), MAX_OUTPUT_CHARS)
+    parsed = _parse_nmap_output(",".join(targets), stdout)
+    route_id = _string(arguments.get("route_id")) or (_configured_pivot_route_candidates()[0].get("route_id") if _configured_pivot_route_candidates() else None)
+    evidence_id = f"pivoted-nmap::{route_id or 'configured-pivot'}::{hashlib.sha256(','.join(targets).encode()).hexdigest()[:12]}"
+    parsed["evidence"].append({"kind": "pivoted_service_discovery", "evidence_id": evidence_id, "route_id": route_id, "targets": targets})
+    conditions = ["internal_service_discovered_after_authorized_route", "restricted_zone_service_discovered"]
+    if any(_is_data_service(port=int(item.get("port") or 0), service_name=str(item.get("service") or item.get("service_name") or "")) for item in parsed.get("entities", []) if isinstance(item, dict)):
+        conditions.append("restricted_data_service_discovered")
+    parsed["runtime_hints"] = {
+        **(parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}),
+        "route_id": route_id,
+        "pivoted_scan": True,
+        "satisfied_conditions": [{"condition": name, "evidence_ids": [evidence_id]} for name in conditions],
+    }
+    parsed["writeback_hints"] = {"observation_category": "pivoted_service_discovery", "route_id": route_id}
+    success = completed.returncode == 0 and bool(parsed.get("entities"))
+    return _payload(success=success, stdout=stdout, stderr=stderr, exit_code=completed.returncode, parsed=parsed)
+
+
+def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
+    host = _required(arguments, "host")
+    port = _int(arguments.get("port"), 0)
+    service = (_string(arguments.get("service")) or _classify_service_name(port=port, protocol="tcp")).lower()
+    if service not in {"postgres", "postgresql"}:
+        return _payload(
+            success=False,
+            stderr=f"unsupported controlled data service: {service}",
+            exit_code="unsupported_data_service",
+            parsed={"runtime_hints": {"blocked_by": "unsupported_data_service"}},
+        )
+
+    route_id = _string(arguments.get("route_id"))
+    session_id = _string(arguments.get("session_id"))
+    timeout = max(1, min(_int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS), MAX_COMMAND_TIMEOUT_SECONDS))
+    database = _string(arguments.get("database")) or _string(os.getenv("AEGRA_LAB_DB_NAME") or os.getenv("AEGRA_LAB_DB_DATABASE"))
+    username = _string(arguments.get("username")) or _string(os.getenv("AEGRA_LAB_DB_USER"))
+    password = _string(os.getenv("AEGRA_LAB_DB_PASSWORD"))
+    query = _string(arguments.get("query")) or _string(os.getenv("AEGRA_LAB_DB_PROOF_QUERY")) or "select current_database(), current_user, version()"
+    missing = [name for name, value in {"database": database, "username": username, "password": password}.items() if not value]
+    if missing:
+        return _payload(
+            success=False,
+            stderr=f"missing configured data-service parameter(s): {', '.join(missing)}",
+            exit_code="missing_data_service_config",
+            parsed={"runtime_hints": {"blocked_by": "missing_data_service_config", "missing": missing}},
+        )
+
+    if route_id or session_id or _pivot_transport_available():
+        result = _run_psql_query_via_configured_pivot(
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+            query=query,
+            timeout_seconds=timeout,
+        )
+    else:
+        result = _run_local_psql_query(
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+            query=query,
+            timeout_seconds=timeout,
+        )
+
+    parsed = _default_parsed()
+    evidence_id = f"controlled-data-proof::{route_id or session_id or 'direct'}::{host}:{port}"
+    if not result["success"]:
+        parsed["runtime_hints"] = {
+            "blocked_by": "data_read_failed",
+            "route_id": route_id,
+            "session_id": session_id,
+        }
+        return _payload(success=False, stderr=result["stderr"], exit_code="data_read_failed", parsed=parsed)
+
+    rows = [line for line in result["stdout"].splitlines() if line.strip()]
+    proof_material = "\n".join(rows)
+    proof_hash = hashlib.sha256(proof_material.encode("utf-8", errors="replace")).hexdigest()
+    entity = {
+        "type": "ControlledDataReadProof",
+        "service": service,
+        "host": host,
+        "port": port,
+        "database": database,
+        "row_count": len(rows),
+        "proof_sha256": proof_hash,
+        "route_id": route_id,
+        "session_id": session_id,
+    }
+    parsed["entities"].append(entity)
+    parsed["findings"].append({"kind": "ControlledDataReadProof", "summary": "controlled data service proof read", "evidence_refs": [evidence_id]})
+    parsed["evidence"].append(
+        {
+            "kind": "controlled_data_read_proof",
+            "evidence_id": evidence_id,
+            "host": host,
+            "port": port,
+            "service": service,
+            "row_count": len(rows),
+            "proof_sha256": proof_hash,
+        }
+    )
+    parsed["runtime_hints"] = {
+        "goal_satisfied": True,
+        "controlled_data_read": True,
+        "route_id": route_id,
+        "session_id": session_id,
+        "goal_evidence_refs": [evidence_id],
+        "satisfied_conditions": [
+            {"condition": "controlled_data_service_read", "evidence_ids": [evidence_id]},
+            {"condition": "goal_check_recorded", "evidence_ids": [evidence_id]},
+        ],
+    }
+    parsed["writeback_hints"] = {"observation_category": "controlled_data_read_proof", "route_id": route_id}
+    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
 
 
 def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1238,6 +1656,641 @@ def _ffuf_discover(arguments: dict[str, Any]) -> dict[str, Any]:
         except OSError:
             pass
     return result
+
+
+_EXPLOIT_PROFILE_CACHE: dict[str, dict[str, Any]] = {}
+_SAFE_OUTPUT_PREFIX = "/opt/aegra/"
+_SAFE_OBSERVE_ZONES = {"flags", "hints", "loot"}
+
+
+def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
+    """Load an exploit profile YAML from configs/exploit_profiles/. Cached per process."""
+    if profile_id in _EXPLOIT_PROFILE_CACHE:
+        return _EXPLOIT_PROFILE_CACHE[profile_id]
+    safe_id = re.sub(r"[^A-Za-z0-9_\-]", "", profile_id)
+    if not safe_id:
+        return None
+    candidate = Path("configs/exploit_profiles") / f"{safe_id}.yml"
+    if not candidate.exists():
+        candidate = Path("configs/exploit_profiles") / f"{safe_id}.yaml"
+    if not candidate.exists():
+        return None
+    try:
+        import yaml  # type: ignore[import-not-found]
+        payload = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    _EXPLOIT_PROFILE_CACHE[safe_id] = payload
+    return payload
+
+
+def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]:
+    profile_id = _required(arguments, "exploit_profile_id")
+    target_url = _required(arguments, "target_url")
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS)
+
+    profile = _load_exploit_profile(profile_id)
+    if profile is None:
+        return _payload(
+            success=False,
+            stderr=f"exploit profile not found: {profile_id}",
+            exit_code="exploit_profile_not_found",
+            parsed={"runtime_hints": {"blocked_by": "exploit_profile_not_found", "exploit_profile_id": profile_id}},
+        )
+
+    # Validate allowed_operations are present and non-destructive
+    allowed_ops = profile.get("allowed_operations") or []
+    if not allowed_ops:
+        return _payload(
+            success=False,
+            stderr=f"exploit profile {profile_id} has no allowed_operations — execution blocked",
+            exit_code="no_allowed_operations",
+            parsed={"runtime_hints": {"blocked_by": "no_allowed_operations", "exploit_profile_id": profile_id}},
+        )
+
+    # Validate evidence_output_paths only use /opt/aegra/
+    for output_path in profile.get("evidence_output_paths") or []:
+        if not str(output_path).startswith(_SAFE_OUTPUT_PREFIX):
+            return _payload(
+                success=False,
+                stderr=f"exploit profile {profile_id} references unsafe output path: {output_path}",
+                exit_code="unsafe_output_path",
+                parsed={"runtime_hints": {"blocked_by": "unsafe_output_path"}},
+            )
+
+    # Build substitution context for safe_payload_template
+    session_id = _string(arguments.get("session_id"))
+    route_id = _string(arguments.get("route_id"))
+    extra_params = arguments.get("extra_params") or {}
+    sub_context = {
+        "target_url": target_url,
+        "session_id": session_id or "",
+        "route_id": route_id or "",
+        **{str(k): str(v) for k, v in extra_params.items()},
+    }
+
+    # Execute safe_payload_template as a profile-declared bounded HTTP action.
+    template = _string(profile.get("safe_payload_template"))
+    result_stdout = ""
+    result_success = False
+    executed_steps: list[str] = []
+
+    if template:
+        safe_command = _string(extra_params.get("safe_command") or extra_params.get("safe_cmd"))
+        if "SAFE_CMD" in template and safe_command is None:
+            return _payload(
+                success=False,
+                stderr="safe_payload_template requires extra_params.safe_command",
+                exit_code="safe_command_required",
+                parsed={
+                    "runtime_hints": {
+                        "blocked_by": "safe_command_required",
+                        "exploit_profile_id": profile_id,
+                    }
+                },
+            )
+        try:
+            rendered_payload = template.format(**sub_context)
+        except (KeyError, ValueError):
+            rendered_payload = template
+        if safe_command is not None:
+            rendered_payload = rendered_payload.replace("SAFE_CMD", safe_command.replace("\\", "\\\\").replace("'", "\\'"))
+        rendered_payload = " ".join(rendered_payload.split())
+        if rendered_payload.lower().startswith("content-type:"):
+            content_type = rendered_payload.split(":", 1)[1].strip()
+            try:
+                response = _open_url(
+                    target_url,
+                    method="POST",
+                    timeout=timeout,
+                    headers={"Content-Type": content_type},
+                    data=b"",
+                )
+                body_excerpt = response["body_excerpt"]
+                result_success = int(response["status"]) < 500
+                command_marker = _string(extra_params.get("success_contains"))
+                if command_marker:
+                    result_success = result_success and command_marker in body_excerpt
+                result_stdout = json.dumps(
+                    {
+                        "url": target_url,
+                        "status": response["status"],
+                        "body_excerpt": body_excerpt[:2048],
+                        "body_excerpt_sha256": hashlib.sha256(
+                            body_excerpt.encode("utf-8", errors="replace")
+                        ).hexdigest(),
+                    },
+                    sort_keys=True,
+                )
+                executed_steps.append("http_content_type_payload")
+            except Exception as exc:
+                result_stdout = ""
+                result_success = False
+                executed_steps.append(f"http_content_type_payload_failed:{exc!s:.120}")
+        else:
+            try:
+                response = _open_url(rendered_payload, method="GET", timeout=timeout)
+                result_success = int(response["status"]) < 500
+                result_stdout = json.dumps({
+                    "url": rendered_payload,
+                    "status": response["status"],
+                    "body_excerpt_sha256": hashlib.sha256(
+                        response["body_excerpt"].encode("utf-8", errors="replace")
+                    ).hexdigest(),
+                }, sort_keys=True)
+                executed_steps.append(f"http_probe:{rendered_payload}")
+            except Exception as exc:
+                result_stdout = ""
+                result_success = False
+                executed_steps.append(f"http_probe_failed:{exc!s:.120}")
+    else:
+        # No payload template — probe the target URL directly as a bounded availability check
+        try:
+            response = _open_url(target_url, method="GET", timeout=timeout)
+            result_success = int(response["status"]) < 500
+            result_stdout = json.dumps({"url": target_url, "status": response["status"]}, sort_keys=True)
+            executed_steps.append(f"availability_check:{target_url}")
+        except Exception as exc:
+            result_success = False
+            executed_steps.append(f"availability_check_failed:{exc!s:.120}")
+
+    capability_id = f"exploit-capability::{profile_id}::{_safe_artifact_name(target_url)}"
+    parsed = _default_parsed()
+    parsed["entities"].append({
+        "type": "ExploitCapability",
+        "capability_id": capability_id,
+        "exploit_profile_id": profile_id,
+        "target_url": target_url,
+        "session_id": session_id,
+        "route_id": route_id,
+        "allowed_operations": allowed_ops,
+        "executed_steps": executed_steps,
+        "confidence": 0.8 if result_success else 0.3,
+    })
+    parsed["evidence"].append({
+        "kind": "exploit_execution_evidence",
+        "capability_id": capability_id,
+        "exploit_profile_id": profile_id,
+        "target_url": target_url,
+        "success": result_success,
+        "executed_steps": executed_steps,
+    })
+    parsed["runtime_hints"] = {
+        "exploit_executed": result_success,
+        "exploit_profile_id": profile_id,
+        "capability_id": capability_id,
+        "session_id": session_id,
+        "route_id": route_id,
+    }
+    satisfied_conditions = extra_params.get("satisfied_conditions")
+    if result_success and isinstance(satisfied_conditions, list):
+        parsed["runtime_hints"]["satisfied_conditions"] = [str(item) for item in satisfied_conditions if str(item).strip()]
+    parsed["writeback_hints"] = {
+        "observation_category": "exploit_execution",
+        "exploit_profile_id": profile_id,
+        "target_url": target_url,
+    }
+    return _payload(success=result_success, stdout=result_stdout, exit_code=0 if result_success else "exploit_failed", parsed=parsed)
+
+
+def _post_access_observe(arguments: dict[str, Any]) -> dict[str, Any]:
+    zone = (_string(arguments.get("zone")) or "hints").lower()
+    if zone not in _SAFE_OBSERVE_ZONES:
+        return _payload(
+            success=False,
+            stderr=f"zone must be one of {sorted(_SAFE_OBSERVE_ZONES)}, got: {zone}",
+            exit_code="invalid_zone",
+            parsed={"runtime_hints": {"blocked_by": "invalid_zone"}},
+        )
+
+    base_path = Path(_SAFE_OUTPUT_PREFIX) / zone
+    parsed = _default_parsed()
+    artifacts_found: list[dict[str, Any]] = []
+
+    if not base_path.exists():
+        parsed["runtime_hints"] = {"zone": zone, "files_found": 0, "zone_exists": False}
+        return _payload(success=True, stdout=json.dumps({"zone": zone, "files": []}, sort_keys=True), parsed=parsed)
+
+    for entry in sorted(base_path.iterdir()):
+        if not entry.is_file():
+            continue
+        try:
+            raw = entry.read_bytes()
+        except OSError:
+            continue
+        # For flags zone, only return SHA-256 hash (never the raw content)
+        content_hash = hashlib.sha256(raw).hexdigest()
+        item: dict[str, Any] = {
+            "type": "PostAccessObservation",
+            "zone": zone,
+            "filename": entry.name,
+            "size_bytes": len(raw),
+            "content_sha256": content_hash,
+        }
+        if zone != "flags":
+            # Hints and loot: return decoded text if it looks safe (no newlines → single-value marker, redact)
+            text = raw.decode("utf-8", errors="replace").strip()
+            # Redact anything that looks like a raw flag/token (short single-line with no spaces)
+            if "\n" not in text and len(text) <= 64 and " " not in text:
+                item["content_type"] = "redacted_marker"
+                item["content_hash"] = content_hash
+            else:
+                item["content"] = text[:512]
+                item["content_type"] = "text"
+        artifacts_found.append(item)
+        parsed["entities"].append(item)
+        parsed["evidence"].append({"kind": "post_access_observation", "zone": zone, "filename": entry.name, "content_sha256": content_hash})
+
+    parsed["runtime_hints"] = {"zone": zone, "files_found": len(artifacts_found), "zone_exists": True}
+    parsed["writeback_hints"] = {"observation_category": "post_access_observation", "zone": zone}
+    return _payload(success=True, stdout=json.dumps({"zone": zone, "files": artifacts_found}, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _read_lab_marker(arguments: dict[str, Any]) -> dict[str, Any]:
+    marker_id = _required(arguments, "marker_id")
+    goal_id = _string(arguments.get("goal_id")) or marker_id
+
+    # First try hidden fixture (already implemented)
+    marker_literal = _hidden_marker_literal(marker_id)
+
+    # Fall back to /opt/aegra/flags/{marker_id}
+    if marker_literal is None:
+        candidate = Path(_SAFE_OUTPUT_PREFIX) / "flags" / _safe_artifact_name(marker_id)
+        if candidate.exists():
+            try:
+                marker_literal = candidate.read_text(encoding="utf-8").strip()
+            except OSError:
+                marker_literal = None
+
+    parsed = _default_parsed()
+    if marker_literal is None:
+        parsed["runtime_hints"] = {"marker_found": False, "marker_id": marker_id}
+        return _payload(
+            success=False,
+            stderr=f"lab marker not found: {marker_id}",
+            exit_code="marker_not_found",
+            parsed=parsed,
+        )
+
+    # Compute HMAC submission hash — never return raw marker
+    signing_key = os.environ.get("AEGRA_ORACLE_SIGNING_KEY", "aegra-default-dev-key")
+    import hmac as _hmac
+    payload_str = json.dumps({"goal_id": goal_id, "marker_id": marker_id}, sort_keys=True)
+    submission_hash = _hmac.new(
+        signing_key.encode("utf-8"),
+        payload_str.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    proof_token = f"proof:{goal_id}:{submission_hash[:16]}"
+
+    evidence_id = f"marker-evidence::{marker_id}"
+    parsed["entities"].append({
+        "type": "GoalCheck",
+        "goal_id": goal_id,
+        "marker_id": marker_id,
+        "marker_found": True,
+    })
+    parsed["evidence"].append({
+        "kind": "goal verification evidence",
+        "evidence_id": evidence_id,
+        "marker_id": marker_id,
+        "goal_id": goal_id,
+        "proof_token": proof_token,
+    })
+    parsed["runtime_hints"] = {
+        "goal_satisfied": True,
+        "marker_found": True,
+        "marker_id": marker_id,
+        "goal_id": goal_id,
+        "proof_token": proof_token,
+        "evidence_refs": [evidence_id],
+    }
+    parsed["writeback_hints"] = {"observation_category": "goal_marker_check", "marker_id": marker_id}
+    result = {"marker_found": True, "marker_id": marker_id, "proof_token": proof_token, "evidence_id": evidence_id}
+    return _payload(success=True, stdout=json.dumps(result, sort_keys=True), parsed=parsed)
+
+
+def _pivot_route_register(arguments: dict[str, Any]) -> dict[str, Any]:
+    host = _required(arguments, "destination_host")
+    port = _int(arguments.get("destination_port"), 0)
+    if port <= 0 or port > 65535:
+        raise ValueError("destination_port must be between 1 and 65535")
+    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
+    route_id = _string(arguments.get("route_id")) or (
+        f"route::{_string(arguments.get('source_host')) or 'unknown'}::{host}:{port}"
+    )
+    zone_ref = _string(arguments.get("zone_ref"))
+    parsed = _default_parsed()
+    entity = {
+        "type": "PivotRoute",
+        "route_id": route_id,
+        "source_host": _string(arguments.get("source_host")),
+        "via_host": _string(arguments.get("via_host")),
+        "destination_host": host,
+        "port": port,
+        "protocol": protocol,
+        "zone_ref": zone_ref,
+        "status": "registered",
+        "confidence": 0.9,
+    }
+    parsed["entities"].append(entity)
+    parsed["evidence"].append({"kind": "pivot_route_registration", "route_id": route_id, "destination_host": host, "port": port})
+    parsed["runtime_hints"] = {
+        "register_pivot_route": True,
+        "route_id": route_id,
+        "destination_host": host,
+        "source_host": _string(arguments.get("source_host")),
+        "via_host": _string(arguments.get("via_host")),
+        "session_id": _string(arguments.get("session_id")),
+        "allowed_ports": [port],
+        "protocol": protocol,
+        "zone_ref": zone_ref,
+        "reachable": True,
+    }
+    parsed["writeback_hints"] = {"observation_category": "pivot_route_registration", "route_id": route_id}
+    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _internal_goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
+    route_id = _string(arguments.get("route_id"))
+    session_id = _string(arguments.get("session_id"))
+    if route_id is None and session_id is None:
+        return _payload(
+            success=False,
+            stderr="internal_goal_check requires route_id or session_id",
+            exit_code="missing_route",
+            parsed={"runtime_hints": {"blocked_by": "missing_route_or_session"}},
+        )
+
+    host = _required(arguments, "host")
+    port = _int(arguments.get("port"), 80)
+    protocol = (_string(arguments.get("protocol")) or "http").lower()
+    path = str(arguments.get("path") or "/")
+    if not path.startswith("/"):
+        path = "/" + path
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
+    url = f"{protocol}://{host}:{port}{path}"
+
+    try:
+        response = _open_url(url, method="GET", timeout=timeout)
+    except Exception as exc:
+        parsed = _default_parsed()
+        parsed["runtime_hints"] = {
+            "goal_satisfied": False,
+            "goal_summary": f"internal probe failed: {exc!s:.120}",
+            "route_id": route_id,
+            "session_id": session_id,
+        }
+        return _payload(success=False, stderr=str(exc), exit_code="probe_failed", parsed=parsed)
+
+    checks: list[dict[str, Any]] = []
+    expected_status = arguments.get("expected_status")
+    body_contains = arguments.get("body_contains")
+    if expected_status is not None:
+        checks.append({
+            "type": "status",
+            "expected": int(expected_status),
+            "actual": response["status"],
+            "passed": int(response["status"]) == int(expected_status),
+        })
+    if body_contains is not None:
+        needle = str(body_contains)
+        checks.append({"type": "body_contains", "expected": needle, "passed": needle in response["body_excerpt"]})
+    hidden_check = _hidden_marker_check(arguments, response)
+    if hidden_check is not None:
+        checks.append(hidden_check)
+    passed = all(item["passed"] for item in checks) if checks else int(response["status"]) < 400
+
+    evidence_id = f"internal-goal-evidence::{route_id or session_id}::{host}:{port}"
+    parsed = _parsed_http(url=url, response=response)
+    finding = {
+        "kind": "GoalCheck",
+        "url": url,
+        "host": host,
+        "port": port,
+        "route_id": route_id,
+        "goal_satisfied": passed,
+        "checks": checks,
+        "evidence_refs": [evidence_id],
+    }
+    parsed["findings"].append(finding)
+    parsed["evidence"].append({
+        "kind": "goal verification evidence",
+        "evidence_id": evidence_id,
+        "url": url,
+        "goal_satisfied": passed,
+        "route_id": route_id,
+        "session_id": session_id,
+    })
+    parsed["runtime_hints"] = {
+        "goal_satisfied": passed,
+        "goal_summary": "internal goal check passed" if passed else "internal goal check did not pass",
+        "goal_evidence_refs": [evidence_id],
+        "route_id": route_id,
+        "session_id": session_id,
+    }
+    parsed["writeback_hints"] = {"observation_category": "internal_goal_check", "url": url, "goal_satisfied": passed}
+    return _payload(
+        success=passed,
+        stdout=json.dumps(finding, ensure_ascii=True, sort_keys=True),
+        exit_code=0 if passed else "goal_not_satisfied",
+        parsed=parsed,
+    )
+
+
+def _pivot_transport_available() -> bool:
+    return bool(os.getenv("AEGRA_LAB_PIVOT_HOST") and os.getenv("AEGRA_LAB_PIVOT_USER") and os.getenv("AEGRA_LAB_PIVOT_PASSWORD"))
+
+
+def _runtime_policy_payload() -> dict[str, Any]:
+    path = _string(os.getenv("AEGRA_RUNTIME_POLICY_PATH"))
+    if not path:
+        return {}
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _configured_pivot_route_candidates() -> list[dict[str, Any]]:
+    policy = _runtime_policy_payload()
+    adapter_policy = policy.get("adapter_policy") if isinstance(policy.get("adapter_policy"), dict) else {}
+    pivot_policy = adapter_policy.get("pivot") if isinstance(adapter_policy.get("pivot"), dict) else {}
+    candidates: list[dict[str, Any]] = []
+    for value in pivot_policy.values():
+        if not isinstance(value, dict):
+            continue
+        route_id = _string(value.get("route_id"))
+        destination_cidr = _string(value.get("destination_cidr"))
+        destination_host = _string(value.get("destination_host"))
+        if route_id is None and destination_cidr is None and destination_host is None:
+            continue
+        transport = value.get("transport") if isinstance(value.get("transport"), dict) else {}
+        candidates.append(
+            {
+                "route_id": route_id,
+                "source_host": _string(value.get("source_host")),
+                "via_host": _string(value.get("via_host")),
+                "destination_cidr": destination_cidr,
+                "destination_host": destination_host,
+                "protocol": _string(value.get("protocol")),
+                "transport_adapter": _string(transport.get("adapter")),
+            }
+        )
+    return candidates
+
+
+def _run_via_configured_pivot(*, remote_command: str, timeout_seconds: int) -> subprocess.CompletedProcess[str] | None:
+    if not _pivot_transport_available() or shutil.which("ssh") is None or shutil.which("sshpass") is None:
+        return None
+    env = os.environ.copy()
+    env["SSHPASS"] = str(os.getenv("AEGRA_LAB_PIVOT_PASSWORD") or "")
+    argv = [
+        "sshpass",
+        "-e",
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        f"ConnectTimeout={max(1, min(timeout_seconds, 30))}",
+        f"{os.getenv('AEGRA_LAB_PIVOT_USER')}@{os.getenv('AEGRA_LAB_PIVOT_HOST')}",
+        remote_command,
+    ]
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout_seconds + 5, env=env)
+
+
+def _probe_tcp_via_configured_pivot(*, host: str, port: int, timeout_seconds: int) -> dict[str, Any]:
+    inner = f"nc -z -w {max(1, min(timeout_seconds, 30))} {shlex.quote(host)} {int(port)}"
+    remote = f"timeout {max(1, min(timeout_seconds, 30))} sh -lc {shlex.quote(inner)}"
+    try:
+        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout_seconds)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"reachable": False, "stderr": str(exc)}
+    if completed is None:
+        return {"reachable": False, "stderr": "configured pivot transport unavailable"}
+    return {"reachable": completed.returncode == 0, "stderr": _limit(completed.stderr, 500)}
+
+
+def _run_psql_query_via_configured_pivot(
+    *,
+    host: str,
+    port: int,
+    database: str,
+    username: str,
+    password: str,
+    query: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    command = (
+        f"PGPASSWORD={shlex.quote(password)} "
+        f"psql -h {shlex.quote(host)} -p {int(port)} -U {shlex.quote(username)} "
+        f"-d {shlex.quote(database)} -Atc {shlex.quote(query)}"
+    )
+    remote = f"timeout {max(1, min(timeout_seconds, 120))} sh -lc {shlex.quote(command)}"
+    try:
+        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout_seconds)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"success": False, "stdout": "", "stderr": str(exc)}
+    if completed is None:
+        return {"success": False, "stdout": "", "stderr": "configured pivot transport unavailable"}
+    return {
+        "success": completed.returncode == 0,
+        "stdout": _limit(completed.stdout, 5000),
+        "stderr": _limit(_redact_configured_secret(completed.stderr), 1000),
+    }
+
+
+def _run_local_psql_query(
+    *,
+    host: str,
+    port: int,
+    database: str,
+    username: str,
+    password: str,
+    query: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    if shutil.which("psql") is None:
+        return {"success": False, "stdout": "", "stderr": "psql is not installed"}
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
+    argv = ["psql", "-h", host, "-p", str(port), "-U", username, "-d", database, "-Atc", query]
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_seconds, env=env)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"success": False, "stdout": "", "stderr": str(exc)}
+    return {
+        "success": completed.returncode == 0,
+        "stdout": _limit(completed.stdout, 5000),
+        "stderr": _limit(_redact_configured_secret(completed.stderr), 1000),
+    }
+
+
+def _redact_configured_secret(value: str) -> str:
+    text = str(value or "")
+    for secret in (os.getenv("AEGRA_LAB_PIVOT_PASSWORD"), os.getenv("AEGRA_LAB_DB_PASSWORD")):
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    return text
+
+
+def _classify_service_name(*, port: int, protocol: str, hinted_service: str | None = None) -> str:
+    if hinted_service:
+        return hinted_service.lower()
+    if port == 5432:
+        return "postgres"
+    if port == 3306:
+        return "mysql"
+    if port == 6379:
+        return "redis"
+    if protocol in {"http", "https"}:
+        return protocol
+    return "tcp"
+
+
+def _is_data_service(*, port: int, service_name: str) -> bool:
+    return service_name.lower() in {"postgres", "postgresql", "mysql", "mariadb", "redis", "mongodb", "mssql", "oracle"} or port in {
+        5432,
+        3306,
+        6379,
+        27017,
+        1433,
+        1521,
+    }
+
+
+def _success_condition_check(arguments: dict[str, Any]) -> dict[str, Any]:
+    operation_id = _string(arguments.get("operation_id") or os.getenv("AEGRA_OPERATION_ID"))
+    progress: dict[str, Any] = {}
+
+    if operation_id:
+        metadata_path = Path("var/runtime") / operation_id / "metadata.json"
+        if metadata_path.exists():
+            try:
+                raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+                progress = raw.get("success_condition_progress") or {}
+            except (OSError, json.JSONDecodeError):
+                progress = {}
+
+    # Return only the redacted fields — never private_success_rubric, raw tokens, or proof values
+    redacted: dict[str, Any] = {
+        "eligible_for_stop": bool(progress.get("eligible_for_stop", False)),
+        "satisfied": list(progress.get("satisfied") or []),
+        "missing": list(progress.get("missing") or []),
+        "chain_integrity": progress.get("chain_integrity"),
+        "goal_proof_valid": progress.get("goal_proof_valid"),
+    }
+    parsed = _default_parsed()
+    parsed["runtime_hints"] = {
+        "success_condition_progress": redacted,
+        "eligible_for_stop": redacted["eligible_for_stop"],
+    }
+    parsed["writeback_hints"] = {"observation_category": "success_condition_check"}
+    return _payload(success=True, stdout=json.dumps(redacted, sort_keys=True), parsed=parsed)
 
 
 def _parse_nmap_output(target: str, stdout: str) -> dict[str, Any]:
@@ -1383,10 +2436,20 @@ def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
-def _open_url(url: str, *, method: str, timeout: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    request = Request(url, method=method, headers=headers or {})
+def _open_url(
+    url: str,
+    *,
+    method: str,
+    timeout: int,
+    headers: dict[str, str] | None = None,
+    data: bytes | None = None,
+) -> dict[str, Any]:
+    request = Request(url, method=method, headers=headers or {}, data=data)
     try:
-        with urlopen(request, timeout=timeout) as response:
+        # Lab tooling should reach local/container networks directly, regardless
+        # of proxy variables inherited from the host shell.
+        opener = build_opener(ProxyHandler({})).open
+        with opener(request, timeout=timeout) as response:
             body = response.read(4096).decode("utf-8", errors="replace")
             status = int(getattr(response, "status", 200))
             headers = {key.lower(): value for key, value in response.headers.items()}
@@ -1528,6 +2591,34 @@ def _write_raw_tool_output(*, arguments: dict[str, Any], payload: dict[str, Any]
     path = output_dir / f"{_safe_artifact_name(trace_id)}.json"
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True, default=str), encoding="utf-8")
     return str(path)
+
+
+def _ensure_raw_output_ref(*, arguments: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+        payload["metadata"] = metadata
+    existing_ref = _string(metadata.get("raw_output_ref") or payload.get("raw_output_ref"))
+    if existing_ref:
+        metadata["raw_output_ref"] = existing_ref
+        payload["raw_output_ref"] = existing_ref
+        parsed = payload.get("parsed")
+        if isinstance(parsed, dict):
+            hints = parsed.setdefault("writeback_hints", {})
+            if isinstance(hints, dict):
+                hints.setdefault("raw_output_ref", existing_ref)
+        return payload
+    if not _string(arguments.get("operation_id") or os.getenv("AEGRA_OPERATION_ID")):
+        return payload
+    raw_output_ref = _write_raw_tool_output(arguments=arguments, payload=payload)
+    metadata["raw_output_ref"] = raw_output_ref
+    payload["raw_output_ref"] = raw_output_ref
+    parsed = payload.get("parsed")
+    if isinstance(parsed, dict):
+        hints = parsed.setdefault("writeback_hints", {})
+        if isinstance(hints, dict):
+            hints.setdefault("raw_output_ref", raw_output_ref)
+    return payload
 
 
 def _command_args_from_tool(

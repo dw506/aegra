@@ -25,9 +25,8 @@ from src.core.agents.agent_protocol import (
     GraphRef,
     GraphScope,
 )
-from src.core.agents.graph_projection import GraphProjectionAgent
 from src.core.agents.kg_events import KGDeltaEvent, KGDeltaEventType, KGEventBatch
-from src.core.agents.state_writer import StateWriterAgent
+from src.core.agents.state_writer import KGEntityPatch, KGRelationPatch, StateWriterAgent
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import (
@@ -46,11 +45,11 @@ from src.core.models.events import (
     AgentTaskResult,
     FactWriteKind,
     FactWriteRequest,
-    ProjectionRequest,
     RuntimeControlRequest,
     RuntimeControlType,
 )
 from src.core.models.finding import EvidenceArtifactRecord, Finding
+from src.core.models.kg_enums import EdgeType, NodeType
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.planning.models import PlannerDecision
@@ -91,10 +90,10 @@ class PhaseTwoApplyResult(BaseModel):
     kg_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
     ag_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
     kg_apply_result: dict[str, Any] | None = None
+    kg_write_diagnostics: dict[str, Any] = Field(default_factory=dict)
     ag_graph: dict[str, Any] | None = None
     kg_event_batch: KGEventBatch | None = None
     state_writer_result: AgentExecutionResult | None = None
-    graph_projection_result: AgentExecutionResult | None = None
     visual_graph_deltas: list[VisualGraphDelta] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
 
@@ -106,7 +105,6 @@ class PhaseTwoResultApplier:
         self,
         *,
         state_writer: StateWriterAgent | None = None,
-        graph_projection: GraphProjectionAgent | None = None,
         session_manager: RuntimeSessionManager | None = None,
         credential_manager: RuntimeCredentialManager | None = None,
         lease_manager: RuntimeLeaseManager | None = None,
@@ -117,7 +115,6 @@ class PhaseTwoResultApplier:
         reachability_propagator: ReachabilityPropagator | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
-        self._graph_projection = graph_projection or GraphProjectionAgent()
         self._session_manager = session_manager or RuntimeSessionManager()
         self._credential_manager = credential_manager or RuntimeCredentialManager()
         self._lease_manager = lease_manager or RuntimeLeaseManager()
@@ -152,10 +149,9 @@ class PhaseTwoResultApplier:
         self._audit_tool_execution_from_result(state=state, result=result)
         self._audit_stage_tool_trace(state=state, result=result)
         self._record_evidence_and_findings(state=state, result=result)
-        state_writer_input: AgentInput | None = None
         if kg_store is not None:
             kg_ref = self._resolve_kg_ref(result)
-            state_writer_result, state_writer_input = self._run_state_writer(
+            state_writer_result, _ = self._run_state_writer(
                 result=result,
                 state=state,
                 kg_ref=kg_ref,
@@ -167,13 +163,6 @@ class PhaseTwoResultApplier:
                 if kg_event_batch.events:
                     apply_result.kg_event_batch = kg_event_batch
                     apply_result.kg_apply_result = kg_store.apply_events(kg_event_batch).model_dump(mode="json")
-            graph_projection_result = self._run_graph_projection(
-                result=result,
-                state=state,
-                state_writer_input=state_writer_input,
-            )
-            if graph_projection_result is not None:
-                apply_result.graph_projection_result = graph_projection_result
         if attack_graph is not None:
             apply_result.ag_graph = attack_graph.to_dict()
         apply_result.visual_graph_deltas.extend(
@@ -358,17 +347,44 @@ class PhaseTwoResultApplier:
             apply_result.kg_state_deltas.extend(state_writer_result.output.state_deltas)
             apply_result.logs.extend(state_writer_result.output.logs)
 
+        apply_result.kg_state_deltas.extend(
+            self._structured_stage_state_deltas(stage_result=stage_result, result=canonical_result)
+        )
         apply_result.kg_state_deltas.extend(self._fact_state_deltas(result=canonical_result))
         if apply_result.kg_state_deltas:
             apply_result.kg_state_deltas = self._order_kg_state_deltas(apply_result.kg_state_deltas)
-            apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
-                kg_store=kg_store,
-                kg_ref=kg_ref,
-                state=state,
-                state_deltas=apply_result.kg_state_deltas,
-                state_writer_input=state_writer_input,
+            # 写图失败与 cycle 失败解耦：apply_patch_batch 已逐条容错，这里再兜一层异常，
+            # 把整批写图失败降级为「部分写入 + 诊断」，不让它把整个 operation cycle 拖垮。
+            try:
+                apply_result.kg_apply_result = self._apply_kg_deltas_to_store(
+                    kg_store=kg_store,
+                    kg_ref=kg_ref,
+                    state=state,
+                    state_deltas=apply_result.kg_state_deltas,
+                    state_writer_input=state_writer_input,
+                )
+                apply_result.kg_event_batch = self._kg_batch(state_deltas=apply_result.kg_state_deltas)
+            except Exception as exc:  # noqa: BLE001 - 写图绝不阻断推进，失败仅降级记录
+                apply_result.kg_write_diagnostics = {
+                    "status": "write_failed",
+                    "reason": f"{type(exc).__name__}: {exc}",
+                    "delta_count": len(apply_result.kg_state_deltas),
+                }
+                apply_result.logs.append(f"KG write failed (degraded, cycle continues): {exc}")
+            else:
+                apply_result.kg_write_diagnostics = self._summarize_kg_write(
+                    delta_count=len(apply_result.kg_state_deltas),
+                    apply_result=apply_result.kg_apply_result,
+                )
+        else:
+            apply_result.kg_write_diagnostics = {
+                "status": "no_deltas",
+                "reason": self._diagnose_empty_kg_deltas(stage_result=stage_result, result=canonical_result),
+                "delta_count": 0,
+            }
+            apply_result.logs.append(
+                f"KG write produced 0 deltas: {apply_result.kg_write_diagnostics['reason']}"
             )
-            apply_result.kg_event_batch = self._kg_batch(state_deltas=apply_result.kg_state_deltas)
 
         self._record_stage_result_in_ag(stage_result=stage_result, attack_graph=attack_graph)
         apply_result.ag_graph = attack_graph.to_dict()
@@ -704,6 +720,49 @@ class PhaseTwoResultApplier:
 
         return sorted(list(state_deltas), key=rank)
 
+    @staticmethod
+    def _summarize_kg_write(*, delta_count: int, apply_result: dict[str, Any] | None) -> dict[str, Any]:
+        """Summarize a KG write outcome, surfacing per-delta failures if any."""
+
+        apply_result = apply_result or {}
+        failed = list(apply_result.get("failed_delta_ids") or [])
+        applied_entities = list(apply_result.get("applied_entity_ids") or [])
+        applied_relations = list(apply_result.get("applied_relation_ids") or [])
+        summary: dict[str, Any] = {
+            "status": "partial_write" if failed else "ok",
+            "delta_count": delta_count,
+            "applied_entity_count": len(applied_entities),
+            "applied_relation_count": len(applied_relations),
+            "failed_delta_count": len(failed),
+        }
+        if failed:
+            summary["failed_delta_ids"] = failed
+            summary["errors"] = list(apply_result.get("errors") or [])
+        return summary
+
+    def _diagnose_empty_kg_deltas(
+        self,
+        *,
+        stage_result: StageResult,
+        result: AgentTaskResult,
+    ) -> str:
+        """Explain why a stage produced no KG deltas (instead of failing silently)."""
+
+        if not stage_result.tool_trace:
+            if result.observations or result.evidence:
+                return "observations/evidence present but yielded no writable KG facts"
+            return "stage produced no tool calls, observations or evidence"
+        successful = [trace for trace in stage_result.tool_trace if getattr(trace, "success", False)]
+        if not successful:
+            return f"{len(stage_result.tool_trace)} tool call(s) ran but none succeeded"
+        with_parsed = [trace for trace in successful if getattr(trace, "parsed_output", None)]
+        if not with_parsed:
+            return (
+                f"{len(successful)} successful tool call(s) but none returned structured "
+                "parsed_output to extract KG facts from"
+            )
+        return "tool calls returned parsed_output but no host/service/finding/evidence shapes matched"
+
     def _run_state_writer(
         self,
         *,
@@ -775,31 +834,6 @@ class PhaseTwoResultApplier:
             base_kg_version=kg_store.version,
         )
         return self._state_writer.apply_to_store(store=kg_store, apply_request=apply_request)
-
-    def _run_graph_projection(
-        self,
-        *,
-        state: RuntimeState,
-        kg_ref: GraphRef,
-        batch: KGEventBatch,
-        goal_context: dict[str, Any] | None,
-        policy_context: dict[str, Any] | None,
-        projection_requests: list[ProjectionRequest],
-    ) -> AgentExecutionResult:
-        agent_input = AgentInput(
-            graph_refs=[kg_ref],
-            context=AgentContext(
-                operation_id=state.operation_id,
-                runtime_state_ref=state.operation_id,
-            ),
-            raw_payload={
-                "kg_event_batch": batch.model_dump(mode="json"),
-                "goal_context": dict(goal_context or {}),
-                "policy_context": dict(policy_context or {}),
-                "projection_requests": [item.model_dump(mode="json") for item in projection_requests],
-            },
-        )
-        return self._graph_projection.run(agent_input)
 
     def _apply_runtime_effects(
         self,
@@ -1893,6 +1927,495 @@ class PhaseTwoResultApplier:
         if not isinstance(value, list):
             return []
         return [dict(item) for item in value if isinstance(item, dict)]
+
+    def _structured_stage_state_deltas(
+        self,
+        *,
+        stage_result: StageResult,
+        result: AgentTaskResult,
+    ) -> list[dict[str, Any]]:
+        """Extract common black-box discovery shapes into KG state deltas.
+
+        This accepts schema-level facts only: hosts, services, findings and
+        evidence records that the stage/tool output already contains. It does
+        not infer target-specific topology, ports, credentials or vulnerabilities.
+        """
+
+        entities: dict[str, KGEntityPatch] = {}
+        relations: dict[str, KGRelationPatch] = {}
+        source_refs = self._structured_stage_source_refs(stage_result)
+        provenance = {
+            "worker_result_id": result.result_id,
+            "source_task_id": stage_result.stage_task_id,
+            "source_agent": stage_result.agent_name,
+            "stage_result_id": stage_result.result_id,
+        }
+
+        def add_entity(patch: KGEntityPatch) -> None:
+            entities[patch.entity_id] = patch
+
+        def add_relation(patch: KGRelationPatch) -> None:
+            relations[patch.relation_id] = patch
+
+        for payload in self._iter_stage_structured_payloads(stage_result):
+            for host in self._extract_host_records(payload):
+                host_id = self._host_entity_id(host)
+                if not host_id:
+                    continue
+                label = self._coalesce_string(host.get("label"), host.get("hostname"), host.get("address"), host_id)
+                add_entity(
+                    KGEntityPatch(
+                        entity_id=host_id,
+                        entity_type=NodeType.HOST.value,
+                        label=label,
+                        attributes={
+                            **self._whitelist_attributes(host, self._HOST_ATTR_KEYS),
+                            "address": self._coalesce_optional_string(host.get("address"), host.get("host"), host.get("ip")),
+                            "confidence": self._bounded_confidence(host.get("confidence"), stage_result.confidence),
+                            "source_task_id": stage_result.stage_task_id,
+                        },
+                        source_refs=source_refs,
+                        provenance=provenance,
+                    )
+                )
+
+            for service in self._extract_service_records(payload):
+                host_id = self._host_entity_id(service)
+                service_id = self._service_entity_id(service)
+                if not host_id or not service_id:
+                    continue
+                # 只在 host 尚未被建过时补一个骨架节点；若 host 循环已写入富属性，
+                # 不能用这个精简 patch 覆盖它（否则 host 的 hostname/属性会被抹掉）。
+                if host_id not in entities:
+                    add_entity(
+                        KGEntityPatch(
+                            entity_id=host_id,
+                            entity_type=NodeType.HOST.value,
+                            label=self._coalesce_string(service.get("host"), service.get("address"), service.get("ip"), host_id),
+                            attributes={
+                                "address": self._coalesce_optional_string(service.get("host"), service.get("address"), service.get("ip")),
+                                "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
+                                "source_task_id": stage_result.stage_task_id,
+                            },
+                            source_refs=source_refs,
+                            provenance=provenance,
+                        )
+                    )
+                protocol = self._coalesce_string(service.get("protocol"), "tcp").lower()
+                port = self._coerce_port(service.get("port"))
+                label = self._service_label(service, service_id)
+                add_entity(
+                    KGEntityPatch(
+                        entity_id=service_id,
+                        entity_type=NodeType.SERVICE.value,
+                        label=label,
+                        attributes={
+                            **self._whitelist_attributes(service, self._SERVICE_ATTR_KEYS),
+                            "service_name": self._coalesce_optional_string(
+                                service.get("service_name"),
+                                service.get("service"),
+                                service.get("name"),
+                                service.get("product"),
+                            ),
+                            "port": port,
+                            "protocol": protocol,
+                            "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
+                            "source_task_id": stage_result.stage_task_id,
+                        },
+                        source_refs=source_refs,
+                        provenance=provenance,
+                    )
+                )
+                add_relation(
+                    KGRelationPatch(
+                        relation_id=f"{EdgeType.HOSTS.value.lower()}::{host_id}::{service_id}",
+                        relation_type=EdgeType.HOSTS.value,
+                        source=host_id,
+                        target=service_id,
+                        label="hosts",
+                        attributes={
+                            "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
+                            "source_task_id": stage_result.stage_task_id,
+                        },
+                        source_refs=source_refs,
+                        provenance=provenance,
+                    )
+                )
+
+            for evidence in self._extract_negative_evidence_records(payload, stage_result):
+                add_entity(
+                    KGEntityPatch(
+                        entity_id=str(evidence["id"]),
+                        entity_type=NodeType.EVIDENCE.value,
+                        label=str(evidence["summary"]),
+                        attributes={
+                            "summary": evidence["summary"],
+                            "evidence_kind": evidence["kind"],
+                            "content_ref": evidence.get("payload_ref"),
+                            "confidence": self._bounded_confidence(evidence.get("confidence"), stage_result.confidence),
+                            "source_task_id": stage_result.stage_task_id,
+                            "properties": dict(evidence.get("metadata") or {}),
+                        },
+                        source_refs=source_refs,
+                        provenance=provenance,
+                    )
+                )
+
+        for finding in stage_result.findings:
+            if not isinstance(finding, dict):
+                continue
+            finding_id = self._coalesce_string(
+                finding.get("finding_id"),
+                finding.get("id"),
+                f"finding::{stage_result.stage_task_id}::{len(entities)}",
+            )
+            summary = self._coalesce_string(finding.get("title"), finding.get("summary"), finding.get("description"), finding_id)
+            add_entity(
+                KGEntityPatch(
+                    entity_id=finding_id,
+                    entity_type=NodeType.FINDING.value,
+                    label=summary,
+                    attributes={
+                        **self._whitelist_attributes(finding, self._FINDING_ATTR_KEYS),
+                        "summary": summary,
+                        "finding_kind": self._coalesce_optional_string(finding.get("kind"), finding.get("type")),
+                        "severity": self._coalesce_optional_string(finding.get("severity")),
+                        "confidence": self._bounded_confidence(finding.get("confidence"), stage_result.confidence),
+                        "evidence_refs": list(finding.get("evidence_refs") or stage_result.evidence_refs),
+                        "source_task_id": stage_result.stage_task_id,
+                    },
+                    source_refs=source_refs,
+                    provenance=provenance,
+                )
+            )
+
+        # 降级保障：若整段 stage 没抽出任何结构化实体，但确有成功的工具调用，
+        # 至少把每次工具结果落成一个 Evidence 节点，避免「工具结果完全写不进图」。
+        if not entities:
+            for trace in stage_result.tool_trace:
+                if not getattr(trace, "success", False):
+                    continue
+                evidence_id = f"evidence::tool::{stage_result.stage_task_id}::{trace.trace_id}"
+                summary = self._coalesce_string(
+                    trace.summary, trace.input_summary, f"tool {trace.tool_name} result"
+                )
+                add_entity(
+                    KGEntityPatch(
+                        entity_id=evidence_id,
+                        entity_type=NodeType.EVIDENCE.value,
+                        label=summary,
+                        attributes={
+                            "summary": summary,
+                            "evidence_kind": "tool_result",
+                            "content_ref": trace.raw_output_ref,
+                            "confidence": self._bounded_confidence(None, stage_result.confidence),
+                            "source_task_id": stage_result.stage_task_id,
+                            "properties": {
+                                "tool_name": trace.tool_name,
+                                "tool_category": trace.tool_category,
+                                "step": trace.step,
+                            },
+                        },
+                        source_refs=source_refs,
+                        provenance=provenance,
+                    )
+                )
+
+        return self._state_writer.build_state_deltas(
+            entity_patches=list(entities.values()),
+            relation_patches=list(relations.values()),
+            require_known_endpoints=True,
+        )
+
+    # 白名单：只把这些 schema 级字段写进节点属性，不再把原始工具输出整包 spread 进图。
+    _HOST_ATTR_KEYS = frozenset(
+        {"address", "hostname", "label", "os", "os_family", "mac", "status", "network_zone", "state"}
+    )
+    _SERVICE_ATTR_KEYS = frozenset(
+        {"service_name", "service", "name", "product", "version", "port", "protocol", "banner", "cpe", "state", "tls"}
+    )
+    _FINDING_ATTR_KEYS = frozenset(
+        {"title", "summary", "description", "kind", "type", "severity", "category", "cwe", "cve", "reference"}
+    )
+
+    @staticmethod
+    def _whitelist_attributes(record: dict[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
+        """Keep only whitelisted schema-level keys from a raw tool/finding record."""
+
+        return {key: value for key, value in record.items() if key in allowed and value is not None}
+
+    @staticmethod
+    def _structured_stage_source_refs(stage_result: StageResult) -> list[dict[str, Any]]:
+        return [
+            GraphRef(graph=GraphScope.RUNTIME, ref_id=stage_result.stage_task_id, ref_type="stage_task").model_dump(mode="json"),
+            GraphRef(graph=GraphScope.RUNTIME, ref_id=stage_result.result_id, ref_type="stage_result").model_dump(mode="json"),
+        ]
+
+    @classmethod
+    def _iter_stage_structured_payloads(cls, stage_result: StageResult) -> list[dict[str, Any]]:
+        payloads: list[dict[str, Any]] = []
+        for collection in (stage_result.observations, stage_result.evidence, stage_result.findings):
+            for item in collection:
+                if not isinstance(item, dict):
+                    continue
+                payloads.append(dict(item))
+                for key in ("payload", "metadata", "properties", "parsed_output", "parsed"):
+                    nested = item.get(key)
+                    if isinstance(nested, dict):
+                        payloads.append(dict(nested))
+        for trace in stage_result.tool_trace:
+            if trace.parsed_output:
+                payloads.append(dict(trace.parsed_output))
+            if isinstance(trace.metadata, dict):
+                # parsed_output 为空时的降级路径：从 metadata 里回退读结构化载荷，
+                # 覆盖 parsed/parsed_output/result/content/output 几种常见落点。
+                for key in ("parsed", "parsed_output", "result", "content", "output"):
+                    nested = trace.metadata.get(key)
+                    if isinstance(nested, dict):
+                        payloads.append(dict(nested))
+                if any(k in trace.metadata for k in ("host", "address", "ip", "hostname", "port", "ports", "service", "service_name", "hosts", "services")):
+                    payloads.append(dict(trace.metadata))
+        return cls._dedupe_dicts(payloads)
+
+    @classmethod
+    def _extract_host_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in ("hosts_up", "live_hosts", "reachable_hosts", "discovered_hosts", "hosts"):
+            for item in cls._as_list(payload.get(key)):
+                record = cls._host_record(item)
+                if record:
+                    records.append(record)
+        record = cls._host_record(payload)
+        if record and any(key in payload for key in ("host", "address", "ip", "hostname")):
+            records.append(record)
+        return cls._dedupe_dicts(records)
+
+    @classmethod
+    def _extract_service_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in (
+            "service_discovery",
+            "open_services",
+            "services",
+            "discovered_services",
+            "known_services",
+            "service_fingerprints",
+        ):
+            for item in cls._as_list(payload.get(key)):
+                records.extend(cls._service_records(item))
+        analysis = payload.get("analysis")
+        if isinstance(analysis, dict):
+            for item in cls._as_list(analysis.get("service_fingerprints")):
+                records.extend(cls._service_records(item))
+        if any(key in payload for key in ("port", "ports", "service", "service_name")):
+            records.extend(cls._service_records(payload))
+        return cls._dedupe_dicts(records)
+
+    @classmethod
+    def _extract_negative_evidence_records(cls, payload: dict[str, Any], stage_result: StageResult) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for key in ("negative_evidence", "negative_observations"):
+            for index, item in enumerate(cls._as_list(payload.get(key))):
+                if isinstance(item, dict):
+                    summary = cls._coalesce_string(item.get("summary"), item.get("description"), item.get("reason"), item)
+                    metadata = dict(item)
+                else:
+                    summary = str(item)
+                    metadata = {"value": item}
+                if not summary:
+                    continue
+                records.append(
+                    {
+                        "id": cls._coalesce_string(
+                            metadata.get("evidence_id"),
+                            metadata.get("id"),
+                            f"evidence::{stage_result.stage_task_id}::{key}::{index}",
+                        ),
+                        "kind": "negative_evidence",
+                        "summary": summary,
+                        "payload_ref": metadata.get("payload_ref") or f"runtime://stage-results/{stage_result.stage_task_id}",
+                        "metadata": metadata,
+                        "confidence": metadata.get("confidence"),
+                    }
+                )
+        return records
+
+    @classmethod
+    def _host_record(cls, item: Any) -> dict[str, Any] | None:
+        if isinstance(item, dict):
+            value = cls._coalesce_optional_string(item.get("host"), item.get("address"), item.get("ip"), item.get("hostname"), item.get("target"))
+            if not value:
+                return None
+            return {**item, "host": value, "address": cls._coalesce_optional_string(item.get("address"), value)}
+        if item is None:
+            return None
+        value = str(item).strip()
+        if not value:
+            return None
+        host, _port, _protocol = cls._split_host_port(value)
+        return {"host": host, "address": host, "value": value}
+
+    @classmethod
+    def _service_records(cls, item: Any) -> list[dict[str, Any]]:
+        if isinstance(item, dict):
+            host = cls._coalesce_optional_string(item.get("host"), item.get("address"), item.get("ip"), item.get("target"), item.get("hostname"))
+            port = cls._coerce_port(item.get("port"))
+            protocol = cls._coalesce_optional_string(item.get("protocol"), item.get("scheme")) or "tcp"
+            if host and port is None:
+                split_host, split_port, split_protocol = cls._split_host_port(host)
+                host = split_host
+                port = split_port
+                protocol = split_protocol or protocol
+            records: list[dict[str, Any]] = []
+            ports = item.get("ports")
+            if isinstance(ports, list):
+                for raw_port in ports:
+                    candidate = dict(item)
+                    candidate.pop("ports", None)
+                    candidate["host"] = host
+                    candidate["port"] = cls._coerce_port(raw_port)
+                    candidate["protocol"] = protocol
+                    if candidate["host"] and candidate["port"]:
+                        records.append(candidate)
+            if host and port:
+                fingerprint = item.get("improved_fingerprint") if isinstance(item.get("improved_fingerprint"), dict) else {}
+                current = item.get("current_fingerprint") if isinstance(item.get("current_fingerprint"), dict) else {}
+                records.append(
+                    {
+                        **item,
+                        "host": host,
+                        "port": port,
+                        "protocol": protocol,
+                        "service": cls._coalesce_optional_string(
+                            item.get("service"),
+                            item.get("service_name"),
+                            fingerprint.get("application"),
+                            current.get("service"),
+                            current.get("product"),
+                        ),
+                        "product": cls._coalesce_optional_string(
+                            item.get("product"),
+                            fingerprint.get("application"),
+                            current.get("product"),
+                        ),
+                        "version": cls._coalesce_optional_string(
+                            item.get("version"),
+                            fingerprint.get("application_version"),
+                            current.get("version"),
+                        ),
+                    }
+                )
+            return records
+        if item is None:
+            return []
+        host, port, protocol = cls._split_host_port(str(item))
+        if not host or not port:
+            return []
+        return [{"host": host, "port": port, "protocol": protocol or "tcp", "value": str(item)}]
+
+    @staticmethod
+    def _as_list(value: Any) -> list[Any]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return list(value)
+        return [value]
+
+    @classmethod
+    def _host_entity_id(cls, record: dict[str, Any]) -> str | None:
+        explicit = cls._coalesce_optional_string(record.get("host_id"), record.get("entity_id"), record.get("id"))
+        if explicit and str(record.get("type") or record.get("entity_type") or "Host").lower() == "host":
+            return explicit
+        value = cls._coalesce_optional_string(record.get("host"), record.get("address"), record.get("ip"), record.get("hostname"))
+        if not value:
+            return None
+        return value if value.startswith("host::") else f"host::{value}"
+
+    @classmethod
+    def _service_entity_id(cls, record: dict[str, Any]) -> str | None:
+        explicit = cls._coalesce_optional_string(record.get("service_id"), record.get("entity_id"), record.get("id"))
+        if explicit and str(record.get("type") or record.get("entity_type") or "Service").lower() == "service":
+            return explicit
+        host = cls._coalesce_optional_string(record.get("host"), record.get("address"), record.get("ip"), record.get("hostname"))
+        port = cls._coerce_port(record.get("port"))
+        if not host or not port:
+            return None
+        protocol = cls._coalesce_string(record.get("protocol"), "tcp").lower()
+        return f"service::{host}:{port}/{protocol}"
+
+    @classmethod
+    def _service_label(cls, record: dict[str, Any], fallback: str) -> str:
+        host = cls._coalesce_optional_string(record.get("host"), record.get("address"), record.get("ip"), record.get("hostname"))
+        port = cls._coerce_port(record.get("port"))
+        protocol = cls._coalesce_string(record.get("protocol"), "tcp").lower()
+        name = cls._coalesce_optional_string(record.get("service_name"), record.get("service"), record.get("name"), record.get("product"))
+        if host and port and name:
+            return f"{host}:{port}/{protocol} {name}"
+        if host and port:
+            return f"{host}:{port}/{protocol}"
+        return fallback
+
+    @staticmethod
+    def _split_host_port(value: str) -> tuple[str | None, int | None, str | None]:
+        text = value.strip()
+        if not text:
+            return None, None, None
+        protocol: str | None = None
+        if "://" in text:
+            scheme, remainder = text.split("://", 1)
+            protocol = scheme.lower() or None
+            text = remainder.split("/", 1)[0]
+        elif "/" in text:
+            text, protocol = text.rsplit("/", 1)
+            protocol = protocol.lower() or None
+        if ":" not in text:
+            return text, None, protocol
+        host, port_text = text.rsplit(":", 1)
+        return host or None, PhaseTwoResultApplier._coerce_port(port_text), protocol
+
+    @staticmethod
+    def _coerce_port(value: Any) -> int | None:
+        try:
+            port = int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        if 1 <= port <= 65535:
+            return port
+        return None
+
+    @staticmethod
+    def _bounded_confidence(value: Any, fallback: float) -> float:
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            confidence = float(fallback)
+        return max(0.0, min(1.0, confidence))
+
+    @staticmethod
+    def _coalesce_optional_string(*values: Any) -> str | None:
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return None
+
+    @classmethod
+    def _coalesce_string(cls, *values: Any) -> str:
+        return cls._coalesce_optional_string(*values) or "unknown"
+
+    @staticmethod
+    def _dedupe_dicts(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for item in items:
+            fingerprint = repr(sorted(item.items(), key=lambda pair: str(pair[0])))
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            result.append(item)
+        return result
 
     @staticmethod
     def _result_target_host_id(result: AgentTaskResult) -> str | None:

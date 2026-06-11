@@ -1,0 +1,50 @@
+vuln_profile_id: struts2-s2-045
+display_name: "Apache Struts2 S2-045 (CVE-2017-5638)"
+cve: CVE-2017-5638
+cwe: CWE-20
+cvss: 10.0
+description: >
+  Remote code execution via malicious Content-Type header in Struts2
+  multipart request handling. Affects Struts 2.3.5 through 2.3.31 and
+  2.5 through 2.5.10.
+
+fingerprint_signals:
+  services:
+    - struts
+    - tomcat
+  protocols:
+    - http
+    - https
+  products:
+    - "Apache Struts"
+    - "Struts2"
+  version_ranges:
+    - "2.3.5 - 2.3.31"
+    - "2.5 - 2.5.10"
+  banner_markers:
+    - "struts"
+    - "S2-"
+  title_markers:
+    - "struts"
+    - "Apache Struts"
+  header_markers:
+    - "X-Struts-Version"
+  path_markers:
+    - ".action"
+    - "/struts2"
+  body_markers:
+    - "ognl"
+    - "struts"
+
+confidence_weights:
+  product_match: 0.6
+  version_match: 0.3
+  banner_match: 0.4
+  path_match: 0.3
+
+recommended_exploit_profiles:
+  - struts2-s2-045-lab-exploit
+
+safe_validation_methods:
+  - http_header_probe
+  - error_message_analysis

@@ -6,7 +6,8 @@ from src.app import api as app_api
 from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.ag import AttackGraph, StateNode, StateNodeType
+from src.core.models.ag import AttackGraph
+from src.core.models.attack_process import AgentExecutionNode
 from src.core.models.kg import Host
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.visualization.graph_event import GraphOperation, VisualGraphChange, VisualGraphDelta
@@ -37,10 +38,10 @@ def test_visual_snapshot_serializes_kg_ag_and_runtime_by_default() -> None:
 
     ag = AttackGraph()
     ag.add_node(
-        StateNode(
+        AgentExecutionNode(
             id="state-1",
             label="Host known",
-            node_type=StateNodeType.HOST_KNOWN,
+            operation_id="op-vis",
         )
     )
 
@@ -54,7 +55,7 @@ def test_visual_snapshot_serializes_kg_ag_and_runtime_by_default() -> None:
 
     assert snapshot.type == "graph_snapshot"
     assert snapshot.graphs["kg"].nodes[0].id == "host-1"
-    assert snapshot.graphs["ag"].nodes[0].type == "HOST_KNOWN"
+    assert snapshot.graphs["ag"].nodes[0].type == "AGENT_EXECUTION"
     assert snapshot.graphs["runtime"].nodes[0].type == "OperationRuntime"
     assert "tg" not in snapshot.graphs
 
@@ -81,17 +82,15 @@ def test_unified_visualization_adapts_generic_fields_without_environment_assumpt
     runtime = RuntimeState(operation_id="op-unified", execution=OperationRuntime(operation_id="op-unified"))
     ag = AttackGraph()
     ag.add_node(
-        StateNode(
+        AgentExecutionNode(
             id="state-alpha",
             label="Recon completed",
-            node_type=StateNodeType.HOST_KNOWN,
-            properties={
-                "agent_name": "ReconAgent",
-                "cycle_index": 1,
-                "status": "success",
-                "result_summary": "Host was discovered",
-                "target": "host-alpha",
-            },
+            operation_id="op-unified",
+            agent_name="ReconAgent",
+            cycle_index=1,
+            status="success",
+            summary="Host was discovered",
+            properties={"target": "host-alpha"},
         )
     )
 
@@ -106,6 +105,101 @@ def test_unified_visualization_adapts_generic_fields_without_environment_assumpt
     assert payload["kg"]["nodes"][0]["display_name"] == "host-alpha"
     assert payload["overview"]["asset_count"] == 1
     assert payload["timeline"][0]["id"] == "timeline::state-alpha"
+
+
+def test_unified_visualization_contract_includes_current_dashboard_interfaces() -> None:
+    runtime = RuntimeState(operation_id="op-interface", execution=OperationRuntime(operation_id="op-interface"))
+    runtime.execution.metadata["findings"] = [
+        {
+            "finding_id": "finding-1",
+            "title": "Open HTTP service",
+            "summary": "HTTP was observed on the target.",
+            "severity": "info",
+            "confidence": 0.8,
+            "evidence_ids": ["evidence-1"],
+            "target": "host-alpha",
+        }
+    ]
+    kg_payload = {
+        "nodes": [
+            {"id": "host-alpha", "type": "Host", "address": "host-alpha", "status": "observed"},
+            {
+                "id": "service-http",
+                "type": "Service",
+                "status": "observed",
+                "properties": {
+                    "host": "host-alpha",
+                    "service_name": "http",
+                    "port": 80,
+                    "protocol": "tcp",
+                    "product": "generic-http",
+                    "version": "1.0",
+                    "risk_tags": ["http_service_detected"],
+                    "evidence_ids": ["evidence-1"],
+                },
+            },
+            {"id": "evidence-1", "type": "Evidence", "summary": "Probe output", "status": "observed"},
+        ],
+        "edges": [{"id": "edge-1", "source": "host-alpha", "target": "service-http", "type": "EXPOSES"}],
+    }
+    ag_payload = {
+        "nodes": [
+            {
+                "id": "planner-1",
+                "type": "PLANNER_DECISION",
+                "properties": {
+                    "cycle_index": 1,
+                    "selected_agent": "ReconAgent",
+                    "selected_stage": "RECON_STAGE",
+                    "reasoning_summary": "No service facts existed yet.",
+                    "objective": "Discover exposed services.",
+                    "status": "success",
+                },
+            },
+            {
+                "id": "tool-1",
+                "type": "TOOL_CALL",
+                "properties": {
+                    "cycle_index": 1,
+                    "agent_name": "ReconAgent",
+                    "stage_type": "RECON_STAGE",
+                    "tool_name": "safe_probe",
+                    "target": "host-alpha",
+                    "status": "success",
+                    "result_summary": "HTTP service discovered.",
+                    "evidence_ids": ["evidence-1"],
+                    "finding_ids": ["finding-1"],
+                    "risk_tags": ["http_service_detected", "weak_config_candidate"],
+                    "trace_id": "trace-1",
+                },
+            },
+        ],
+        "edges": [],
+    }
+
+    payload = build_unified_visualization(
+        operation_id="op-interface",
+        kg_payload=kg_payload,
+        ag_payload=ag_payload,
+        runtime_state=runtime,
+    )
+
+    assert payload["tool_trace"][0]["id"] == "trace-1"
+    assert payload["findings"][0]["evidence_ids"] == ["evidence-1"]
+    assert payload["service_matrix"][0]["services"][0]["name"] == "http"
+    assert payload["service_matrix"][0]["services"][0]["product"] == "generic-http"
+    assert payload["service_matrix"][0]["services"][0]["version"] == "1.0"
+    assert payload["service_matrix"][0]["open_ports"] == 1
+    assert payload["service_matrix"][0]["vulnerability_tags"] == ["http_service_detected", "weak_config_candidate"]
+    assert payload["overview"]["open_ports"] == 1
+    assert payload["overview"]["identified_services"] == 1
+    assert payload["overview"]["vulnerability_tag_count"] == 2
+    assert payload["overview"]["last_cycle_summary"]["cycle_index"] == 1
+    assert payload["risk_tags"] == ["http_service_detected", "weak_config_candidate"]
+    assert payload["kg_groups"]["assets"][0]["id"] == "host-alpha"
+    planner_cycle = next(item for item in payload["planner_reasoning"] if item["cycle_index"] == 1)
+    assert planner_cycle["selected_agent"] == "ReconAgent"
+    assert payload["timeline"][0]["result_summary"]
 
 
 def test_visual_snapshot_api_and_websocket(tmp_path) -> None:

@@ -37,8 +37,8 @@ class PackyLLMConfig(BaseModel):
     timeout_sec: float = Field(default=30.0, gt=0.0, le=300.0)
     input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
-    max_retries: int = Field(default=2, ge=0, le=5)
-    retry_backoff_sec: float = Field(default=1.0, ge=0.0, le=30.0)
+    max_retries: int = Field(default=4, ge=0, le=6)
+    retry_backoff_sec: float = Field(default=2.0, ge=0.0, le=30.0)
 
     @field_validator("base_url", mode="before")
     @classmethod
@@ -68,9 +68,9 @@ class PackyLLMConfig(BaseModel):
         timeout_value = os.getenv("AEGRA_LLM_TIMEOUT_SEC")
         timeout_sec = float(timeout_value) if timeout_value else 30.0
         retries_value = os.getenv("AEGRA_LLM_MAX_RETRIES")
-        max_retries = int(retries_value) if retries_value else 2
+        max_retries = int(retries_value) if retries_value else 4
         backoff_value = os.getenv("AEGRA_LLM_RETRY_BACKOFF_SEC")
-        retry_backoff_sec = float(backoff_value) if backoff_value else 1.0
+        retry_backoff_sec = float(backoff_value) if backoff_value else 2.0
         input_cost = _env_float("AEGRA_LLM_INPUT_COST_PER_1M_TOKENS")
         output_cost = _env_float("AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS")
         return cls(
@@ -385,15 +385,22 @@ class PackyLLMClient:
                 continue
             if response.status_code in {408, 409, 425, 429, 500, 502, 503, 504} and attempt < attempts:
                 last_exc = None
-                self._sleep_before_retry(attempt)
+                self._sleep_before_retry(attempt, response=response)
                 continue
             return response
         if last_exc is not None:
             raise PackyLLMError(f"llm_transport_error: {last_exc}") from last_exc
         raise PackyLLMError("llm_transport_error: exhausted retries without response")
 
-    def _sleep_before_retry(self, attempt: int) -> None:
-        delay = float(self._config.retry_backoff_sec) * max(0, attempt)
+    def _sleep_before_retry(self, attempt: int, response: httpx.Response | None = None) -> None:
+        retry_after = response.headers.get("Retry-After") if response is not None else None
+        try:
+            delay = float(retry_after) if retry_after is not None else None
+        except ValueError:
+            delay = None
+        if delay is None:
+            delay = float(self._config.retry_backoff_sec) * (2 ** max(0, attempt - 1))
+        delay = min(delay, 30.0)
         if delay > 0:
             time.sleep(delay)
 

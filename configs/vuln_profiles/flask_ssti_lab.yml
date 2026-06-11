@@ -1,0 +1,50 @@
+vuln_profile_id: flask-ssti-lab
+display_name: "Flask/Jinja2 Server-Side Template Injection"
+cve: null
+cwe: CWE-94
+cvss: 8.8
+description: >
+  Server-side template injection in Flask applications using Jinja2 when
+  user input is rendered directly in templates without sanitization.
+
+fingerprint_signals:
+  services:
+    - flask
+    - python
+    - wsgi
+  protocols:
+    - http
+    - https
+  products:
+    - "Flask"
+    - "Jinja2"
+    - "Werkzeug"
+  version_ranges: []
+  banner_markers:
+    - "flask"
+    - "werkzeug"
+    - "jinja"
+  title_markers:
+    - "Flask"
+  header_markers:
+    - "Server: Werkzeug"
+  path_markers:
+    - "/hello"
+    - "/render"
+    - "/template"
+  body_markers:
+    - "Jinja"
+    - "werkzeug"
+    - "template"
+
+confidence_weights:
+  product_match: 0.5
+  banner_match: 0.5
+  path_match: 0.2
+
+recommended_exploit_profiles:
+  - flask-ssti-lab-exploit
+
+safe_validation_methods:
+  - template_syntax_probe
+  - error_message_analysis

@@ -16,12 +16,6 @@ from src.core.agents.agent_protocol import GraphRef, GraphScope
 from src.core.models.runtime import RuntimeStatus
 from src.core.runtime.approvals import ApprovalManager, ApprovalRequest
 from src.core.runtime.policy import policy_from_runtime_state
-from src.core.workers.vulnerability_validators import (
-    HttpFingerprintValidator,
-    Struts2S2045Validator,
-    ValidationTarget,
-    ValidatorRegistry,
-)
 
 try:  # pragma: no cover - exercised only when FastAPI is installed
     from fastapi import FastAPI, HTTPException, Query, Response
@@ -103,15 +97,6 @@ class OperationRunRequest(OperationCycleRequest):
     stop_when_quiescent: bool = True
     max_replans: int = Field(default=3, ge=0, le=20)
     consecutive_llm_rejections: int = Field(default=3, ge=1, le=20)
-
-
-class ValidatorTestRequest(BaseModel):
-    """Safe validator test payload."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    target: ValidationTarget
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def _default_graph_refs() -> list[GraphRef]:
@@ -199,19 +184,6 @@ def _operation_policy_summary(orchestrator: AppOrchestrator, operation_id: str) 
     }
 
 
-def _validator_registry() -> ValidatorRegistry:
-    return ValidatorRegistry([Struts2S2045Validator(), HttpFingerprintValidator()])
-
-
-def _validator_summary(validator: Any) -> dict[str, Any]:
-    return {
-        "id": str(getattr(validator, "validator_id", "")),
-        "aliases": list(getattr(validator, "aliases", ())),
-        "safe_mode": True,
-        "description": (getattr(validator, "__doc__", "") or "").strip(),
-    }
-
-
 def create_app(
     orchestrator: AppOrchestrator | None = None,
     settings: AppSettings | None = None,
@@ -236,9 +208,9 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    static_dir = Path(__file__).resolve().parents[1] / "static"
-    if StaticFiles is not None and static_dir.exists():
-        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
+    dashboard_dist = Path(__file__).resolve().parents[3] / "web" / "dashboard" / "dist"
+    if StaticFiles is not None and dashboard_dist.exists():
+        app.mount("/ui", StaticFiles(directory=dashboard_dist, html=True), name="ui")
 
     @app.get("/")
     def root() -> dict[str, str]:
@@ -440,21 +412,6 @@ def create_app(
             return resolved_orchestrator.get_findings_graph(operation_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    @app.get("/validators")
-    def list_validators() -> list[dict[str, Any]]:
-        return [_validator_summary(validator) for validator in _validator_registry().list_validators()]
-
-    @app.post("/validators/{validator_id}/test")
-    def test_validator(validator_id: str, request: ValidatorTestRequest) -> dict[str, Any]:
-        registry = _validator_registry()
-        validator = registry.get(validator_id)
-        if validator is None:
-            raise HTTPException(status_code=404, detail=f"validator '{validator_id}' not found")
-        metadata = dict(request.metadata)
-        metadata["validator_id"] = validator_id
-        result = validator.validate(request.target, metadata)
-        return result.model_dump(mode="json")
 
     @app.get("/operations/{operation_id}/report")
     def export_findings_report(

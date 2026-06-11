@@ -134,20 +134,64 @@ class LLMDrivenStageAgent:
             self._log_stage_finish(logger, request, result)
             return result
 
-        result = StageResult(
+        result = self._partial_result_from_tool_memory(request, memory, tool_traces)
+        self._log_stage_finish(logger, request, result)
+        return result
+
+    def _partial_result_from_tool_memory(
+        self,
+        request: StageExecutionRequest,
+        memory: list[dict[str, Any]],
+        tool_traces: list[ToolTrace],
+    ) -> StageResult:
+        evidence = self._tool_trace_evidence(tool_traces)
+        observations = list(memory)
+        if tool_traces:
+            observations.append(
+                {
+                    "category": "stage_tool_trace_summary",
+                    "summary": f"{self.agent_name} reached max_steps after {len(tool_traces)} tool call(s); preserving tool evidence for writeback.",
+                    "tool_count": len(tool_traces),
+                    "successful_tool_count": sum(1 for trace in tool_traces if trace.success),
+                    "parsed_outputs": [trace.parsed_output for trace in tool_traces if trace.parsed_output],
+                }
+            )
+        return StageResult(
             operation_id=request.operation_id,
             stage_task_id=self._request_id(request),
             stage_type=request.stage_type,
             agent_name=self.agent_name,
             status="partial",
             summary=f"{self.agent_name} reached max_steps for {self._request_id(request)}",
-            observations=list(memory),
+            observations=observations,
+            evidence=evidence,
+            evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             tool_traces=list(tool_traces),
-            runtime_hints={"cycle_index": request.cycle_index},
+            runtime_hints={"cycle_index": request.cycle_index, "max_steps_exhausted": True},
         )
-        self._log_stage_finish(logger, request, result)
-        return result
+
+    @staticmethod
+    def _tool_trace_evidence(tool_traces: list[ToolTrace]) -> list[dict[str, Any]]:
+        evidence: list[dict[str, Any]] = []
+        for trace in tool_traces:
+            if not trace.success:
+                continue
+            payload_ref = trace.raw_output_ref or f"runtime://tool-trace/{trace.trace_id}"
+            evidence.append(
+                {
+                    "evidence_id": f"evidence::{trace.trace_id}",
+                    "kind": "stage_tool_trace",
+                    "summary": trace.summary or f"{trace.server_id}.{trace.tool_name}",
+                    "payload_ref": payload_ref,
+                    "tool_output_ref": payload_ref,
+                    "tool": trace.tool_name,
+                    "server_id": trace.server_id,
+                    "parsed_output": trace.parsed_output,
+                    "confidence": 0.8,
+                }
+            )
+        return evidence
 
     def _call_mcp_tool(
         self,
@@ -231,6 +275,14 @@ class LLMDrivenStageAgent:
         )
         result = raw if isinstance(raw, MCPToolCallResult) else MCPToolCallResult.model_validate(raw)
         original_policy = self._original_policy_decision(call=call, policy_context=request.policy_context)
+        parsed_output = dict(result.metadata.get("parsed_output") or {})
+        if not parsed_output and isinstance(result.content, dict) and isinstance(result.content.get("parsed"), dict):
+            parsed_output = dict(result.content["parsed"])
+        raw_output_ref = str(
+            result.metadata.get("raw_output_ref")
+            or (result.content.get("raw_output_ref") if isinstance(result.content, dict) else "")
+            or ""
+        )
         trace = ToolTrace(
             step=step,
             server_id=call.server_id,
@@ -256,8 +308,8 @@ class LLMDrivenStageAgent:
                     "adapter": "mcp",
                 },
             },
-            raw_output_ref=str(result.metadata.get("raw_output_ref") or ""),
-            parsed_output=dict(result.metadata.get("parsed_output") or {}),
+            raw_output_ref=raw_output_ref,
+            parsed_output=parsed_output,
             metadata={**dict(result.metadata), "content": result.content},
         )
         self._log_tool_result(logger, trace)
@@ -328,17 +380,32 @@ class LLMDrivenStageAgent:
         tool_traces: list[ToolTrace],
     ) -> StageResult:
         payload = self._normalized_finish_payload(payload)
+        observations = list(payload.get("observations") or memory)
+        observations.extend(self._structured_finish_observations(payload))
+        findings = self._normalized_findings(payload)
+        status = self._normalized_status(payload.get("status"))
+        if self._empty_success_needs_replan(
+            status=status,
+            summary=payload.get("summary"),
+            observations=observations,
+            findings=findings,
+            evidence=payload.get("evidence"),
+            evidence_refs=payload.get("evidence_refs"),
+            tool_traces=tool_traces,
+        ):
+            status = "needs_replan"
+            payload.setdefault("replan_recommendation", "stage returned no tool results, evidence, findings, or structured output")
         try:
             return StageResult(
                 operation_id=request.operation_id,
                 stage_task_id=self._request_id(request),
                 stage_type=request.stage_type,
                 agent_name=self.agent_name,
-                status=self._normalized_status(payload.get("status")),  # type: ignore[arg-type]
+                status=status,  # type: ignore[arg-type]
                 summary=str(payload.get("summary") or f"{self.agent_name} finished"),
-                observations=list(payload.get("observations") or memory),
+                observations=observations,
                 evidence=self._normalized_evidence(payload),
-                findings=self._normalized_dict_list(payload.get("findings"), default_kind="stage_finding"),
+                findings=findings,
                 discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
                 discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
                 capabilities_gained=list(payload.get("capabilities_gained") or []),
@@ -361,10 +428,107 @@ class LLMDrivenStageAgent:
     def _normalized_finish_payload(payload: dict[str, Any]) -> dict[str, Any]:
         nested = payload.get("result") or payload.get("data") or payload.get("output")
         if not isinstance(nested, dict):
-            return dict(payload)
-        merged = {key: value for key, value in payload.items() if key not in {"result", "data", "output"}}
-        merged.update(nested)
+            merged = dict(payload)
+        else:
+            merged = {key: value for key, value in payload.items() if key not in {"result", "data", "output"}}
+            merged.update(nested)
+        summary = merged.get("summary")
+        if isinstance(summary, str):
+            stripped = summary.strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    for key, value in parsed.items():
+                        merged.setdefault(key, value)
+                    if not isinstance(parsed.get("summary"), str):
+                        merged["summary"] = parsed.get("status") or "structured stage output"
         return merged
+
+    @classmethod
+    def _normalized_findings(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        findings = cls._normalized_dict_list(payload.get("findings"), default_kind="stage_finding")
+        for key in ("candidate_findings", "findings_candidates"):
+            for item in cls._normalized_dict_list(payload.get(key), default_kind="candidate_finding"):
+                normalized = dict(item)
+                normalized.setdefault("kind", normalized.get("type") or "candidate_finding")
+                normalized.setdefault(
+                    "summary",
+                    normalized.get("statement") or normalized.get("title") or normalized.get("description") or str(item),
+                )
+                findings.append(normalized)
+        analysis = payload.get("analysis")
+        if isinstance(analysis, dict):
+            for item in cls._normalized_dict_list(analysis.get("candidate_findings"), default_kind="candidate_finding"):
+                normalized = dict(item)
+                normalized.setdefault("kind", normalized.get("type") or "candidate_finding")
+                normalized.setdefault(
+                    "summary",
+                    normalized.get("statement") or normalized.get("title") or normalized.get("description") or str(item),
+                )
+                findings.append(normalized)
+        return findings
+
+    @staticmethod
+    def _empty_success_needs_replan(
+        *,
+        status: str,
+        summary: Any,
+        observations: list[dict[str, Any]],
+        findings: list[dict[str, Any]],
+        evidence: Any,
+        evidence_refs: Any,
+        tool_traces: list[ToolTrace],
+    ) -> bool:
+        if status != "succeeded":
+            return False
+        if tool_traces or observations or findings:
+            return False
+        if evidence not in (None, "", [], {}) or evidence_refs not in (None, "", [], {}):
+            return False
+        text = str(summary or "").strip().lower()
+        return not text or text.endswith(" finished")
+
+    @staticmethod
+    def _structured_finish_observations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        known_fields = {
+            "action",
+            "status",
+            "summary",
+            "observations",
+            "evidence",
+            "evidence_refs",
+            "findings",
+            "discovered_entities",
+            "discovered_relations",
+            "capabilities_gained",
+            "credentials",
+            "sessions",
+            "pivot_routes",
+            "next_stage_candidates",
+            "handoff_suggestion",
+            "confidence",
+            "replan_recommendation",
+            "result",
+            "data",
+            "output",
+        }
+        structured = {
+            key: value
+            for key, value in payload.items()
+            if key not in known_fields and value not in (None, "", [], {})
+        }
+        if not structured:
+            return []
+        return [
+            {
+                "category": "stage_structured_output",
+                "summary": str(payload.get("summary") or "Structured stage output"),
+                **structured,
+            }
+        ]
 
     @staticmethod
     def _normalized_status(value: Any) -> str:
@@ -449,6 +613,52 @@ class LLMDrivenStageAgent:
         *,
         decision: dict[str, Any] | None = None,
     ) -> StageResult:
+        """Return needs_replan unless successful ToolTraces exist, in which case return partial.
+
+        If any tool trace has success=True, the tool facts must be preserved even
+        when LLM post-processing failed. In this case we return status="partial"
+        so ResultApplier can still extract and write back confirmed facts.
+        """
+        evidence = self._tool_trace_evidence(tool_traces)
+        observations = list(memory)
+        successful_traces = [t for t in tool_traces if t.success]
+        has_successful_tool = len(successful_traces) > 0
+
+        if tool_traces:
+            observations.append(
+                {
+                    "category": "stage_tool_trace_summary",
+                    "summary": f"{self.agent_name} {'has successful tools, preserving facts' if has_successful_tool else 'requested replanning'} after {len(tool_traces)} tool call(s).",
+                    "tool_count": len(tool_traces),
+                    "successful_tool_count": len(successful_traces),
+                    "parsed_outputs": [trace.parsed_output for trace in tool_traces if trace.parsed_output],
+                }
+            )
+
+        # If tools succeeded but LLM post-processing failed, return partial (not needs_replan)
+        # so that deterministic fact extraction can still run.
+        if has_successful_tool:
+            return StageResult(
+                operation_id=request.operation_id,
+                stage_task_id=self._request_id(request),
+                stage_type=request.stage_type,
+                agent_name=self.agent_name,
+                status="partial",
+                summary=f"{self.agent_name}: tools succeeded, LLM postprocess failed - {summary}",
+                observations=observations,
+                evidence=evidence,
+                evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
+                tool_trace=list(tool_traces),
+                tool_traces=list(tool_traces),
+                runtime_hints={
+                    "cycle_index": request.cycle_index,
+                    "llm_postprocess_failed": True,
+                    "recoverable": True,
+                    "missing_context": (decision or {}).get("missing_context") or [],
+                    "successful_tool_count": len(successful_traces),
+                },
+            )
+
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=self._request_id(request),
@@ -456,7 +666,9 @@ class LLMDrivenStageAgent:
             agent_name=self.agent_name,
             status="needs_replan",
             summary=summary,
-            observations=list(memory),
+            observations=observations,
+            evidence=evidence,
+            evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             tool_traces=list(tool_traces),
             replan_recommendation=str((decision or {}).get("replan_reason") or summary),

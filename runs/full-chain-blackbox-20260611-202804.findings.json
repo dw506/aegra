@@ -1,0 +1,202 @@
+[
+  {
+    "evidence": [
+      {
+        "details": "Nmap done: 256 IP addresses (5 hosts up) scanned in 25.47 seconds",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::0f7018a0a22e93f7",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.27638+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "Bounded reconnaissance established multiple reachable in-scope hosts within 10.20.0.0/24."
+  },
+  {
+    "evidence": [
+      {
+        "details": "10.20.0.1 Host is up; 111/tcp open rpcbind 2-4 (RPC #100000); 8000/tcp filtered http-alt",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::427b012065a42248",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.276405+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "10.20.0.1 is reachable with 111/tcp open running rpcbind; same host showed 8000/tcp filtered as negative port-state evidence."
+  },
+  {
+    "evidence": [
+      {
+        "details": "10.20.0.10 Host is up; 8080/tcp open http Jetty 9.2.11.v20150529",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::35d0fab4f21d5b64",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.276422+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "10.20.0.10 is reachable with web service on 8080/tcp identified as Jetty 9.2.11.v20150529."
+  },
+  {
+    "evidence": [
+      {
+        "details": "10.20.0.11 Host is up; 80/tcp open http Apache httpd 2.4.25 ((Debian))",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::d39ccb01caf3de0e",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.276435+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "10.20.0.11 is reachable with web service on 80/tcp identified as Apache httpd 2.4.25 ((Debian))."
+  },
+  {
+    "evidence": [
+      {
+        "details": "10.20.0.50 Host is up; 2222/tcp open ssh OpenSSH 10.2 (protocol 2.0)",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::94fa9251b3be5f9e",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.276448+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "10.20.0.50 is reachable with SSH on 2222/tcp identified as OpenSSH 10.2."
+  },
+  {
+    "evidence": [
+      {
+        "details": "10.20.0.3 Host is up; 8000/tcp open http Uvicorn",
+        "raw_output_ref": "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "source": "stage_memory.nmap_scan"
+      }
+    ],
+    "finding_id": "finding::72fc60edd7533af4",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:13.276459+08:00",
+    "source_agent": "recon_agent",
+    "stage_result_id": "stage-result::e66c76b3b6481210",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-1-recon_agent",
+    "summary": "10.20.0.3 is reachable with web service on 8000/tcp identified as Uvicorn."
+  },
+  {
+    "confidence": "high",
+    "description": "对 http://10.20.0.10:8080/ 的页面指纹显示标题为“Struts2 Showcase - Fileupload sample”，服务器头为 Jetty(9.2.11.v20150529)，HTTP 200。该结果将原先的‘Jetty 9.2.11’通用容器指纹提升为更具体的应用级特征：疑似 Apache Struts2 Showcase 示例应用，且暴露文件上传示例页面。",
+    "evidence_refs": [
+      "finding::stage-full-chain-blackbox-20260611-202804-1-recon_agent::2"
+    ],
+    "finding_id": "finding::2a89392a79c0438a",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:55.053409+08:00",
+    "severity": "info",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::b2ab6bb70ca1d7e6",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-2-vuln_analysis_agent",
+    "supporting_artifacts": [
+      "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json"
+    ],
+    "title": "Improved fingerprint: 10.20.0.10:8080 appears to host an Apache Struts2 Showcase application on Jetty"
+  },
+  {
+    "confidence": "medium",
+    "description": "应用标题直接包含 Struts2 Showcase/Fileupload sample，说明该目标存在与 Struts2 相关的可验证攻击面。但当前 vuln_profile_match 未返回可直接套用的已注册验证配置，因此不能据此声称存在具体 CVE 或已确认漏洞。可将其作为优先候选目标，由后续阶段执行额外路径发现、版本归因或受控安全验证。",
+    "evidence_refs": [
+      "finding::stage-full-chain-blackbox-20260611-202804-1-recon_agent::2"
+    ],
+    "finding_id": "finding::d43c1e6eb45c89e9",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:29:55.053455+08:00",
+    "severity": "low",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::b2ab6bb70ca1d7e6",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-2-vuln_analysis_agent",
+    "supporting_artifacts": [
+      "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+      "var/runtime/full-chain-blackbox-20260611-202804/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+    ],
+    "title": "Candidate validation path: Struts2-associated attack surface on 10.20.0.10:8080 warrants bounded safe validation planning"
+  },
+  {
+    "analysis": "该服务当前可确认是可访问的 Debian Apache Web 服务，但没有标题、框架标识、登录入口、已知路径命中或其他可支持候选漏洞匹配的应用层特征。仅凭版本和服务头，不应声明存在漏洞。",
+    "confidence": 0.72,
+    "evidence": [
+      "recon 已识别 10.20.0.11:80 为 Apache httpd 2.4.25 ((Debian))",
+      "stage_memory 中 web_fingerprint 结果显示 http://10.20.0.11/ 返回 200",
+      "Server 头为 Apache/2.4.25 (Debian)",
+      "页面 title 为 null，当前缺少可归因到具体应用/组件的证据"
+    ],
+    "finding_id": "finding::bcb101c33070ac2e",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:31:11.014995+08:00",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::ba636cab68a3c1f1",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-4-vuln_analysis_agent",
+    "title": "10.20.0.11:80 指纹得到补强但未形成漏洞证据"
+  },
+  {
+    "analysis": "该目标具备最强的应用层特征，且暴露的是 Struts2 Showcase 文件上传示例页面，说明存在明确框架与功能面。但工具侧尚未提供匹配的 bounded validation profile，因此当前只能将其视为高价值候选面，不能据此直接确认漏洞。",
+    "confidence": 0.84,
+    "evidence": [
+      "既有 finding: 10.20.0.10:8080 identified as Jetty 9.2.11.v20150529",
+      "既有 web_fingerprint: title 为 Struts2 Showcase - Fileupload sample",
+      "既有 finding: appears to host an Apache Struts2 Showcase application on Jetty",
+      "两次 vuln_profile_match 输出均为 []"
+    ],
+    "finding_id": "finding::1eec5aa0b0626698",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:31:11.015029+08:00",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::ba636cab68a3c1f1",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-4-vuln_analysis_agent",
+    "title": "10.20.0.10:8080 仍是最具证据支撑的候选后续目标"
+  },
+  {
+    "analysis": "在未拿到可用 profile_id 之前，validation_precheck / safe_vuln_validate 缺乏明确目标画像。继续对 HTTP 服务做受限路径发现最能提升证据质量，同时保持合规与低风险。",
+    "confidence": 0.8,
+    "evidence": [
+      "策略允许 allow_fingerprint=true, allow_safe_probe=true",
+      "暂无 credentials、sessions、pivot routes",
+      "vuln_profile_match 未给出 profile_id，exploit_validation 阶段未形成 finding"
+    ],
+    "finding_id": "finding::f919a7d85deacc62",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:31:11.015051+08:00",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::ba636cab68a3c1f1",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-4-vuln_analysis_agent",
+    "title": "当前最稳妥的下一步是继续低风险 HTTP 特征化，而非宣称漏洞存在"
+  },
+  {
+    "basis": [
+      "Recon identified Jetty 9.2.11.v20150529 on 10.20.0.10:8080",
+      "Web fingerprint identified title 'Struts2 Showcase - Fileupload sample' at http://10.20.0.10:8080/",
+      "Prior bounded validation attempts via vuln_profile_match returned no matching safe validation profile",
+      "Without a profile_id, validation_precheck and safe_vuln_validate cannot be used within the bounded non-destructive workflow"
+    ],
+    "candidate": "Struts2-associated web vulnerability exposure on Apache Struts2 Showcase application",
+    "finding_id": "finding::c287efed432a4db7",
+    "operation_id": "full-chain-blackbox-20260611-202804",
+    "recorded_at": "2026-06-11T20:31:37.68215+08:00",
+    "source_agent": "exploit_validation_agent",
+    "stage_result_id": "stage-result::2524891344034523",
+    "stage_task_id": "stage-full-chain-blackbox-20260611-202804-5-exploit_validation_agent",
+    "target": "http://10.20.0.10:8080/",
+    "verdict": "blocked"
+  }
+]

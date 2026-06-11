@@ -1,0 +1,73 @@
+fingerprint_profile_id: web-framework-fingerprints
+description: Generic web framework fingerprinting rules
+
+fingerprints:
+  - id: fp-struts2
+    technology: "Apache Struts2"
+    indicators:
+      headers:
+        - key: "X-Struts-Version"
+      body_markers:
+        - "ognl"
+        - "S2-"
+      path_patterns:
+        - ".action"
+      error_patterns:
+        - "There is no Action mapped"
+    vuln_profile_hints:
+      - struts2-s2-045
+
+  - id: fp-thinkphp
+    technology: "ThinkPHP"
+    indicators:
+      headers:
+        - key: "X-Powered-By"
+          value_contains: "ThinkPHP"
+      body_markers:
+        - "ThinkPHP"
+        - "TP5"
+        - "think\\"
+      error_patterns:
+        - "think\\App"
+    vuln_profile_hints:
+      - thinkphp-5-0-23-rce
+
+  - id: fp-flask
+    technology: "Flask/Jinja2"
+    indicators:
+      headers:
+        - key: "Server"
+          value_contains: "Werkzeug"
+      body_markers:
+        - "Jinja"
+        - "werkzeug"
+      error_patterns:
+        - "Traceback"
+        - "jinja2"
+    vuln_profile_hints:
+      - flask-ssti-lab
+
+  - id: fp-spring
+    technology: "Spring Framework"
+    indicators:
+      headers:
+        - key: "X-Application-Context"
+      body_markers:
+        - "Spring"
+        - "Whitelabel Error Page"
+      path_patterns:
+        - "/actuator"
+        - "/spring"
+    vuln_profile_hints: []
+
+  - id: fp-wordpress
+    technology: "WordPress"
+    indicators:
+      path_patterns:
+        - "/wp-admin"
+        - "/wp-content"
+        - "/wp-login.php"
+      body_markers:
+        - "WordPress"
+        - "wp-"
+    vuln_profile_hints: []

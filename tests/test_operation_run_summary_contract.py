@@ -13,6 +13,7 @@ from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerDecision
+from src.core.stage.models import StageResult, ToolTrace
 
 try:
     from fastapi.testclient import TestClient
@@ -100,6 +101,90 @@ def test_full_pentest_activation_uses_lab_profile_not_mcp_toolset(tmp_path: Path
         "profile_id": "full-vulhub-multihost-pentest",
         "source": "lab_profile.profile_id",
     }
+
+
+def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp_path: Path) -> None:
+    orchestrator = AppOrchestrator(
+        settings=AppSettings(
+            runtime_store_backend="memory",
+            runtime_store_dir=tmp_path / "runtime",
+            lab_profile={
+                "profile_id": "full-vulhub-multihost-pentest",
+                "success_conditions": {
+                    "require_all": [
+                        "dmz_service_discovered",
+                        "vulnerability_candidate_recorded",
+                    ]
+                },
+            },
+        )
+    )
+    state = orchestrator.create_operation("op-progress")
+    recon_result = StageResult(
+        operation_id="op-progress",
+        stage_task_id="stage-recon",
+        stage_type="RECON_STAGE",
+        agent_name="recon_agent",
+        status="succeeded",
+        summary="service discovery completed",
+        findings=[{"type": "service_discovery", "summary": "one service discovered"}],
+        evidence_refs=["ev-recon"],
+    )
+    vuln_result = StageResult(
+        operation_id="op-progress",
+        stage_task_id="stage-vuln",
+        stage_type="VULN_ANALYSIS_STAGE",
+        agent_name="vuln_analysis_agent",
+        status="succeeded",
+        summary="candidate vulnerability analysis completed",
+        findings=[{"kind": "candidate_finding", "summary": "candidate recorded"}],
+        evidence_refs=["ev-vuln"],
+        tool_trace=[ToolTrace(tool_name="web_fingerprint", success=True, summary="candidate")],
+    )
+
+    orchestrator._update_success_condition_progress(state=state, stage_result=recon_result)
+    orchestrator._update_success_condition_progress(state=state, stage_result=vuln_result)
+
+    progress = state.execution.metadata["success_condition_progress"]
+    assert progress["conditions"]["dmz_service_discovered"]["evidence_ids"] == ["ev-recon"]
+    assert progress["conditions"]["vulnerability_candidate_recorded"]["evidence_ids"] == ["ev-vuln"]
+    assert progress["all_required_satisfied"] is True
+
+
+def test_success_condition_progress_does_not_match_internal_service_from_dmz_recon(tmp_path: Path) -> None:
+    orchestrator = AppOrchestrator(
+        settings=AppSettings(
+            runtime_store_backend="memory",
+            runtime_store_dir=tmp_path / "runtime",
+            lab_profile={
+                "profile_id": "full-vulhub-multihost-pentest",
+                "success_conditions": {
+                    "require_all": [
+                        "dmz_service_discovered",
+                        "internal_service_discovered_after_authorized_route",
+                    ]
+                },
+            },
+        )
+    )
+    state = orchestrator.create_operation("op-progress-specific")
+    recon_result = StageResult(
+        operation_id="op-progress-specific",
+        stage_task_id="stage-recon",
+        stage_type="RECON_STAGE",
+        agent_name="recon_agent",
+        status="needs_replan",
+        summary="service discovery needs replan",
+        findings=[{"type": "service_discovery", "summary": "one service discovered"}],
+        tool_trace=[ToolTrace(tool_name="nmap_scan", success=True, raw_output_ref="raw-nmap.json")],
+    )
+
+    orchestrator._update_success_condition_progress(state=state, stage_result=recon_result)
+
+    progress = state.execution.metadata["success_condition_progress"]
+    assert progress["conditions"]["dmz_service_discovered"]["evidence_ids"] == ["raw-nmap.json"]
+    assert progress["conditions"]["internal_service_discovered_after_authorized_route"]["satisfied"] is False
+    assert progress["all_required_satisfied"] is False
 
 
 def test_run_endpoint_returns_operation_run_summary_contract(tmp_path: Path) -> None:

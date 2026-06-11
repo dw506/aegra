@@ -1,0 +1,3408 @@
+{
+  "operation_id": "real-chain-20260611-190331",
+  "exported_at": "2026-06-11T19:16:42.96969+08:00",
+  "operation_status": "ready",
+  "execution_status": "ready",
+  "pause_reason": null,
+  "latest_supervisor_control_strategy": {},
+  "control_cycle_history": [
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 1,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "recon_agent",
+      "selected_stage": "RECON_STAGE",
+      "started_at": "2026-06-11T19:04:42.319405+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 2,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "vuln_analysis_agent",
+      "selected_stage": "VULN_ANALYSIS_STAGE",
+      "started_at": "2026-06-11T19:05:42.587022+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 3,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "exploit_validation_agent",
+      "selected_stage": "EXPLOIT_STAGE",
+      "started_at": "2026-06-11T19:06:25.417571+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 4,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "vuln_analysis_agent",
+      "selected_stage": "VULN_ANALYSIS_STAGE",
+      "started_at": "2026-06-11T19:07:11.236792+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 5,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:07:54.43769+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 6,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "vuln_analysis_agent",
+      "selected_stage": "VULN_ANALYSIS_STAGE",
+      "started_at": "2026-06-11T19:08:48.874399+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 7,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:09:27.436011+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 8,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:10:04.046856+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 9,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "access_pivot_agent",
+      "selected_stage": "ACCESS_PIVOT_STAGE",
+      "started_at": "2026-06-11T19:10:50.356072+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 10,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:11:23.676712+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 11,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:11:47.660632+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 12,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:12:16.936467+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 1,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 13,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": null,
+      "selected_stage": null,
+      "started_at": "2026-06-11T19:12:25.638516+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 14,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:12:58.393627+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 15,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "access_pivot_agent",
+      "selected_stage": "ACCESS_PIVOT_STAGE",
+      "started_at": "2026-06-11T19:13:55.507846+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 16,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:14:35.414802+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 17,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "access_pivot_agent",
+      "selected_stage": "ACCESS_PIVOT_STAGE",
+      "started_at": "2026-06-11T19:15:06.781747+08:00",
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_results": 3,
+      "architecture": "planner_stage_agent_graph_main_path",
+      "cycle_index": 18,
+      "execution_success": true,
+      "planning_success": true,
+      "selected_agent": "goal_agent",
+      "selected_stage": "GOAL_STAGE",
+      "started_at": "2026-06-11T19:15:44.503146+08:00",
+      "stop_reason": null,
+      "stopped": false
+    }
+  ],
+  "llm_decision_history": [],
+  "replan_requests": [
+    {
+      "request_id": "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4",
+      "created_at": "2026-06-11T11:12:16.625028Z",
+      "reason": "invalid finish payload: 1 validation error for StageResult\nstatus\n  Input should be 'success', 'succeeded', 'partial', 'failed', 'blocked', 'need_more_info' or 'needs_replan' [type=literal_error, input_value='not_satisfied', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error",
+      "task_ids": [
+        "stage-real-chain-20260611-190331-12-goal_agent"
+      ],
+      "scope": "local",
+      "metadata": {
+        "hint_id": "replan-4bddb451203e467fa6aeb01cb79c29b4",
+        "invalidated_ref_keys": [],
+        "stage_type": "GOAL_STAGE"
+      }
+    }
+  ],
+  "operation_log": [
+    {
+      "at": "2026-06-11T19:03:31.474484+08:00",
+      "event_type": "operation_created",
+      "operation_status": "created",
+      "runtime_policy": {
+        "allow_fingerprint": true,
+        "allow_safe_probe": true,
+        "authorized_hosts": [
+          "10.20.0.0/24",
+          "10.30.0.0/24",
+          "dvwa",
+          "juice-shop",
+          "vulhub-s2-045",
+          "pivot-ssh",
+          "internal-web",
+          "internal-db"
+        ],
+        "blocked_hosts": [
+          "0.0.0.0/0",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "10.0.0.0/8"
+        ],
+        "cidr_whitelist": [
+          "10.20.0.0/24",
+          "10.30.0.0/24"
+        ],
+        "command_allowlist": [
+          "curl",
+          "nmap",
+          "ssh",
+          "sshpass",
+          "proxychains4",
+          "python",
+          "python3"
+        ],
+        "default_task_timeout_sec": 900,
+        "deny_egress": false,
+        "disabled_tools": [],
+        "loaded_at": "2026-06-11T11:03:31.286999Z",
+        "loaded_from": "/app/lab/scope/docker_lab.policy.json",
+        "max_concurrent_per_host": {
+          "10.20.0.0/24": 2,
+          "10.30.0.0/24": 1
+        },
+        "mcp_server_allowlist": [
+          "pentest-tools"
+        ],
+        "mcp_tool_allowlist": [
+          "nmap_scan",
+          "http_probe",
+          "web_fingerprint",
+          "web_discover",
+          "dns_lookup",
+          "tls_probe",
+          "tcp_connect_probe",
+          "vuln_profile_match",
+          "validation_precheck",
+          "safe_vuln_validate",
+          "whatweb_fingerprint",
+          "nuclei_scan",
+          "credential_check",
+          "session_probe",
+          "session_open_lab",
+          "identity_context_probe",
+          "privilege_context_probe",
+          "pivot_route_probe",
+          "internal_service_discover",
+          "pivoted_nmap_scan",
+          {
+            "truncated_item_count": 10
+          }
+        ],
+        "policy_version": "v1",
+        "rate_limit_per_subnet_per_min": {
+          "10.20.0.0/24": 60,
+          "10.30.0.0/24": 30
+        },
+        "retry_backoff_base_sec": 0,
+        "risk_policy": {
+          "approval_required_tags": [
+            "active_exploit"
+          ],
+          "block_active_exploit": false,
+          "block_command_execution": false,
+          "block_destructive": true,
+          "block_file_write": true,
+          "block_reverse_callback": true,
+          "max_risk_level": "medium",
+          "require_approval_for_active_exploit": true
+        },
+        "safety_stop": false,
+        "sensitive_tags": [
+          "active_exploit"
+        ],
+        "sensitive_task_types": [
+          "vulnerability_validation",
+          "establish_pivot"
+        ],
+        "session_policies": {}
+      },
+      "seq": 1
+    },
+    {
+      "at": "2026-06-11T19:03:31.722437+08:00",
+      "event_type": "targets_imported",
+      "operation_status": "created",
+      "seq": 2,
+      "target_count": 1
+    },
+    {
+      "at": "2026-06-11T19:03:32.191224+08:00",
+      "event_type": "graph_memory_initialized",
+      "initial_action_count": 0,
+      "operation_status": "created",
+      "seq": 3,
+      "target": "10.20.0.0/24"
+    },
+    {
+      "at": "2026-06-11T19:03:32.191483+08:00",
+      "event_type": "operation_started",
+      "operation_status": "ready",
+      "seq": 4,
+      "status": "ready"
+    },
+    {
+      "at": "2026-06-11T19:03:33.415668+08:00",
+      "cycle_index": 1,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 5
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:03:33.415916+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 1,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 6,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:04:42.31956+08:00",
+      "cycle_index": 1,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 7,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-1-recon_agent"
+      ],
+      "at": "2026-06-11T19:04:42.377106+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 1,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 8,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:04:43.410779+08:00",
+      "cycle_index": 2,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 9
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:04:43.410998+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 2,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 10,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:05:02.709177+08:00",
+      "cycle_index": 2,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 11
+    },
+    {
+      "at": "2026-06-11T19:05:42.587196+08:00",
+      "cycle_index": 2,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 12,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-2-vuln_analysis_agent"
+      ],
+      "at": "2026-06-11T19:05:42.665816+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 2,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 13,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:05:44.384009+08:00",
+      "cycle_index": 3,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 14
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:05:44.38428+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 3,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 15,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:06:25.417986+08:00",
+      "cycle_index": 3,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 16,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-3-exploit_validation_agent"
+      ],
+      "at": "2026-06-11T19:06:25.507786+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 3,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 17,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:06:26.295496+08:00",
+      "cycle_index": 4,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 18
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:06:26.295703+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 4,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 19,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:06:44.459573+08:00",
+      "cycle_index": 4,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 20
+    },
+    {
+      "at": "2026-06-11T19:07:11.237011+08:00",
+      "cycle_index": 4,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 21,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-4-vuln_analysis_agent"
+      ],
+      "at": "2026-06-11T19:07:11.341011+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 4,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 22,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:07:12.054909+08:00",
+      "cycle_index": 5,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 23
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:07:12.055156+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 5,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 24,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:07:26.73127+08:00",
+      "cycle_index": 5,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 25
+    },
+    {
+      "at": "2026-06-11T19:07:54.43783+08:00",
+      "cycle_index": 5,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 26,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-5-goal_agent"
+      ],
+      "at": "2026-06-11T19:07:54.540989+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 5,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 27,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:07:55.431452+08:00",
+      "cycle_index": 6,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 28
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:07:55.431592+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 6,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 29,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:08:48.87458+08:00",
+      "cycle_index": 6,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 30,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-6-vuln_analysis_agent"
+      ],
+      "at": "2026-06-11T19:08:49.015397+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 6,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 31,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:08:51.02856+08:00",
+      "cycle_index": 7,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 32
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:08:51.028716+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 7,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 33,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:09:27.436119+08:00",
+      "cycle_index": 7,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 34,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-7-goal_agent"
+      ],
+      "at": "2026-06-11T19:09:27.571662+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 7,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 35,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:09:28.522472+08:00",
+      "cycle_index": 8,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 36
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:09:28.522627+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 8,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 37,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:09:39.248857+08:00",
+      "cycle_index": 8,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 38
+    },
+    {
+      "at": "2026-06-11T19:10:04.046956+08:00",
+      "cycle_index": 8,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 39,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-8-goal_agent"
+      ],
+      "at": "2026-06-11T19:10:04.211931+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 8,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 40,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:10:08.525492+08:00",
+      "cycle_index": 9,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 41
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:10:08.525731+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 9,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 42,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:10:23.612971+08:00",
+      "cycle_index": 9,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 43
+    },
+    {
+      "at": "2026-06-11T19:10:50.356189+08:00",
+      "cycle_index": 9,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 44,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-9-access_pivot_agent"
+      ],
+      "at": "2026-06-11T19:10:50.473171+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 9,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 45,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:10:51.897371+08:00",
+      "cycle_index": 10,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 46
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:10:51.897595+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 10,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 47,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:11:02.908348+08:00",
+      "cycle_index": 10,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 48
+    },
+    {
+      "at": "2026-06-11T19:11:23.676826+08:00",
+      "cycle_index": 10,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 49,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-10-goal_agent"
+      ],
+      "at": "2026-06-11T19:11:23.793187+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 10,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 50,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:11:24.862458+08:00",
+      "cycle_index": 11,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 51
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:11:24.862643+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 11,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 52,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:11:35.007974+08:00",
+      "cycle_index": 11,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 53
+    },
+    {
+      "at": "2026-06-11T19:11:47.660762+08:00",
+      "cycle_index": 11,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 54,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-11-goal_agent"
+      ],
+      "at": "2026-06-11T19:11:47.806294+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 11,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 55,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:11:48.831966+08:00",
+      "cycle_index": 12,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 56
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:11:48.832192+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 12,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 57,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:11:59.027082+08:00",
+      "cycle_index": 12,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 58
+    },
+    {
+      "at": "2026-06-11T19:12:16.936604+08:00",
+      "cycle_index": 12,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 59,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-12-goal_agent"
+      ],
+      "at": "2026-06-11T19:12:17.030709+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 12,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 60,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:12:17.937024+08:00",
+      "cycle_index": 13,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 61
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:12:17.937219+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 13,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 62,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:12:25.623031+08:00",
+      "cycle_index": 13,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 63
+    },
+    {
+      "at": "2026-06-11T19:12:25.638641+08:00",
+      "cycle_index": 13,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 64,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:12:25.722942+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 13,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 65,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:12:26.625089+08:00",
+      "cycle_index": 14,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 66
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:12:26.625243+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 14,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 67,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:12:58.393784+08:00",
+      "cycle_index": 14,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 68,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-14-goal_agent"
+      ],
+      "at": "2026-06-11T19:12:58.654505+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 14,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 69,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:12:59.953489+08:00",
+      "cycle_index": 15,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 70
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:12:59.953717+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 15,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 71,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:13:13.918192+08:00",
+      "cycle_index": 15,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 72
+    },
+    {
+      "at": "2026-06-11T19:13:55.508003+08:00",
+      "cycle_index": 15,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 73,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-15-access_pivot_agent"
+      ],
+      "at": "2026-06-11T19:13:55.653008+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 15,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 74,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:13:56.810601+08:00",
+      "cycle_index": 16,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 75
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:13:56.810761+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 16,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 76,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:14:08.604845+08:00",
+      "cycle_index": 16,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 77
+    },
+    {
+      "at": "2026-06-11T19:14:35.414942+08:00",
+      "cycle_index": 16,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 78,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-16-goal_agent"
+      ],
+      "at": "2026-06-11T19:14:35.578165+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 16,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 79,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:14:37.205877+08:00",
+      "cycle_index": 17,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 80
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:14:37.206025+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 17,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 81,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:14:51.463691+08:00",
+      "cycle_index": 17,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 82
+    },
+    {
+      "at": "2026-06-11T19:15:06.781912+08:00",
+      "cycle_index": 17,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 83,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-17-access_pivot_agent"
+      ],
+      "at": "2026-06-11T19:15:06.941201+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 17,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 84,
+      "status": "completed",
+      "stopped": false
+    },
+    {
+      "at": "2026-06-11T19:15:08.174889+08:00",
+      "cycle_index": 18,
+      "event_type": "cycle_started",
+      "operation_status": "running",
+      "seq": 85
+    },
+    {
+      "applied_task_ids": [],
+      "at": "2026-06-11T19:15:08.175086+08:00",
+      "checkpoint_status": "running",
+      "cycle_index": 18,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_started",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 86,
+      "status": "running"
+    },
+    {
+      "at": "2026-06-11T19:15:19.159666+08:00",
+      "cycle_index": 18,
+      "event_type": "planner_decision_operation_id_normalized",
+      "normalized_operation_id": "real-chain-20260611-190331",
+      "operation_status": "running",
+      "original_operation_id": "operation id string",
+      "seq": 87
+    },
+    {
+      "at": "2026-06-11T19:15:44.503314+08:00",
+      "cycle_index": 18,
+      "event_type": "cycle_completed",
+      "operation_status": "ready",
+      "seq": 88,
+      "stop_reason": null,
+      "stopped": false
+    },
+    {
+      "applied_task_ids": [
+        "stage-real-chain-20260611-190331-18-goal_agent"
+      ],
+      "at": "2026-06-11T19:15:44.702808+08:00",
+      "checkpoint_status": "completed",
+      "cycle_index": 18,
+      "event_type": "phase_checkpoint",
+      "phase": "cycle_completed",
+      "runtime_event_count": 0,
+      "selected_task_ids": [],
+      "seq": 89,
+      "status": "completed",
+      "stopped": false
+    }
+  ],
+  "audit_log": [
+    {
+      "at": "2026-06-11T19:03:48.279956+08:00",
+      "audit_id": "audit-1",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.94,
+        "cycle_index": 1,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept handoff when new host, port, service, or reachability evidence is produced, or when recon shows no responsive assets and recommends replan/goal assessment.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously perform bounded initial reconnaissance across the authorized 10.20.0.0/24 scope to determine reachable hosts and exposed services. Prefer non-destructive discovery and fingerprinting sufficient to seed later analysis. If web services are found...(truncated 95 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Establish initial reachability, host, port, and service evidence within the authorized 10.20.0.0/24 scope to begin the assessment and support later validation or pivot decisions.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Initial evidence is minimal: only the imported scope exists in KG and no services or reachability data are present. Recon is the appropriate first bounded action within policy.",
+        "required_context": {
+          "known_assets": [
+            {
+              "ref": {
+                "graph": "kg",
+                "label": "10.20.0.0/24",
+                "ref_id": "kg-host::d237c02a37a41d03",
+                "ref_type": "Host"
+              }
+            },
+            {
+              "cidr": "10.20.0.0/24",
+              "ref": {
+                "graph": "kg",
+                "label": "Scope: 10.20.0.0/24",
+                "ref_id": "kg-scope::d237c02a37a41d03",
+                "ref_type": "NetworkZone"
+              }
+            }
+          ],
+          "known_services": [],
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_scope": [
+              "10.20.0.0/24"
+            ],
+            "block_destructive": true,
+            "max_risk_level": "medium"
+          },
+          "runtime_summary": {
+            "active_sessions": 0,
+            "credentials": 0,
+            "pivot_routes": 0
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "recon_agent",
+        "selected_stage": "RECON_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "At least one reachable in-scope host is evidenced or the subnet is characterized as non-responsive.",
+          "Any discovered open ports/services are recorded with basic service metadata.",
+          "Results are bounded to authorized scope and non-destructive methods only.",
+          "Evidence is sufficient to inform whether vuln analysis, access/pivot, or further recon should follow."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.0/24",
+            "ref_id": "kg-host::d237c02a37a41d03",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:04:42.060372+08:00",
+      "audit_id": "audit-2",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-1-recon_agent",
+      "stage_status": "succeeded",
+      "stage_type": "RECON_STAGE",
+      "summary": "Recon established multiple reachable in-scope hosts and basic service metadata using non-destructive discovery. Evidence shows 6 responsive hosts in 10.20.0.0/24, including web, SSH, and rpcbind services. Additional fingerprinting confirmed 10.20.0.21:3000...(truncated 83 chars)",
+      "worker_result_id": "result-397812f994af403f9f04ab1882c99cba"
+    },
+    {
+      "at": "2026-06-11T19:04:42.060609+08:00",
+      "audit_id": "audit-3",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-1-recon_agent",
+      "stage_type": "RECON_STAGE",
+      "success": true,
+      "summary": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 11:03 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000070s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT    STATE SERVICE VERSION\n11",
+      "tool_name": "nmap_scan",
+      "worker_result_id": "result-397812f994af403f9f04ab1882c99cba"
+    },
+    {
+      "at": "2026-06-11T19:04:42.06076+08:00",
+      "audit_id": "audit-4",
+      "event_type": "stage_tool_trace",
+      "exit_code": 200,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-1-recon_agent",
+      "stage_type": "RECON_STAGE",
+      "success": true,
+      "summary": "{\"content_type\": \"text/html; charset=UTF-8\", \"server\": null, \"title\": \"OWASP Juice Shop\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.21:3000/\"}",
+      "tool_name": "web_fingerprint",
+      "worker_result_id": "result-397812f994af403f9f04ab1882c99cba"
+    },
+    {
+      "ag_edge_count": 7,
+      "ag_node_count": 6,
+      "at": "2026-06-11T19:04:42.157589+08:00",
+      "audit_id": "audit-5",
+      "cycle_index": 1,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-2-web_fingerprint.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "recon_agent succeeded: Recon established multiple reachable in-scope hosts and basic service metadata using non-destructive discovery. Evidence shows 6 responsive hosts in 10.20.0.0/24, including web, SSH, and rpcbind services. Additional fingerprinting co...(truncated 123 chars)"
+    },
+    {
+      "at": "2026-06-11T19:05:02.710008+08:00",
+      "audit_id": "audit-6",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 2,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the agent returns evidence-backed candidate findings, refined fingerprints, or a justified recommendation for the next legal stage.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously analyze the currently discovered services, prioritize the confirmed web application on 10.20.0.21:3000 and other HTTP endpoints, refine product/version understanding where possible, and map any bounded non-destructive validation opportunities ...(truncated 143 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Analyze the discovered HTTP and network services to improve fingerprinting, correlate likely products/versions, and identify bounded validation candidates that fit current policy and available tools.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recon established reachable services and a Juice Shop fingerprint, but service/product/version analysis and safe validation candidate mapping remain incomplete.",
+        "required_context": {
+          "ag_summary": {
+            "prior_agent": "recon_agent",
+            "prior_result": "service discovery and one web fingerprint succeeded",
+            "recent_failures": [],
+            "recent_successes": [
+              "nmap_scan",
+              "web_fingerprint"
+            ]
+          },
+          "kg_summary": {
+            "known_hosts": [
+              "10.20.0.1",
+              "10.20.0.10",
+              "10.20.0.20",
+              "10.20.0.21",
+              "10.20.0.22",
+              "10.20.0.30"
+            ],
+            "known_services": [
+              "80/tcp http",
+              "8000/tcp http",
+              "8080/tcp http",
+              "3000/tcp possible web app",
+              "111/tcp rpcbind",
+              "22/tcp ssh"
+            ],
+            "notable_observation": "web fingerprint already identified OWASP Juice Shop at http://10.20.0.21:3000/"
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "active_exploit_requires_approval": true,
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "destructive_actions_blocked": true,
+            "max_risk_level": "medium"
+          },
+          "runtime_summary": {
+            "active_sessions": [],
+            "success_condition_progress_available": false
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Produce improved service/application fingerprints for the discovered web-facing targets.",
+          "Correlate at least one bounded, policy-compliant vulnerability candidate or explicitly rule out obvious safe validation paths for current evidence.",
+          "Generate evidence-backed next-step recommendations for either exploit validation, access/pivot observation, or further reconnaissance."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "host::10.20.0.21",
+            "ref_id": "host::10.20.0.21",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ppp?:3000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-ppp?:3000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:80/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:80/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8080/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8080/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ssh:22/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-ssh:22/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:05:42.299528+08:00",
+      "audit_id": "audit-7",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-2-vuln_analysis_agent",
+      "stage_status": "succeeded",
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "summary": "已基于现有证据完成首轮漏洞分析：10.20.0.21:3000 可较高置信度识别为 OWASP Juice Shop Web 应用；10.20.0.20:80 为 Apache httpd 2.4.25 (Debian)；10.20.0.22:8080 为 Jetty 9.2.11.v20150529；10.20.0.10:8000 为 Uvicorn 承载的 HTTP 应用；10.20.0.30:22 为 OpenSSH 9.7；10.20.0.1:111 为 rpcbind。当前最有边界且策略合规的候选...(truncated 97 chars)",
+      "worker_result_id": "result-ad1530c1f2c1411bb50e8711f06d9c40"
+    },
+    {
+      "at": "2026-06-11T19:05:42.299753+08:00",
+      "audit_id": "audit-8",
+      "event_type": "stage_tool_trace",
+      "exit_code": "tool_not_in_catalog",
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-2-vuln_analysis_agent",
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "success": false,
+      "summary": "tool is not present in the supplied MCP tool catalog",
+      "tool_name": "whatweb_fingerprint",
+      "worker_result_id": "result-ad1530c1f2c1411bb50e8711f06d9c40"
+    },
+    {
+      "ag_edge_count": 5,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:05:42.396627+08:00",
+      "audit_id": "audit-9",
+      "cycle_index": 2,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "vuln_analysis_agent succeeded: 已基于现有证据完成首轮漏洞分析：10.20.0.21:3000 可较高置信度识别为 OWASP Juice Shop Web 应用；10.20.0.20:80 为 Apache httpd 2.4.25 (Debian)；10.20.0.22:8080 为 Jetty 9.2.11.v20150529；10.20.0.10:8000 为 Uvicorn 承载的 HTTP 应用；10.20.0.30:22 为 OpenSSH 9.7；10.20.0...(truncated 145 chars)"
+    },
+    {
+      "at": "2026-06-11T19:06:01.696933+08:00",
+      "audit_id": "audit-10",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 3,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns validated findings, ruled-out candidates with evidence, or a clear access/pivot prerequisite for restricted-zone progress.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": [
+            "vuln_profile_match",
+            "validation_precheck",
+            "safe_vuln_validate",
+            "http_probe",
+            "web_fingerprint",
+            "web_discover",
+            "goal_check",
+            "chain_goal_check",
+            "artifact_store"
+          ],
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously evaluate the strongest existing candidate web findings with only catalog-available, bounded, non-destructive validation methods. Prefer profile matching and prechecks before any safe validation. If no safe profile applies, produce evidence tha...(truncated 30 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Perform bounded non-destructive validation of the strongest existing web service candidates using only tools present in the current catalog and policy-allowed methods.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recon and analysis produced multiple candidate web targets, but no validated finding yet. Policy permits bounded validation, and the next best step is to use catalog-supported safe validation against the strongest candidates.",
+        "required_context": {
+          "known_service_summary": "Prior analysis indicates likely OWASP Juice Shop on 10.20.0.21:3000, Apache httpd 2.4.25 on 10.20.0.20:80, Jetty 9.2.11 on 10.20.0.22:8080, and Uvicorn on 10.20.0.10:8000.",
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_failure_note": "Previous vuln analysis attempted a non-catalog tool and failed policy/catalog enforcement; use only currently available catalog tools."
+        },
+        "risk_level": "medium",
+        "selected_agent": "exploit_validation_agent",
+        "selected_stage": "EXPLOIT_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "At least one candidate service is matched to a bounded validation profile or explicitly ruled out with evidence.",
+          "Any validation performed is non-destructive, policy-compliant, and supported by available tools.",
+          "New evidence materially reduces uncertainty about viable next access or proof paths."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ppp?:3000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-ppp?:3000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8080/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8080/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:80/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:80/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:06:25.077706+08:00",
+      "audit_id": "audit-11",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-3-exploit_validation_agent",
+      "stage_status": "succeeded",
+      "stage_type": "EXPLOIT_STAGE",
+      "summary": "exploit_validation_agent finished",
+      "worker_result_id": "result-0ede019813714c93b4aac4368fb3861e"
+    },
+    {
+      "at": "2026-06-11T19:06:25.077814+08:00",
+      "audit_id": "audit-12",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-3-exploit_validation_agent",
+      "stage_type": "EXPLOIT_STAGE",
+      "success": true,
+      "summary": "[]",
+      "tool_name": "vuln_profile_match",
+      "worker_result_id": "result-0ede019813714c93b4aac4368fb3861e"
+    },
+    {
+      "at": "2026-06-11T19:06:25.077876+08:00",
+      "audit_id": "audit-13",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-3-exploit_validation_agent",
+      "stage_type": "EXPLOIT_STAGE",
+      "success": true,
+      "summary": "[]",
+      "tool_name": "vuln_profile_match",
+      "worker_result_id": "result-0ede019813714c93b4aac4368fb3861e"
+    },
+    {
+      "ag_edge_count": 7,
+      "ag_node_count": 6,
+      "at": "2026-06-11T19:06:25.2082+08:00",
+      "audit_id": "audit-14",
+      "cycle_index": 3,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "var/runtime/real-chain-20260611-190331/tool-outputs/3-exploit_validation_agent-1-vuln_profile_match.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/3-exploit_validation_agent-2-vuln_profile_match.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "exploit_validation_agent succeeded: exploit_validation_agent finished (2 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:06:44.460772+08:00",
+      "audit_id": "audit-15",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 4,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns enriched service metadata, host-service attribution, candidate findings, or a justified no-candidate result with next-step evidence gaps.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously analyze the discovered in-scope services to enrich fingerprints, attribute them to specific hosts where possible, and determine whether any bounded non-destructive validation opportunities exist under current policy. Prefer evidence-building o...(truncated 65 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Enrich discovered services with fingerprints, product/version evidence, and identify any bounded validation candidates for authorized next steps.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Service inventory exists but lacks host-level fingerprint and version detail; prior profile matching produced no validation candidates, so vuln analysis is the best next evidence-building step.",
+        "required_context": {
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_history": "Recon produced hosts/services. Exploit validation profile matching returned no candidates, so deeper fingerprinting and service analysis are needed before further validation or goal assessment.",
+          "runtime_observations": {
+            "active_sessions": [],
+            "known_host_count": 7,
+            "known_service_count": 6,
+            "success_condition_progress_available": false
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Produce product/version or comparable fingerprint evidence for prioritized exposed services where possible.",
+          "Map services to specific hosts/endpoints rather than only scope-level observations where feasible.",
+          "Identify bounded, non-destructive validation candidates only if supported by observed metadata and policy.",
+          "Return clear evidence gaps if services cannot be attributed or fingerprinted sufficiently."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:80/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:80/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: http:8080/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-http:8080/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ppp?:3000/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-ppp?:3000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: rpcbind:111/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-rpcbind:111/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ssh:22/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::52eb8e7ba9e64f36-Service-ssh:22/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:07:10.927299+08:00",
+      "audit_id": "audit-16",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-4-vuln_analysis_agent",
+      "stage_status": "succeeded",
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "summary": "已基于现有 KG、运行时与既有工具证据完成本轮漏洞分析补充，无需再声称新的已验证漏洞。当前证据足以将主要暴露服务映射到具体主机并形成有边界的后续验证候选，但 exploit_validation 阶段先前对两项候选执行 vuln_profile_match 均返回空结果，说明当前目录中的安全验证配置未直接覆盖这些指纹。",
+      "worker_result_id": "result-089d1cdc4c8347e89728e2792f07a1b9"
+    },
+    {
+      "ag_edge_count": 3,
+      "ag_node_count": 4,
+      "at": "2026-06-11T19:07:11.022101+08:00",
+      "audit_id": "audit-17",
+      "cycle_index": 4,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "vuln_analysis_agent succeeded: 已基于现有 KG、运行时与既有工具证据完成本轮漏洞分析补充，无需再声称新的已验证漏洞。当前证据足以将主要暴露服务映射到具体主机并形成有边界的后续验证候选，但 exploit_validation 阶段先前对两项候选执行 vuln_profile_match 均返回空结果，说明当前目录中的安全验证配置未直接覆盖这些指纹。 (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:07:26.732684+08:00",
+      "audit_id": "audit-18",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.83,
+        "cycle_index": 5,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage result provides authoritative success-condition status, explicit missing conditions, or redacted goal-proof evidence refs sufficient to guide the next dispatch or stop decision.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Review current mission evidence and runtime-visible goal state, use bounded goal/contract assessment methods as appropriate, and determine whether the success contract is already met or what exact proof/evidence is still missing. Do not assume success from...(truncated 108 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess current evidence against the mission success contract, identify missing contract conditions, and submit a bounded goal-proof status evaluation with explicit evidence gaps.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current KG shows broad reconnaissance and analysis coverage, but runtime success-condition progress is not present here and no authoritative stop gate is available. Goal assessment is the best low-risk next step to determine contract gaps or confirm needed...(truncated 7 chars)",
+        "required_context": {
+          "available_contract_tools": [
+            "success_condition_check",
+            "goal_check",
+            "chain_goal_check",
+            "internal_goal_check",
+            "read_lab_marker",
+            "artifact_store"
+          ],
+          "kg_summary": {
+            "evidence": 5,
+            "findings": 16,
+            "hosts": 7,
+            "observations": 5,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "active_exploit_requires_approval": true,
+            "destructive_blocked": true,
+            "max_risk_level": "medium"
+          },
+          "recent_state": {
+            "active_sessions": [],
+            "recent_result": "No newly validated vulnerabilities; prior validation profile matching returned empty results for candidate web findings.",
+            "recent_stage": "VULN_ANALYSIS_STAGE"
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return an evidence-based assessment of whether the mission may already satisfy the success contract.",
+          "If stop is not yet eligible, identify specific missing contract conditions or proof gaps.",
+          "If a bounded goal condition is directly testable within policy, collect redacted proof or evidence references without using destructive actions.",
+          "Produce actionable next-step guidance tied to KG/Runtime evidence."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "authorized local Docker multi-host assessment goal",
+            "ref_id": "goal::mission",
+            "ref_type": "Goal"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.10",
+            "ref_id": "host::10.20.0.10",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.20",
+            "ref_id": "host::10.20.0.20",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.21",
+            "ref_id": "host::10.20.0.21",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.22",
+            "ref_id": "host::10.20.0.22",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.30",
+            "ref_id": "host::10.20.0.30",
+            "ref_type": "Host"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:07:54.080677+08:00",
+      "audit_id": "audit-19",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-5-goal_agent",
+      "stage_status": "succeeded",
+      "stage_type": "GOAL_STAGE",
+      "summary": "goal_agent finished",
+      "worker_result_id": "result-7c09ea18e7f24b93ac734ad21a96365a"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:07:54.184819+08:00",
+      "audit_id": "audit-20",
+      "cycle_index": 5,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent succeeded: goal_agent finished (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:08:08.854975+08:00",
+      "audit_id": "audit-21",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.84,
+        "cycle_index": 6,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns stronger fingerprints, bounded validation candidates, or explicit evidence gaps that justify exploit validation, recon, access/pivot, or another goal assessment.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously analyze the discovered HTTP-facing services, refine fingerprints, assess likely products/frameworks and versions, and determine whether any bounded non-destructive validation profiles are applicable under current policy. Prioritize evidence th...(truncated 59 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Deepen fingerprinting and candidate analysis for the discovered HTTP services to identify bounded, policy-compliant validation opportunities and evidence gaps blocking contract progress.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current evidence shows multiple exposed web services but no contract-satisfying proof and the last goal check was not satisfied. Service analysis depth appears insufficient, making vulnerability analysis the best legal next step.",
+        "required_context": {
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_goal_check": {
+            "evidence_refs": [],
+            "goal_satisfied": false
+          },
+          "runtime": {
+            "active_sessions": [],
+            "success_condition_progress_available": false
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Obtain stronger product/version or framework fingerprints for one or more exposed HTTP services.",
+          "Correlate observed service metadata to plausible bounded vulnerability validation profiles, if any.",
+          "Produce evidence-backed findings that clarify whether exploit validation or access/pivot work is justified next.",
+          "Identify any specific missing evidence that continues to block mission contract satisfaction."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.10:8000/tcp http",
+            "ref_id": "service::10.20.0.10:8000/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.20:80/tcp http",
+            "ref_id": "service::10.20.0.20:80/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.21:3000/tcp http (nmap initially uncertain as ppp?)",
+            "ref_id": "service::10.20.0.21:3000/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.22:8080/tcp http",
+            "ref_id": "service::10.20.0.22:8080/tcp",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:08:48.416874+08:00",
+      "audit_id": "audit-22",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-6-vuln_analysis_agent",
+      "stage_status": "succeeded",
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "summary": "基于当前 KG、运行时状态与既有工具证据，本轮未新增已验证漏洞，但已能对 4 个 HTTP 暴露面形成较强证据约束下的候选分析结论。10.20.0.21:3000 已被先前证据较高置信度识别为 OWASP Juice Shop；10.20.0.20:80 为 Apache httpd 2.4.25 (Debian) 候选；10.20.0.22:8080 为 Jetty 9.2.11.v20150529 候选；10.20.0.10:8000 为 Uvicorn 承载应用候选。此前 exploit_valida...(truncated 349 chars)",
+      "worker_result_id": "result-ff1e9f92d7da470394f1e1aebcfedbc0"
+    },
+    {
+      "ag_edge_count": 3,
+      "ag_node_count": 4,
+      "at": "2026-06-11T19:08:48.577368+08:00",
+      "audit_id": "audit-23",
+      "cycle_index": 6,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "vuln_analysis_agent succeeded: 基于当前 KG、运行时状态与既有工具证据，本轮未新增已验证漏洞，但已能对 4 个 HTTP 暴露面形成较强证据约束下的候选分析结论。10.20.0.21:3000 已被先前证据较高置信度识别为 OWASP Juice Shop；10.20.0.20:80 为 Apache httpd 2.4.25 (Debian) 候选；10.20.0.22:8080 为 Jetty 9.2.11.v20150529 候选；10.20.0.10:8000 为 U...(truncated 397 chars)"
+    },
+    {
+      "at": "2026-06-11T19:09:03.024152+08:00",
+      "audit_id": "audit-24",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 7,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the result provides a GoalCheck finding, evidence refs, explicit goal_satisfied status, or a precise list of missing contract elements for next dispatch.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Review the accumulated KG, AG, recent stage results, and available bounded goal-check/proof capabilities. Determine whether the mission success contract can already be evidenced. If yes, produce redacted proof-backed goal evidence. If not, state the minimu...(truncated 44 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess current evidence against the mission success contract and identify the exact missing proof or chain elements needed for an authorized stop decision.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current KG contains substantial reconnaissance and candidate analysis, but no authoritative stop gate or complete goal-proof state is present. Goal assessment is the lowest-risk next step to determine missing contract evidence.",
+        "required_context": {
+          "kg_summary": {
+            "evidence_count": 5,
+            "finding_count": 21,
+            "known_host_count": 7,
+            "known_service_count": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "active_exploit_requires_approval": true,
+            "destructive_blocked": true,
+            "max_risk_level": "medium"
+          },
+          "runtime_summary": {
+            "active_sessions": [],
+            "success_condition_progress_available": false
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Produce a bounded goal assessment tied to existing KG/AG evidence.",
+          "If contract satisfaction is not provable, identify concrete missing evidence or chain gaps.",
+          "If an authorized goal check is possible, submit redacted proof-oriented evidence without requiring destructive action."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.10",
+            "ref_id": "host::10.20.0.10",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.20",
+            "ref_id": "host::10.20.0.20",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.21",
+            "ref_id": "host::10.20.0.21",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.22",
+            "ref_id": "host::10.20.0.22",
+            "ref_type": "Host"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:09:27.020785+08:00",
+      "audit_id": "audit-25",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-7-goal_agent",
+      "stage_status": "succeeded",
+      "stage_type": "GOAL_STAGE",
+      "summary": "goal_agent finished",
+      "worker_result_id": "result-aa3a8c938d454f47bc25f175e94e351e"
+    },
+    {
+      "at": "2026-06-11T19:09:27.020867+08:00",
+      "audit_id": "audit-26",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-7-goal_agent",
+      "stage_type": "GOAL_STAGE",
+      "success": true,
+      "summary": "{\"chain_integrity\": null, \"eligible_for_stop\": false, \"goal_proof_valid\": null, \"missing\": [], \"satisfied\": []}",
+      "tool_name": "success_condition_check",
+      "worker_result_id": "result-aa3a8c938d454f47bc25f175e94e351e"
+    },
+    {
+      "ag_edge_count": 6,
+      "ag_node_count": 6,
+      "at": "2026-06-11T19:09:27.165832+08:00",
+      "audit_id": "audit-27",
+      "cycle_index": 7,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "var/runtime/real-chain-20260611-190331/tool-outputs/7-goal_agent-1-success_condition_check.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent succeeded: goal_agent finished (1 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:09:39.249969+08:00",
+      "audit_id": "audit-28",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": "*",
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 8,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage result includes evidence-backed contract status assessment or a concrete minimal next evidence gap.",
+        "handoff_policy": "stage_agent_may_suggest_next_agent",
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess contract satisfaction blockers and produce goal-proof guidance or identify the specific evidence-chain gap preventing completion.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Success tracker shows eligible_for_stop=false with no missing items, so a goal-proof or chain-integrity gap likely remains; GoalAgent should assess and close or identify it.",
+        "required_context": {
+          "kg_summary": {
+            "evidence": 8,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_goal_checks": [
+            {
+              "cycle_index": 7,
+              "goal_satisfied": false
+            }
+          ],
+          "runtime": {
+            "active_sessions": 0
+          },
+          "success_condition_progress": {
+            "eligible_for_stop": false,
+            "missing": []
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Clarify whether chain_integrity or goal_proof_valid is blocking contract completion",
+          "Produce evidence-backed assessment of whether current graph can satisfy the mission now",
+          "If satisfiable, submit/identify the required redacted goal proof path and evidence refs",
+          "If not satisfiable, identify the minimal authorized next evidence gap"
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Goal",
+            "ref_id": "goal::mission",
+            "ref_type": "Goal"
+          }
+        ],
+        "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+        "task_brief": "Autonomously review current goal state, prior goal checks, and success-condition status to determine why the contract is not yet stoppable despite broad reconnaissance. Focus on evidence sufficiency, goal-proof validity, and chain integrity. If the mission...(truncated 212 chars)"
+      }
+    },
+    {
+      "at": "2026-06-11T19:10:03.556674+08:00",
+      "audit_id": "audit-29",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-8-goal_agent",
+      "stage_status": "succeeded",
+      "stage_type": "GOAL_STAGE",
+      "summary": "goal_agent finished",
+      "worker_result_id": "result-9a580dc9dd174345915778d729359f11"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:10:03.711638+08:00",
+      "audit_id": "audit-30",
+      "cycle_index": 8,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent succeeded: goal_agent finished (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:10:23.614111+08:00",
+      "audit_id": "audit-31",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.79,
+        "cycle_index": 9,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns new session, route, restricted-zone, internal-service, post-access, or blocker evidence clearly narrowing the contract gap.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess whether current evidence supports any authorized access reuse, identity/privilege observation, pivot-route verification, or restricted-zone discovery. Prioritize bounded checks that can convert existing findings into session, route, int...(truncated 123 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Collect authorized access/pivot observation evidence and restricted-zone discovery prerequisites needed to advance the success contract after repeated goal checks found current proof incomplete.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current graph has broad surface coverage and repeated unsatisfied goal checks but no active sessions or pivot routes; access/pivot observation is the clearest remaining authorized evidence gap.",
+        "required_context": {
+          "kg_summary": {
+            "evidence": 8,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "active_exploit_requires_approval": true,
+            "authorized_scope": "10.20.0.0/24",
+            "destructive_blocked": true,
+            "max_risk": "medium"
+          },
+          "runtime_summary": {
+            "active_sessions": [],
+            "known_pivot_routes": [],
+            "latest_goal_satisfied": false,
+            "recent_goal_checks": 3
+          },
+          "tooling_focus": [
+            "credential_check",
+            "session_probe",
+            "session_open_lab",
+            "identity_context_probe",
+            "privilege_context_probe",
+            "pivot_route_probe",
+            "pivot_route_register",
+            "internal_service_discover",
+            "pivoted_nmap_scan",
+            "post_access_observe",
+            "read_lab_marker",
+            "controlled_data_read_proof",
+            "success_condition_check"
+          ]
+        },
+        "risk_level": "medium",
+        "selected_agent": "access_pivot_agent",
+        "selected_stage": "ACCESS_PIVOT_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Determine whether any authorized controlled access, reusable session context, or pivot-relevant route evidence can be established from current findings.",
+          "If access exists, register bounded session or route evidence and discover at least one new restricted-zone, internal-service, or post-access observation artifact.",
+          "If no valid access/pivot path exists, return explicit blocker evidence identifying what prerequisite is missing for contract progress."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.30",
+            "ref_id": "host::10.20.0.30",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.21:3000/tcp http (nmap initially uncertain as ppp?)",
+            "ref_id": "service::10.20.0.21:3000/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.22:8080/tcp http",
+            "ref_id": "service::10.20.0.22:8080/tcp",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:10:49.789121+08:00",
+      "audit_id": "audit-32",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "stage_status": "partial",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "summary": "access_pivot_agent reached max_steps for stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "adapter": null,
+      "at": "2026-06-11T19:10:49.789299+08:00",
+      "audit_id": "audit-33",
+      "command": null,
+      "event_type": "tool_invocation",
+      "evidence_id": "evidence::tool-trace::fb252426e187c51b",
+      "payload_ref": "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-1-identity_context_probe.json",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "tool": "identity_context_probe",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "adapter": null,
+      "at": "2026-06-11T19:10:49.789392+08:00",
+      "audit_id": "audit-34",
+      "command": null,
+      "event_type": "tool_invocation",
+      "evidence_id": "evidence::tool-trace::bf5f3f64a6acdc44",
+      "payload_ref": "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-2-privilege_context_probe.json",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "tool": "privilege_context_probe",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "at": "2026-06-11T19:10:49.789481+08:00",
+      "audit_id": "audit-35",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": true,
+      "summary": "{\"host\": \"unknown-host\", \"identity\": \"unknown\", \"session_id\": null, \"type\": \"identity_context\"}",
+      "tool_name": "identity_context_probe",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "at": "2026-06-11T19:10:49.789566+08:00",
+      "audit_id": "audit-36",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": true,
+      "summary": "{\"can_execute_commands\": false, \"can_write_paths\": [], \"container_runtime\": false, \"groups\": [], \"host\": \"unknown-host\", \"identity\": \"unknown\", \"privilege_level\": \"low\", \"sudo_available\": false, \"type",
+      "tool_name": "privilege_context_probe",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "at": "2026-06-11T19:10:49.789674+08:00",
+      "audit_id": "audit-37",
+      "event_type": "stage_tool_trace",
+      "exit_code": "unreachable",
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-9-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": false,
+      "summary": "[Errno 111] Connection refused",
+      "tool_name": "pivot_route_probe",
+      "worker_result_id": "result-34b3ab3ddd414e89acc67712aaa8260a"
+    },
+    {
+      "ag_edge_count": 9,
+      "ag_node_count": 7,
+      "at": "2026-06-11T19:10:50.089785+08:00",
+      "audit_id": "audit-38",
+      "cycle_index": 9,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-1-identity_context_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-2-privilege_context_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-3-pivot_route_probe.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "access_pivot_agent partial: access_pivot_agent reached max_steps for stage-real-chain-20260611-190331-9-access_pivot_agent (3 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:11:02.909152+08:00",
+      "audit_id": "audit-39",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": "*",
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 10,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the result includes success-condition status, evidence refs, and either complete goal proof or specific missing requirements.",
+        "handoff_policy": "stage_agent_may_suggest_next_agent",
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess current evidence state against the mission success contract and obtain authoritative success-condition progress or identify exact remaining proof gaps.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current graph shows substantial evidence but no authoritative success-condition progress in runtime input; GoalAgent should assess contract status and clarify remaining proof gaps before further action.",
+        "required_context": {
+          "kg_summary": {
+            "evidence": 17,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "recent_state": "Reconnaissance and some pivot observation exist; latest pivot route probe to 10.30.0.1:22 was unreachable; no active sessions are present."
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return authoritative success-condition status from runtime metadata or equivalent bounded goal assessment.",
+          "If the contract is not yet satisfied, identify concrete missing evidence/proof elements and reference relevant KG/AG nodes.",
+          "If eligible_for_stop is true with complete supporting goal evidence, provide evidence refs sufficient for planner stop evaluation."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+        "task_brief": "Autonomously review current KG, AG, runtime state, and available bounded goal-checking capabilities to determine whether the mission success contract is already satisfied. Prefer authoritative success-condition assessment and bounded goal/proof collection ...(truncated 140 chars)"
+      }
+    },
+    {
+      "at": "2026-06-11T19:11:23.33239+08:00",
+      "audit_id": "audit-40",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-10-goal_agent",
+      "stage_status": "succeeded",
+      "stage_type": "GOAL_STAGE",
+      "summary": "goal_agent finished",
+      "worker_result_id": "result-7dafbe81ea7f4bb88bd95f682792ca28"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:11:23.439739+08:00",
+      "audit_id": "audit-41",
+      "cycle_index": 10,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent succeeded: goal_agent finished (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:11:35.008782+08:00",
+      "audit_id": "audit-42",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": "*",
+        "autonomy_level": null,
+        "confidence": 0.87,
+        "cycle_index": 11,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage result includes authoritative success-condition status or a clear, evidence-based list of remaining contract gaps with recommended next capability.",
+        "handoff_policy": "stage_agent_may_suggest_next_agent",
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Obtain authoritative success-condition progress and determine exact remaining contract evidence gaps before any further validation or stopping decision.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recent GoalAgent checks did not satisfy the mission, and no authoritative success-condition progress is present in the provided runtime snapshot. Goal assessment is the lowest-risk next step to identify exact contract gaps and prevent premature stop decisi...(truncated 4 chars)",
+        "required_context": {
+          "available_authoritative_tool": "success_condition_check",
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_constraints": {
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_goal_checks": [
+            {
+              "cycle_index": 10,
+              "goal_satisfied": false,
+              "status": "not_satisfied"
+            }
+          ]
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return authoritative success-condition progress from runtime metadata if available.",
+          "Identify whether eligible_for_stop is true or false.",
+          "If false, enumerate the missing contract evidence or chain/proof gaps needed for completion.",
+          "If progress is unavailable, provide a concise assessment of whether current evidence suggests recon, vuln analysis, exploit validation, or access/pivot should be dispatched next."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Goal",
+            "ref_id": "goal::mission",
+            "ref_type": "Goal"
+          }
+        ],
+        "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+        "task_brief": "Assess the current operation state against the mission success contract using authoritative runtime progress if available. Do not attempt to complete the operation. Determine whether the contract is already satisfied, and if not, identify the precise missi...(truncated 86 chars)"
+      }
+    },
+    {
+      "at": "2026-06-11T19:11:47.221208+08:00",
+      "audit_id": "audit-43",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-11-goal_agent",
+      "stage_status": "succeeded",
+      "stage_type": "GOAL_STAGE",
+      "summary": "goal_agent finished",
+      "worker_result_id": "result-e6c6c85a61eb4a1d87c75d69d06e9adb"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:11:47.344144+08:00",
+      "audit_id": "audit-44",
+      "cycle_index": 11,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent succeeded: goal_agent finished (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:11:59.0281+08:00",
+      "audit_id": "audit-45",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 12,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage result includes authoritative contract-gap evidence, complete goal-proof evidence for stopping, or a clearly justified next-agent recommendation tied to missing conditions.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess whether the mission success contract is already satisfied and, if not, determine the exact missing evidence or proof requirements from available runtime and tool-supported goal-check mechanisms. Do not claim completion without complete ...(truncated 17 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Obtain authoritative success-condition progress and identify exact remaining contract evidence gaps before any stop decision.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recent goal assessment was not satisfied and no authoritative success-condition progress is present; the next best step is to obtain exact contract gaps before further action.",
+        "required_context": {
+          "kg_summary": {
+            "evidence": 17,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_goal_checks": [
+            {
+              "cycle_index": 11,
+              "goal_satisfied": false,
+              "status": "not_satisfied"
+            }
+          ],
+          "runtime": {
+            "active_sessions": [],
+            "success_condition_progress_available": false
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return authoritative success-condition status or equivalent evidence-backed assessment.",
+          "Identify missing contract conditions or proof gaps preventing stop.",
+          "If the contract is already satisfied, provide complete evidence refs and GoalCheck linkage needed for a valid stop decision."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Goal",
+            "ref_id": "goal::mission",
+            "ref_type": "Goal"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:12:16.625316+08:00",
+      "audit_id": "audit-46",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-12-goal_agent",
+      "stage_status": "needs_replan",
+      "stage_type": "GOAL_STAGE",
+      "summary": "invalid finish payload: 1 validation error for StageResult\nstatus\n  Input should be 'success', 'succeeded', 'partial', 'failed', 'blocked', 'need_more_info' or 'needs_replan' [type=literal_error, input_value='not_satisfied', input_type=str]\n    For further...(truncated 67 chars)",
+      "worker_result_id": "result-751c3f9308364f78adc6f1801fdff051"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:12:16.716769+08:00",
+      "audit_id": "audit-47",
+      "cycle_index": 12,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent needs_replan: invalid finish payload: 1 validation error for StageResult\nstatus\n  Input should be 'success', 'succeeded', 'partial', 'failed', 'blocked', 'need_more_info' or 'needs_replan' [type=literal_error, input_value='not_satisfied', input_...(truncated 109 chars)"
+    },
+    {
+      "at": "2026-06-11T19:12:25.623842+08:00",
+      "audit_id": "audit-48",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.9,
+        "cycle_index": 13,
+        "decision": "replan",
+        "handoff_acceptance": null,
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "replan_reason": "invalid_goal_stage_result",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": null,
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Resolve process-state inconsistency before further agent dispatch: recent GoalAgent execution produced an invalid finish payload and no usable goal evidence, so the next safe step is planner-level replanning.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recent GoalAgent output is invalid and provides no goal evidence; replanning is required before further execution.",
+        "required_context": {
+          "ag_focus": [
+            "recent GOAL_STAGE StageResult status=needs_replan",
+            "recent GOAL_CHECK status=not_satisfied with empty evidence_refs"
+          ],
+          "kg_summary": {
+            "evidence": 17,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "policy_constraints": {
+            "approval_for_active_exploit": true,
+            "max_risk_level": "medium"
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": null,
+        "selected_stage": null,
+        "stop_condition": null,
+        "success_criteria": [
+          "A subsequent cycle should dispatch an agent only after accounting for the invalid GoalAgent result and selecting an evidence-producing next step.",
+          "Do not stop success without complete runtime-backed success evidence."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Goal",
+            "ref_id": "goal::mission",
+            "ref_type": "Goal"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:12:37.431916+08:00",
+      "audit_id": "audit-49",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.82,
+        "cycle_index": 14,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns a valid goal assessment with evidence refs or a clear list of missing conditions aligned to available authorized next steps.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously reassess mission completion using only bounded authorized goal-evaluation methods. First determine current success-condition status from runtime-accessible evidence, then validate whether existing KG/AG evidence is sufficient for contract sati...(truncated 259 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Obtain a valid current success-condition assessment and, if possible, produce complete bounded goal evidence or clearly identify the remaining missing contract elements.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recent goal handling was invalid, and current runtime lacks authoritative stop metadata; a fresh bounded goal assessment is needed to recover process integrity and identify remaining contract gaps.",
+        "required_context": {
+          "ag_focus": [
+            "recent planner replan for invalid_goal_stage_result",
+            "recent goal-related process nodes with incomplete or invalid evidence"
+          ],
+          "kg_summary": {
+            "evidence": 17,
+            "findings": 21,
+            "hosts": 7,
+            "services": 12
+          },
+          "policy_constraints": {
+            "approval_for_active_exploit": true,
+            "destructive_blocked": true,
+            "max_risk_level": "medium"
+          },
+          "runtime_focus": [
+            "no active sessions",
+            "no explicit success_condition_progress provided in current runtime payload"
+          ]
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return a valid GOAL_STAGE result with coherent evidence assessment.",
+          "Use bounded goal-checking capabilities to determine whether the contract is already satisfied or identify specific missing conditions.",
+          "If goal satisfaction is supported, include complete evidence references and process-consistent proof artifacts; otherwise report the concrete remaining gaps for next dispatch."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:12:57.86502+08:00",
+      "audit_id": "audit-50",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-14-goal_agent",
+      "stage_status": "partial",
+      "stage_type": "GOAL_STAGE",
+      "summary": "已完成一次基于现有 Runtime/KG 与 success_condition_progress 的有效目标状态评估：当前成功契约未满足，eligible_for_stop=false。已有证据仅支持 DMZ 服务发现已完成；其余关键合同条件仍缺失。最近一次 GoalAgent 失败属于结果格式无效，不改变当前实质性目标状态。",
+      "worker_result_id": "result-52c73d3ce8534aeba022088eb0af5e38"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:12:58.013004+08:00",
+      "audit_id": "audit-51",
+      "cycle_index": 14,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "outcome::stage-real-chain-20260611-190331-12-goal_agent",
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4",
+        "tool-fact-tool-trace::8fab8caf6eb2e299-Evidence-tool-output:success_condition_check",
+        "tool-fact-tool-trace::bf5f3f64a6acdc44-Evidence-tool-output:privilege_context_probe",
+        "tool-fact-tool-trace::fb252426e187c51b-Evidence-tool-output:identity_context_probe",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-2-web_fingerprint.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-3-pivot_route_probe.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent partial: 已完成一次基于现有 Runtime/KG 与 success_condition_progress 的有效目标状态评估：当前成功契约未满足，eligible_for_stop=false。已有证据仅支持 DMZ 服务发现已完成；其余关键合同条件仍缺失。最近一次 GoalAgent 失败属于结果格式无效，不改变当前实质性目标状态。 (0 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:13:13.91918+08:00",
+      "audit_id": "audit-52",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 15,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns concrete pivot/session evidence, a confirmed lack of feasible access path, or a precise follow-on recommendation grounded in tool results.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess authorized access and pivot opportunities from current KG and recent evidence. Prioritize bounded observation of any feasible session context, pivot-route viability, and restricted-zone discovery paths. Do not perform destructive action...(truncated 157 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Collect authorized access/pivot observation and restricted-zone discovery evidence needed to reduce current success-contract gaps after recon is complete but stop eligibility remains false.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recent GoalAgent assessment says recon is complete but contract gaps remain and stop is not eligible; next best authorized step is access/pivot observation to seek restricted-zone or route evidence.",
+        "required_context": {
+          "known_services_summary": [
+            "10.20.0.30:22/tcp ssh",
+            "10.20.0.1:111/tcp rpcbind",
+            "10.20.0.20:80/tcp http",
+            "10.20.0.21:3000/tcp http",
+            "10.20.0.22:8080/tcp http",
+            "10.20.0.10:8000/tcp http"
+          ],
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "runtime_observation": {
+            "active_sessions": [],
+            "recent_goal_check_status": "not_satisfied",
+            "success_contract_state": "eligible_for_stop=false"
+          }
+        },
+        "risk_level": "medium",
+        "selected_agent": "access_pivot_agent",
+        "selected_stage": "ACCESS_PIVOT_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Produce new evidence about reusable access context, pivot feasibility, or restricted-zone reachability using only authorized bounded observation tools.",
+          "If a valid session or pivot route can be established or confirmed, return corresponding evidence refs and runtime-relevant identifiers.",
+          "If no access path is presently supportable, return concrete evidence narrowing the gap for subsequent vuln or goal assessment."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.30:22/tcp ssh",
+            "ref_id": "service::10.20.0.30:22/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.1:111/tcp rpcbind",
+            "ref_id": "service::10.20.0.1:111/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:13:55.125235+08:00",
+      "audit_id": "audit-53",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "stage_status": "partial",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "summary": "access_pivot_agent reached max_steps for stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "adapter": null,
+      "at": "2026-06-11T19:13:55.125374+08:00",
+      "audit_id": "audit-54",
+      "command": null,
+      "event_type": "tool_invocation",
+      "evidence_id": "evidence::tool-trace::078ac100126a2f5e",
+      "payload_ref": "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-1-identity_context_probe.json",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "tool": "identity_context_probe",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "adapter": null,
+      "at": "2026-06-11T19:13:55.125455+08:00",
+      "audit_id": "audit-55",
+      "command": null,
+      "event_type": "tool_invocation",
+      "evidence_id": "evidence::tool-trace::3fabccfbf9c100fa",
+      "payload_ref": "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-2-privilege_context_probe.json",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "tool": "privilege_context_probe",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "at": "2026-06-11T19:13:55.125544+08:00",
+      "audit_id": "audit-56",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": true,
+      "summary": "{\"host\": \"unknown-host\", \"identity\": \"unknown\", \"session_id\": null, \"type\": \"identity_context\"}",
+      "tool_name": "identity_context_probe",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "at": "2026-06-11T19:13:55.125634+08:00",
+      "audit_id": "audit-57",
+      "event_type": "stage_tool_trace",
+      "exit_code": 0,
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": true,
+      "summary": "{\"can_execute_commands\": false, \"can_write_paths\": [], \"container_runtime\": false, \"groups\": [], \"host\": \"unknown-host\", \"identity\": \"unknown\", \"privilege_level\": \"low\", \"sudo_available\": false, \"type",
+      "tool_name": "privilege_context_probe",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "at": "2026-06-11T19:13:55.125739+08:00",
+      "audit_id": "audit-58",
+      "event_type": "stage_tool_trace",
+      "exit_code": "unreachable",
+      "server_id": "pentest-tools",
+      "source_task_id": "stage-real-chain-20260611-190331-15-access_pivot_agent",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "success": false,
+      "summary": "[Errno 111] Connection refused",
+      "tool_name": "pivot_route_probe",
+      "worker_result_id": "result-b296102bafa34a5086d24c984078352d"
+    },
+    {
+      "ag_edge_count": 9,
+      "ag_node_count": 7,
+      "at": "2026-06-11T19:13:55.200219+08:00",
+      "audit_id": "audit-59",
+      "cycle_index": 15,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-1-identity_context_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-2-privilege_context_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-3-pivot_route_probe.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "access_pivot_agent partial: access_pivot_agent reached max_steps for stage-real-chain-20260611-190331-15-access_pivot_agent (3 tool call(s))"
+    },
+    {
+      "at": "2026-06-11T19:14:08.605542+08:00",
+      "audit_id": "audit-60",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": "*",
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 16,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage result includes explicit goal assessment, evidence refs, and a clear list of missing conditions or proof gaps.",
+        "handoff_policy": "stage_agent_may_suggest_next_agent",
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess current success-contract progress and identify the precise missing evidence or proof requirements before further action.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Current evidence is substantial, but no authoritative stop-eligibility metadata is present and the latest pivot path failed; goal assessment is the best low-risk next step to clarify missing contract elements.",
+        "required_context": {
+          "kg_summary": {
+            "evidence": 26,
+            "findings": 32,
+            "hosts": 7,
+            "services": 12
+          },
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_summary": {
+            "active_exploit_requires_approval": true,
+            "destructive_blocked": true,
+            "max_risk_level": "medium"
+          },
+          "runtime_summary": {
+            "active_sessions": 0,
+            "recent_pivot_probe": "10.30.0.1:22 via 10.20.0.30 from 10.20.0.10 was unreachable/refused"
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Return whether the mission appears close to contract satisfaction based on current evidence.",
+          "Identify concrete missing evidence, proof, or chain gaps blocking successful completion.",
+          "If sufficient proof already exists, provide goal assessment with evidence refs suitable for later stop evaluation."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+        "task_brief": "Autonomously review the existing KG, AG history, recent findings, and available runtime context to determine whether the operation is near satisfying the mission contract. Produce a concise goal assessment, cite supporting evidence references, and explicit...(truncated 177 chars)"
+      }
+    },
+    {
+      "at": "2026-06-11T19:14:34.936576+08:00",
+      "audit_id": "audit-61",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-16-goal_agent",
+      "stage_status": "partial",
+      "stage_type": "GOAL_STAGE",
+      "summary": "当前任务距离成功契约仍不接近完成。现有证据明确支持的仅有 DMZ 服务发现已完成；运行时 success_condition_progress 显示 eligible_for_stop=false，且 7 项关键条件仍未满足。最近两次 access/pivot 观察未建立会话、未获得有效身份/权限上下文、未确认可用授权路由，反而给出一次到 10.30.0.1:22 的 pivot 不可达证据，因此当前更像处于‘已完成入口面侦察，但尚未形成有效访问/受限区证明链’阶段。",
+      "worker_result_id": "result-8fec158acc8f45089080cec2de7a1e40"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:14:35.095349+08:00",
+      "audit_id": "audit-62",
+      "cycle_index": 16,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent partial: 当前任务距离成功契约仍不接近完成。现有证据明确支持的仅有 DMZ 服务发现已完成；运行时 success_condition_progress 显示 eligible_for_stop=false，且 7 项关键条件仍未满足。最近两次 access/pivot 观察未建立会话、未获得有效身份/权限上下文、未确认可用授权路由，反而给出一次到 10.30.0.1:22 的 pivot 不可达证据，因此当前更像处于‘已完成入口面侦察，但尚未形成有效访问/受限区证明链’阶段。...(truncated 17 chars)"
+    },
+    {
+      "at": "2026-06-11T19:14:51.464619+08:00",
+      "audit_id": "audit-63",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": "*",
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 17,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the stage returns new session, route, identity/privilege, or explicit blocker evidence tied to authorized targets; otherwise summarize why no legal access path was found.",
+        "handoff_policy": "stage_agent_may_suggest_next_agent",
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Collect authorized access/pivot observation evidence needed to progress missing success-contract conditions after recon is complete but no valid session, identity/privilege context, or usable pivot route has been established.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recon evidence exists, but recent goal checks show the contract is still far from satisfied due to missing access, session, identity, and route evidence. Access/pivot observation is the clearest authorized next step.",
+        "required_context": {
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy": {
+            "authorized_scope": "10.20.0.0/24",
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_goal_state": {
+            "eligible_for_stop": false,
+            "goal_satisfied": false,
+            "noted_gaps": [
+              "no active session established",
+              "no valid identity/privilege context",
+              "no confirmed usable authorized route",
+              "restricted-zone proof chain incomplete"
+            ]
+          },
+          "runtime": {
+            "active_sessions": []
+          }
+        },
+        "risk_level": "medium",
+        "selected_agent": "access_pivot_agent",
+        "selected_stage": "ACCESS_PIVOT_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Obtain new evidence about whether any authorized access primitive, session handle, identity context, privilege context, or pivot route can be established or ruled in/out within current scope.",
+          "If a bounded authorized session or route is confirmed, record sufficient evidence to support subsequent restricted-zone discovery or goal-proof collection.",
+          "If no such path exists, return concrete blocking evidence and contradiction notes to support replan or stop decisions."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.30:22/tcp ssh",
+            "ref_id": "service::10.20.0.30:22/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.1:111/tcp rpcbind",
+            "ref_id": "service::10.20.0.1:111/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+        "task_brief": "Autonomously investigate authorized non-destructive access and pivot opportunities within the discovered scope. Prefer bounded observation and validation of existing services, credentials if available in runtime/lab context, session viability, identity/pri...(truncated 194 chars)"
+      }
+    },
+    {
+      "at": "2026-06-11T19:15:06.243187+08:00",
+      "audit_id": "audit-64",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-17-access_pivot_agent",
+      "stage_status": "partial",
+      "stage_type": "ACCESS_PIVOT_STAGE",
+      "summary": "No authorized reusable session, identity, privilege context, or validated pivot route is currently established in runtime. Existing evidence already shows identity_context=unknown with no session_id, privilege_context=low with can_execute_commands=false an...(truncated 582 chars)",
+      "worker_result_id": "result-1b6019832014473db892f7ac48f8f184"
+    },
+    {
+      "ag_edge_count": 3,
+      "ag_node_count": 4,
+      "at": "2026-06-11T19:15:06.413839+08:00",
+      "audit_id": "audit-65",
+      "cycle_index": 17,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4",
+        "tool-fact-tool-trace::3fabccfbf9c100fa-Evidence-tool-output:privilege_context_probe",
+        "tool-fact-tool-trace::bf5f3f64a6acdc44-Evidence-tool-output:privilege_context_probe",
+        "tool-fact-tool-trace::fb252426e187c51b-Evidence-tool-output:identity_context_probe",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-3-pivot_route_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-3-pivot_route_probe.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "access_pivot_agent partial: No authorized reusable session, identity, privilege context, or validated pivot route is currently established in runtime. Existing evidence already shows identity_context=unknown with no session_id, privilege_context=low with c...(truncated 627 chars)"
+    },
+    {
+      "at": "2026-06-11T19:15:19.160563+08:00",
+      "audit_id": "audit-66",
+      "event_type": "planner_decision_applied",
+      "planner_decision": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 18,
+        "decision": "dispatch_agent",
+        "handoff_acceptance": "Accept if the agent returns a bounded goal assessment with evidence refs and either missing-condition details or a clearly supported proof gap.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": [
+            "success_condition_check",
+            "goal_check",
+            "chain_goal_check",
+            "internal_goal_check",
+            "artifact_store",
+            "read_lab_marker",
+            "controlled_data_read_proof",
+            "post_access_observe"
+          ],
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess whether the operation is close to satisfying the mission contract using available runtime/goal-check tooling and existing evidence. Prioritize obtaining explicit success-condition progress or a bounded goal assessment that identifies mi...(truncated 99 chars)",
+          "usage": {
+            "completion_tokens": "[REDACTED]",
+            "prompt_tokens": "[REDACTED]",
+            "total_tokens": "[REDACTED]"
+          }
+        },
+        "objective": "Assess current success-condition progress and determine missing contract evidence or proof gaps before further action.",
+        "operation_id": "real-chain-20260611-190331",
+        "reasoning_summary": "Recon and service evidence already exist, while recent access/pivot attempts did not establish a route or session. Runtime success-condition metadata is not present here, so goal assessment should clarify missing contract evidence before further branching.",
+        "required_context": {
+          "known_asset_count": 7,
+          "known_service_count": 12,
+          "mission_goal": "Starting only from the imported target scope, perform an authorized local Docker multi-host assessment. Use evidence-driven reconnaissance, validation, access/pivot observation, restricted-zone discovery, and redacted proof submission until the system succ...(truncated 26 chars)",
+          "policy_constraints": {
+            "block_destructive": true,
+            "max_risk_level": "medium",
+            "require_approval_for_active_exploit": true
+          },
+          "recent_stage_summary": "Latest access/pivot work found no reusable authorized session, no validated pivot route, and only low/unknown identity and privilege context."
+        },
+        "risk_level": "low",
+        "selected_agent": "goal_agent",
+        "selected_stage": "GOAL_STAGE",
+        "stop_condition": null,
+        "success_criteria": [
+          "Obtain current success-condition status or equivalent goal assessment evidence.",
+          "Identify explicit missing conditions, proof gaps, or chain-integrity blockers from current runtime/graph state.",
+          "If goal may already be near satisfied, produce evidence-backed goal assessment rather than assuming completion."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "Scope: 10.20.0.0/24",
+            "ref_id": "kg-scope::d237c02a37a41d03",
+            "ref_type": "NetworkZone"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      }
+    },
+    {
+      "at": "2026-06-11T19:15:43.938749+08:00",
+      "audit_id": "audit-67",
+      "event_type": "stage_result_applied",
+      "source_task_id": "stage-real-chain-20260611-190331-18-goal_agent",
+      "stage_status": "partial",
+      "stage_type": "GOAL_STAGE",
+      "summary": "已获得当前成功条件状态并完成基于现有 Runtime/KG/AG 证据的目标评估：目标未完成，eligible_for_stop=false。现有证据仅明确支持 DMZ 服务发现完成，以及 vulnerability_candidate_recorded 已满足；当前不存在可复用会话、有效身份/权限上下文或已验证授权路由，因此受限区发现、受控数据读取、post-access 观察与 goal-check 证明链均未建立。",
+      "worker_result_id": "result-52e2e19cb6e94814b8331bdbb2cde1ba"
+    },
+    {
+      "ag_edge_count": 4,
+      "ag_node_count": 5,
+      "at": "2026-06-11T19:15:44.137877+08:00",
+      "audit_id": "audit-68",
+      "cycle_index": 18,
+      "event_type": "attack_log_extraction_applied",
+      "evidence_refs": [
+        "outcome::stage-real-chain-20260611-190331-17-access_pivot_agent",
+        "replan-hint-replan-4bddb451203e467fa6aeb01cb79c29b4",
+        "tool-fact-tool-trace::3fabccfbf9c100fa-Evidence-tool-output:privilege_context_probe",
+        "tool-fact-tool-trace::8fab8caf6eb2e299-Evidence-tool-output:success_condition_check",
+        "tool-fact-tool-trace::bf5f3f64a6acdc44-Evidence-tool-output:privilege_context_probe",
+        "tool-fact-tool-trace::fb252426e187c51b-Evidence-tool-output:identity_context_probe",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/1-recon_agent-2-web_fingerprint.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/15-access_pivot_agent-3-pivot_route_probe.json",
+        "var/runtime/real-chain-20260611-190331/tool-outputs/9-access_pivot_agent-3-pivot_route_probe.json"
+      ],
+      "operation_id": "real-chain-20260611-190331",
+      "summary": "goal_agent partial: 已获得当前成功条件状态并完成基于现有 Runtime/KG/AG 证据的目标评估：目标未完成，eligible_for_stop=false。现有证据仅明确支持 DMZ 服务发现完成，以及 vulnerability_candidate_recorded 已满足；当前不存在可复用会话、有效身份/权限上下文或已验证授权路由，因此受限区发现、受控数据读取、post-access 观察与 goal-check 证明链均未建立。 (0 tool call(s))"
+    }
+  ],
+  "budget_summary": {
+    "operation_budget_used": 0,
+    "operation_budget_max": null,
+    "time_budget_used_sec": 0.0,
+    "time_budget_max_sec": null,
+    "token_budget_used": 0,
+    "token_budget_max": null,
+    "noise_budget_used": 0.0,
+    "noise_budget_max": null,
+    "risk_budget_used": 0.0,
+    "risk_budget_max": null,
+    "requires_human_review": false,
+    "guards": {
+      "operation": false,
+      "time": false,
+      "token": false,
+      "noise": false,
+      "risk": false
+    }
+  },
+  "derived": {
+    "correlations": {
+      "accepted_request_replans": [],
+      "accepted_pauses": [],
+      "budget_guards": [],
+      "deterministic_fallbacks": []
+    }
+  },
+  "filters": {
+    "limit": 100,
+    "agent_kind": null,
+    "accepted": null
+  }
+}

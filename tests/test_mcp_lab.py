@@ -43,7 +43,9 @@ def test_lab_tool_specs_include_v1_tools() -> None:
         "privilege_context_probe",
         "pivot_route_probe",
         "internal_service_discover",
+        "pivoted_nmap_scan",
         "chain_goal_check",
+        "controlled_data_read_proof",
     }
 
 
@@ -136,6 +138,34 @@ def test_nmap_scan_passes_operation_context_to_run_command(monkeypatch) -> None:
     assert captured["trace_id"] == "trace-nmap"
 
 
+def test_nmap_scan_accepts_target_list_and_marks_no_targets_as_failure(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    captured: dict[str, Any] = {}
+
+    def fake_run_command(arguments: dict[str, Any]) -> dict[str, Any]:
+        captured.update(arguments)
+        return {
+            "success": True,
+            "stdout": "WARNING: No targets were specified, so 0 hosts scanned.",
+            "stderr": "Failed to resolve \"198.51.100.10,198.51.100.11\".",
+            "exit_code": 0,
+            "parsed": {},
+            "metadata": {"raw_output_ref": "raw.json"},
+        }
+
+    monkeypatch.setattr(mcp_tools, "_run_command", fake_run_command)
+
+    payload = call_lab_tool(
+        "nmap_scan",
+        {"target": ["198.51.100.10", "198.51.100.11"], "operation_id": "op-nmap", "trace_id": "trace-nmap"},
+    )
+
+    assert captured["argv"][-2:] == ["198.51.100.10", "198.51.100.11"]
+    assert payload["success"] is False
+    assert payload["exit_code"] == "no_targets_scanned"
+    assert payload["parsed"]["runtime_hints"]["blocked_by"] == "nmap_no_targets_scanned"
+
+
 def test_hidden_fixture_loads_only_inside_mcp_tool_env(tmp_path, monkeypatch) -> None:
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(
@@ -174,6 +204,30 @@ def test_goal_check_hidden_marker_does_not_leak_literal(tmp_path, monkeypatch) -
     assert payload["success"] is True
     assert payload["parsed"]["findings"][0]["checks"][-1]["matched"] is True
     assert "secret-marker-value" not in serialized
+
+
+def test_non_command_lab_tool_writes_raw_output_ref(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(
+        mcp_tools,
+        "_open_url",
+        lambda *_, **__: {
+            "status": 200,
+            "headers": {"content-type": "text/html"},
+            "body_excerpt": "<html><title>Fingerprint</title></html>",
+        },
+    )
+
+    payload = call_lab_tool(
+        "web_fingerprint",
+        {"url": "http://127.0.0.1:8080/", "operation_id": "op-web-fp", "trace_id": "trace-web-fp"},
+    )
+
+    assert payload["success"] is True
+    assert payload["metadata"]["raw_output_ref"].replace("\\", "/").endswith(
+        "var/runtime/op-web-fp/tool-outputs/trace-web-fp.json"
+    )
+    assert payload["parsed"]["writeback_hints"]["raw_output_ref"] == payload["metadata"]["raw_output_ref"]
 
 
 def test_mcp_lab_server_handles_tools_list_and_call(monkeypatch) -> None:
@@ -373,6 +427,118 @@ def test_lab_pivot_route_probe_returns_route_hints(monkeypatch) -> None:
     assert payload["success"] is False
     assert payload["parsed"]["runtime_hints"]["register_pivot_route"] is True
     assert payload["parsed"]["runtime_hints"]["route_id"] == "route-1"
+
+
+def test_internal_service_discover_uses_configured_pivot_for_restricted_data_service(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setenv("AEGRA_LAB_PIVOT_HOST", "pivot.example")
+    monkeypatch.setenv("AEGRA_LAB_PIVOT_USER", "pivot")
+    monkeypatch.setenv("AEGRA_LAB_PIVOT_PASSWORD", "hidden")
+    monkeypatch.setattr(mcp_tools, "_tcp_connect_probe", lambda arguments: {"success": False, "parsed": mcp_tools._default_parsed()})
+    monkeypatch.setattr(mcp_tools, "_probe_tcp_via_configured_pivot", lambda **kwargs: {"reachable": True, "stderr": ""})
+
+    payload = call_lab_tool(
+        "internal_service_discover",
+        {"host": "10.0.2.50", "port": 5432, "route_id": "route-1", "timeout_seconds": 1},
+    )
+
+    assert payload["success"] is True
+    assert payload["parsed"]["services"][0]["service_name"] == "postgres"
+    satisfied = payload["parsed"]["runtime_hints"]["satisfied_conditions"]
+    assert {"condition": "restricted_data_service_discovered", "evidence_ids": ["internal-service::route-1::10.0.2.50:5432"]} in satisfied
+
+
+def test_identity_context_probe_exposes_redacted_pivot_candidates(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "adapter_policy": {
+                    "pivot": {
+                        "default_route": {
+                            "route_id": "route-1",
+                            "source_host": "10.0.1.10",
+                            "via_host": "10.0.1.30",
+                            "destination_cidr": "10.0.2.0/24",
+                            "protocol": "ssh",
+                            "transport": {"adapter": "proxy_shell"},
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AEGRA_RUNTIME_POLICY_PATH", str(policy_path))
+
+    payload = call_lab_tool("identity_context_probe", {})
+
+    candidates = payload["parsed"]["runtime_hints"]["pivot_route_candidates"]
+    assert candidates == [
+        {
+            "route_id": "route-1",
+            "source_host": "10.0.1.10",
+            "via_host": "10.0.1.30",
+            "destination_cidr": "10.0.2.0/24",
+            "destination_host": None,
+            "protocol": "ssh",
+            "transport_adapter": "proxy_shell",
+        }
+    ]
+    assert "password" not in json.dumps(payload).lower()
+
+
+def test_pivoted_nmap_scan_emits_restricted_data_service_condition(monkeypatch) -> None:
+    class Completed:
+        returncode = 0
+        stdout = "\n".join(
+            [
+                "Nmap scan report for 10.0.2.50",
+                "Host is up.",
+                "PORT     STATE SERVICE    VERSION",
+                "5432/tcp open  postgresql PostgreSQL DB",
+            ]
+        )
+        stderr = ""
+
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(mcp_tools, "_run_via_configured_pivot", lambda **kwargs: Completed())
+
+    payload = call_lab_tool(
+        "pivoted_nmap_scan",
+        {"target": "10.0.2.0/24", "ports": "5432", "route_id": "route-1", "timeout_seconds": 1},
+    )
+
+    assert payload["success"] is True
+    conditions = payload["parsed"]["runtime_hints"]["satisfied_conditions"]
+    assert any(item["condition"] == "restricted_data_service_discovered" for item in conditions)
+
+
+def test_controlled_data_read_proof_returns_redacted_hash(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setenv("AEGRA_LAB_DB_USER", "lab")
+    monkeypatch.setenv("AEGRA_LAB_DB_PASSWORD", "labpass")
+    monkeypatch.setenv("AEGRA_LAB_DB_NAME", "labdb")
+    monkeypatch.setattr(mcp_tools, "_pivot_transport_available", lambda: True)
+    monkeypatch.setattr(
+        mcp_tools,
+        "_run_psql_query_via_configured_pivot",
+        lambda **kwargs: {"success": True, "stdout": "labdb|lab|PostgreSQL 16\n", "stderr": ""},
+    )
+
+    payload = call_lab_tool(
+        "controlled_data_read_proof",
+        {"host": "10.0.2.50", "port": 5432, "route_id": "route-1", "timeout_seconds": 1},
+    )
+
+    assert payload["success"] is True
+    assert "labpass" not in json.dumps(payload)
+    assert "labdb|lab|PostgreSQL" not in json.dumps(payload)
+    evidence = payload["parsed"]["evidence"][0]
+    assert evidence["kind"] == "controlled_data_read_proof"
+    assert evidence["row_count"] == 1
+    assert payload["parsed"]["runtime_hints"]["controlled_data_read"] is True
 
 
 def test_optional_external_tool_returns_structured_unavailable(monkeypatch) -> None:

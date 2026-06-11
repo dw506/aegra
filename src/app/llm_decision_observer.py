@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.app.settings import AppSettings
-from src.core.agents.agent_pipeline import PipelineCycleResult
+from src.core.agents.pipeline_results import PipelineCycleResult
 from src.core.agents.agent_protocol import AgentKind
 from src.core.runtime.llm_history import LLMDecisionHistoryRecord
 

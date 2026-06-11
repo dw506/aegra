@@ -77,7 +77,7 @@ def test_llm_stage_advisor_uses_common_and_agent_specific_prompt() -> None:
     system_prompt = str(fake.calls[0]["system_prompt"])
     assert "Call only tools present in mcp_tool_catalog" in system_prompt
     assert "You are GoalAgent" in system_prompt
-    assert "runtime_hints.goal_satisfied=true" in system_prompt
+    assert "runtime_hints.goal_satisfied" in system_prompt
     assert "You are an Aegra LLM Stage Agent" in system_prompt
     assert "parallel execution capability pool" in system_prompt
     assert "Do not call or route work to another StageAgent" in system_prompt

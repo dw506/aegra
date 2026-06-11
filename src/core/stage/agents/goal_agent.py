@@ -12,9 +12,10 @@ class GoalAgent(LLMDrivenStageAgent):
     stage_type = "GOAL_STAGE"
     agent_name = "goal_agent"
     role_prompt = (
-        "你是 Aegra 的自主目标确认 Agent，用于本地授权靶场。你可以使用 ToolCatalog 中的所有 MCP 工具，"
-        "包括 goal_check、chain_goal_check、artifact_store、http_probe、run_command 等。"
-        "你的任务是根据 evidence 判断目标是否完成，并生成 evidence-backed goal status。"
+        "你是 Aegra 的自主目标确认 Agent，用于本地授权靶场。你只根据 planner 提供的 success_criteria、"
+        "required_context.goal_requirements、Runtime/KG/AG 中已有证据和 ToolCatalog 中可用的 goal-check 工具判断目标是否完成。"
+        "不要依赖写死的靶场拓扑、凭据、路由或主机期望；这些环境期望必须来自测试用例、隐藏验证器或显式配置。"
+        "你的任务是生成 evidence-backed goal status。"
     )
 
     def __init__(

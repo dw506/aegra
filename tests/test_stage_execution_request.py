@@ -7,7 +7,7 @@ from typing import Any
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
 from src.core.planning.models import PlannerDecision
-from src.core.stage.agents import ExploitValidationAgent, ReconAgent
+from src.core.stage.agents import ExploitValidationAgent, GoalAgent, ReconAgent, VulnAnalysisAgent
 from src.core.stage.base_stage_agent import StageAgentDecision, StageToolCall
 from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.models import StageExecutionRequest, StageResult
@@ -359,6 +359,106 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
     assert mcp.calls[0]["server_id"] == "pentest-tools"
     assert mcp.calls[0]["arguments"]["operation_id"] == "op-default-server"
     assert mcp.calls[0]["arguments"]["trace_id"] == "4-recon_agent-1-nmap_scan"
+
+
+def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "finish",
+                "data": {
+                    "status": "completed",
+                    "summary": "recon produced structured targets",
+                    "hosts_up": ["198.51.100.10"],
+                    "service_discovery": [
+                        {"host": "198.51.100.10", "port": 8080, "protocol": "tcp", "service": "http"}
+                    ],
+                    "evidence_refs": ["runtime://tool-output/nmap"],
+                },
+            }
+        ]
+    )
+    request = StageExecutionRequest(
+        operation_id="op-finish-data",
+        cycle_index=3,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Preserve structured finish output",
+        max_steps=1,
+    )
+
+    result = ReconAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+
+    assert result.status == "succeeded"
+    assert result.evidence_refs == ["runtime://tool-output/nmap"]
+    structured = [item for item in result.observations if item.get("category") == "stage_structured_output"]
+    assert structured
+    assert structured[0]["hosts_up"] == ["198.51.100.10"]
+    assert structured[0]["service_discovery"][0]["port"] == 8080
+
+
+def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "finish",
+                "summary": json.dumps(
+                    {
+                        "status": "completed",
+                        "analysis": {
+                            "service_fingerprints": [
+                                {
+                                    "host": "198.51.100.20",
+                                    "port": 80,
+                                    "protocol": "http",
+                                    "improved_fingerprint": {"application": "Example App"},
+                                }
+                            ],
+                            "candidate_findings": [
+                                {
+                                    "target": "http://198.51.100.20/",
+                                    "type": "application_identification",
+                                    "statement": "Example App identified from page title.",
+                                }
+                            ],
+                        },
+                    }
+                ),
+            }
+        ]
+    )
+    request = StageExecutionRequest(
+        operation_id="op-json-summary",
+        cycle_index=2,
+        agent_name="vuln_analysis_agent",
+        stage_type="VULN_ANALYSIS_STAGE",
+        objective="Analyze fingerprints",
+        max_steps=1,
+    )
+
+    result = VulnAnalysisAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+
+    assert result.status == "succeeded"
+    assert result.findings[0]["summary"] == "Example App identified from page title."
+    structured = [item for item in result.observations if item.get("category") == "stage_structured_output"]
+    assert structured[0]["analysis"]["service_fingerprints"][0]["port"] == 80
+
+
+def test_stage_agent_empty_success_finish_requests_replan() -> None:
+    llm = FakeStageLLM([{"action": "finish"}])
+    request = StageExecutionRequest(
+        operation_id="op-empty-finish",
+        cycle_index=9,
+        agent_name="goal_agent",
+        stage_type="GOAL_STAGE",
+        objective="Verify goal",
+        max_steps=1,
+    )
+
+    result = GoalAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+
+    assert result.status == "needs_replan"
+    assert "no tool results" in (result.replan_recommendation or "")
 
 
 def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_server() -> None:

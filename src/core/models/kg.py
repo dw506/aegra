@@ -216,6 +216,77 @@ class Goal(BaseNode):
     description: str | None = None
 
 
+class VulnerabilityCandidate(BaseNode):
+    type: Literal[NodeType.VULNERABILITY_CANDIDATE] = NodeType.VULNERABILITY_CANDIDATE
+    vuln_profile_id: str | None = None
+    target_ref: str | None = None
+    service_ref: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    matched_evidence: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(default_factory=list)
+    recommended_next_action: str | None = None
+    exploit_profile_id: str | None = None
+    zone_ref: str | None = None
+
+
+class ExploitCapability(BaseNode):
+    type: Literal[NodeType.EXPLOIT_CAPABILITY] = NodeType.EXPLOIT_CAPABILITY
+    vuln_ref: str | None = None
+    target_ref: str | None = None
+    exploit_profile_id: str | None = None
+    zone_ref: str | None = None
+
+
+class PostAccessObservation(BaseNode):
+    type: Literal[NodeType.POST_ACCESS_OBSERVATION] = NodeType.POST_ACCESS_OBSERVATION
+    target_ref: str | None = None
+    session_ref: str | None = None
+    observation_path: str | None = None
+    zone_ref: str | None = None
+
+
+class LabHint(BaseNode):
+    type: Literal[NodeType.LAB_HINT] = NodeType.LAB_HINT
+    hint_kind: str | None = None
+    source_path: str | None = None
+    zone_ref: str | None = None
+
+
+class LabFlag(BaseNode):
+    type: Literal[NodeType.LAB_FLAG] = NodeType.LAB_FLAG
+    flag_path: str | None = None
+    zone_ref: str | None = None
+
+
+class GoalCheck(BaseNode):
+    type: Literal[NodeType.GOAL_CHECK] = NodeType.GOAL_CHECK
+    goal_id: str | None = None
+    passed: bool = False
+    redacted_summary: str | None = None
+    proof_token: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class GoalProof(BaseNode):
+    type: Literal[NodeType.GOAL_PROOF] = NodeType.GOAL_PROOF
+    goal_id: str | None = None
+    proof_token: str | None = None
+    redacted_summary: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PivotRouteNode(BaseNode):
+    """KG representation of an established pivot route."""
+
+    type: Literal[NodeType.PIVOT_ROUTE] = NodeType.PIVOT_ROUTE
+    route_id: str | None = None
+    from_zone_ref: str | None = None
+    to_zone_ref: str | None = None
+    via_host: str | None = None
+    session_ref: str | None = None
+    route_type: str | None = None
+
+
 class HostsEdge(BaseEdge):
     type: Literal[EdgeType.HOSTS] = EdgeType.HOSTS
 
@@ -337,6 +408,14 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.FINDING: Finding,
     NodeType.NETWORK_ZONE: NetworkZone,
     NodeType.GOAL: Goal,
+    NodeType.VULNERABILITY_CANDIDATE: VulnerabilityCandidate,
+    NodeType.EXPLOIT_CAPABILITY: ExploitCapability,
+    NodeType.POST_ACCESS_OBSERVATION: PostAccessObservation,
+    NodeType.LAB_HINT: LabHint,
+    NodeType.LAB_FLAG: LabFlag,
+    NodeType.GOAL_CHECK: GoalCheck,
+    NodeType.GOAL_PROOF: GoalProof,
+    NodeType.PIVOT_ROUTE: PivotRouteNode,
 }
 
 

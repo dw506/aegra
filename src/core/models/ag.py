@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, TypeAlias
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.core.models.attack_process import (
     AgentExecutionNode,
@@ -24,257 +21,11 @@ from src.core.models.attack_process import (
     StopDecisionNode,
     ToolCallNode,
 )
-from src.core.models.graph_common import GraphRef, stable_node_id, utc_now
+from src.core.models.graph_common import GraphRef, stable_node_id
 
 
-class StateNodeType(str, Enum):
-    """Planner-visible state categories projected from KG facts."""
-
-    HOST_KNOWN = "HOST_KNOWN"
-    HOST_VALIDATED = "HOST_VALIDATED"
-    SERVICE_KNOWN = "SERVICE_KNOWN"
-    SERVICE_CONFIRMED = "SERVICE_CONFIRMED"
-    WEB_ATTACK_SURFACE = "WEB_ATTACK_SURFACE"
-    PATH_CANDIDATE = "PATH_CANDIDATE"
-    REACHABILITY_VALIDATED = "REACHABILITY_VALIDATED"
-    IDENTITY_KNOWN = "IDENTITY_KNOWN"
-    IDENTITY_AVAILABLE_ON_HOST = "IDENTITY_AVAILABLE_ON_HOST"
-    CREDENTIAL_USABLE = "CREDENTIAL_USABLE"
-    CREDENTIAL_REUSABLE_ON_HOST = "CREDENTIAL_REUSABLE_ON_HOST"
-    MANAGED_SESSION_AVAILABLE = "MANAGED_SESSION_AVAILABLE"
-    SESSION_ACTIVE_ON_HOST = "SESSION_ACTIVE_ON_HOST"
-    IDENTITY_CONTEXT_KNOWN = "IDENTITY_CONTEXT_KNOWN"
-    PRIVILEGE_VALIDATED = "PRIVILEGE_VALIDATED"
-    PRIVILEGE_SOURCE_KNOWN = "PRIVILEGE_SOURCE_KNOWN"
-    PIVOT_HOST_AVAILABLE = "PIVOT_HOST_AVAILABLE"
-    LATERAL_SERVICE_EXPOSED = "LATERAL_SERVICE_EXPOSED"
-    DATA_ASSET_KNOWN = "DATA_ASSET_KNOWN"
-    GOAL_RELEVANT_DATA_LOCATED = "GOAL_RELEVANT_DATA_LOCATED"
-    GOAL_STATE_SATISFIED = "GOAL_STATE_SATISFIED"
-
-
-class ActionNodeType(str, Enum):
-    """Controlled action-template categories for planning."""
-
-    ENUMERATE_HOST = "ENUMERATE_HOST"
-    SCAN_PORTS = "SCAN_PORTS"
-    VALIDATE_SERVICE = "VALIDATE_SERVICE"
-    FINGERPRINT_INTERNAL_SERVICE = "FINGERPRINT_INTERNAL_SERVICE"
-    ENUMERATE_WEB_SURFACE = "ENUMERATE_WEB_SURFACE"
-    DISCOVER_WEB_PATHS = "DISCOVER_WEB_PATHS"
-    VALIDATE_REACHABILITY = "VALIDATE_REACHABILITY"
-    VALIDATE_LATERAL_REACHABILITY = "VALIDATE_LATERAL_REACHABILITY"
-    ESTABLISH_PIVOT_ROUTE = "ESTABLISH_PIVOT_ROUTE"
-    ESTABLISH_MANAGED_SESSION = "ESTABLISH_MANAGED_SESSION"
-    VALIDATE_CREDENTIAL = "VALIDATE_CREDENTIAL"
-    REUSE_CREDENTIAL_ON_HOST = "REUSE_CREDENTIAL_ON_HOST"
-    CHECK_CREDENTIAL_REUSE = "CHECK_CREDENTIAL_REUSE"
-    EXPLOIT_LATERAL_SERVICE = "EXPLOIT_LATERAL_SERVICE"
-    ENUMERATE_IDENTITY_CONTEXT = "ENUMERATE_IDENTITY_CONTEXT"
-    VALIDATE_PRIVILEGE_STATE = "VALIDATE_PRIVILEGE_STATE"
-    LOCATE_GOAL_RELEVANT_DATA = "LOCATE_GOAL_RELEVANT_DATA"
-    VALIDATE_GOAL_CONDITION = "VALIDATE_GOAL_CONDITION"
-
-
-class GoalNodeType(str, Enum):
-    """Goal categories used by the planner."""
-
-    HOST_PROFILE_SUFFICIENT = "HOST_PROFILE_SUFFICIENT"
-    TARGET_CONTEXT_VALIDATED = "TARGET_CONTEXT_VALIDATED"
-    GOAL_RELEVANT_DATA_PRESENT = "GOAL_RELEVANT_DATA_PRESENT"
-    OBJECTIVE_SATISFIED = "OBJECTIVE_SATISFIED"
-
-
-class ConstraintNodeType(str, Enum):
-    """Constraint categories that may gate planning branches."""
-
-    SCOPE_BOUNDARY = "SCOPE_BOUNDARY"
-    HOST_LOCK = "HOST_LOCK"
-    SESSION_LOCK = "SESSION_LOCK"
-    CONCURRENCY_LIMIT = "CONCURRENCY_LIMIT"
-    TIME_BUDGET = "TIME_BUDGET"
-    TOKEN_BUDGET = "TOKEN_BUDGET"
-    NOISE_BUDGET = "NOISE_BUDGET"
-    RISK_BUDGET = "RISK_BUDGET"
-    APPROVAL_GATE = "APPROVAL_GATE"
-
-
-class TruthStatus(str, Enum):
-    """Truthiness of a projected state."""
-
-    CANDIDATE = "candidate"
-    ACTIVE = "active"
-    VALIDATED = "validated"
-    STALE = "stale"
-    REVOKED = "revoked"
-
-
-class ActivationStatus(str, Enum):
-    """Runtime-free activation classification for planning nodes."""
-
-    UNKNOWN = "unknown"
-    ACTIVE = "active"
-    ACTIVATABLE = "activatable"
-    BLOCKED = "blocked"
-    SATISFIED = "satisfied"
-    DORMANT = "dormant"
-
-
-class AGEdgeType(str, Enum):
-    """Relationship types inside the Attack Graph."""
-
-    REQUIRES = "REQUIRES"
-    PRODUCES = "PRODUCES"
-    ENABLES = "ENABLES"
-    BLOCKED_BY = "BLOCKED_BY"
-    COMPETES_WITH = "COMPETES_WITH"
-    DOMINATES = "DOMINATES"
-
-
-class GraphBinding(BaseModel):
-    """Structured binding from a logical argument name to a value or graph ref."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1)
-    value: str | int | float | bool | None = None
-    graph_ref: GraphRef | None = None
-
-
-class ActivationCondition(BaseModel):
-    """Planner-facing activation constraint attached to an action."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str = Field(min_length=1)
-    required_refs: list[GraphRef] = Field(default_factory=list)
-    expression: dict[str, Any] = Field(default_factory=dict)
-    status: ActivationStatus = ActivationStatus.UNKNOWN
-    reason: str | None = None
-
-
-class ProjectionTrace(BaseModel):
-    """Trace metadata describing how an AG entity was projected."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    rule: str = Field(min_length=1)
-    source_graph: str = "kg"
-    input_refs: list[GraphRef] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    projected_at: datetime = Field(default_factory=utc_now)
-
-
-class BaseAGNode(BaseModel):
-    """Common fields shared by all Attack Graph nodes."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    id: str = Field(min_length=1)
-    label: str = Field(min_length=1)
-    kind: Literal["state", "action", "goal", "constraint"]
-    properties: dict[str, Any] = Field(default_factory=dict)
-    source_refs: list[GraphRef] = Field(default_factory=list)
-    projection_traces: list[ProjectionTrace] = Field(default_factory=list)
-    tags: set[str] = Field(default_factory=set)
-
-
-class BaseAGEdge(BaseModel):
-    """Common fields shared by all Attack Graph edges."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    id: str = Field(min_length=1)
-    edge_type: AGEdgeType
-    source: str = Field(min_length=1)
-    target: str = Field(min_length=1)
-    label: str = Field(min_length=1)
-    properties: dict[str, Any] = Field(default_factory=dict)
-    source_refs: list[GraphRef] = Field(default_factory=list)
-    tags: set[str] = Field(default_factory=set)
-
-
-class StateNode(BaseAGNode):
-    """Planner-visible state node derived from KG facts."""
-
-    kind: Literal["state"] = "state"
-    node_type: StateNodeType
-    subject_refs: list[GraphRef] = Field(default_factory=list)
-    truth_status: TruthStatus = TruthStatus.CANDIDATE
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    goal_relevance: float = Field(default=0.0, ge=0.0, le=1.0)
-    created_from: list[GraphRef] = Field(default_factory=list)
-    first_seen: datetime = Field(default_factory=utc_now)
-    last_seen: datetime = Field(default_factory=utc_now)
-    ttl: int | None = Field(default=None, ge=1)
-
-    @model_validator(mode="after")
-    def validate_time_window(self) -> "StateNode":
-        """Keep state timestamps monotonic."""
-
-        if self.last_seen < self.first_seen:
-            raise ValueError("last_seen must be greater than or equal to first_seen")
-        return self
-
-
-class ActionNode(BaseAGNode):
-    """Controlled action template or bound planning action."""
-
-    kind: Literal["action"] = "action"
-    action_type: ActionNodeType
-    bound_args: dict[str, Any] = Field(default_factory=dict)
-    required_inputs: list[str] = Field(default_factory=list)
-    precondition_schema: dict[str, Any] = Field(default_factory=dict)
-    postcondition_schema: dict[str, Any] = Field(default_factory=dict)
-    required_capabilities: set[str] = Field(default_factory=set)
-    cost: float = Field(default=0.0, ge=0.0)
-    risk: float = Field(default=0.0, ge=0.0, le=1.0)
-    noise: float = Field(default=0.0, ge=0.0, le=1.0)
-    expected_value: float = Field(default=0.0, ge=0.0, le=1.0)
-    success_probability_prior: float = Field(default=0.5, ge=0.0, le=1.0)
-    goal_relevance: float = Field(default=0.0, ge=0.0, le=1.0)
-    parallelizable: bool = False
-    cooldown_seconds: int = Field(default=0, ge=0)
-    retry_policy: dict[str, Any] = Field(default_factory=dict)
-    approval_required: bool = False
-    resource_keys: set[str] = Field(default_factory=set)
-    activation_status: ActivationStatus = ActivationStatus.UNKNOWN
-    activation_conditions: list[ActivationCondition] = Field(default_factory=list)
-
-
-class GoalNode(BaseAGNode):
-    """Planner target or intermediate planning objective."""
-
-    kind: Literal["goal"] = "goal"
-    goal_type: GoalNodeType
-    success_criteria: dict[str, Any] = Field(default_factory=dict)
-    priority: int = Field(default=50, ge=0)
-    business_value: float = Field(default=0.5, ge=0.0, le=1.0)
-    scope_refs: list[GraphRef] = Field(default_factory=list)
-
-
-class ConstraintNode(BaseAGNode):
-    """Budget, scope, approval or concurrency restriction."""
-
-    kind: Literal["constraint"] = "constraint"
-    constraint_type: ConstraintNodeType
-    hard_or_soft: Literal["hard", "soft"] = "hard"
-    budget_value: float | int | None = None
-    current_usage: float | int | None = None
-    applies_to: list[GraphRef] = Field(default_factory=list)
-    activation_status: ActivationStatus = ActivationStatus.ACTIVE
-
-
-AGNode: TypeAlias = StateNode | ActionNode | GoalNode | ConstraintNode | AttackProcessNode
-AGEdge: TypeAlias = BaseAGEdge | AttackProcessEdge
-
-
-NODE_KIND_MAP: dict[str, type[BaseAGNode]] = {
-    "state": StateNode,
-    "action": ActionNode,
-    "goal": GoalNode,
-    "constraint": ConstraintNode,
-}
+AGNode: TypeAlias = AttackProcessNode
+AGEdge: TypeAlias = AttackProcessEdge
 
 
 class AttackGraph:
@@ -433,7 +184,7 @@ class AttackGraph:
             nodes = (self._nodes[node_id] for node_id in self._node_type_index.get(key, set()))
         return sorted(nodes, key=lambda item: item.id)
 
-    def list_edges(self, edge_type: AGEdgeType | Enum | str | None = None) -> list[AGEdge]:
+    def list_edges(self, edge_type: Enum | str | None = None) -> list[AGEdge]:
         """List all edges, optionally filtered by type."""
 
         if edge_type is None:
@@ -446,7 +197,7 @@ class AttackGraph:
     def neighbors(
         self,
         node_id: str,
-        edge_type: AGEdgeType | Enum | str | None = None,
+        edge_type: Enum | str | None = None,
         direction: Literal["in", "out", "both"] = "both",
     ) -> list[AGNode]:
         """Return neighboring nodes from incoming, outgoing or both edges."""
@@ -468,48 +219,6 @@ class AttackGraph:
             other_id = edge.target if edge.source == node_id else edge.source
             result[other_id] = self._nodes[other_id]
         return sorted(result.values(), key=lambda item: item.id)
-
-    def find_states(
-        self,
-        state_type: StateNodeType | str | None = None,
-        active_only: bool = False,
-    ) -> list[StateNode]:
-        """Return projected state nodes."""
-
-        states = [node for node in self.list_nodes(state_type) if isinstance(node, StateNode)]
-        if active_only:
-            states = [
-                node
-                for node in states
-                if node.truth_status in {TruthStatus.ACTIVE, TruthStatus.VALIDATED}
-            ]
-        return states
-
-    def find_actions(
-        self,
-        action_type: ActionNodeType | str | None = None,
-        activatable_only: bool = False,
-    ) -> list[ActionNode]:
-        """Return action nodes, optionally only activatable ones."""
-
-        actions = [node for node in self.list_nodes(action_type) if isinstance(node, ActionNode)]
-        if activatable_only:
-            actions = [
-                node
-                for node in actions
-                if node.activation_status in {ActivationStatus.ACTIVATABLE, ActivationStatus.SATISFIED}
-            ]
-        return actions
-
-    def get_goal_nodes(self) -> list[GoalNode]:
-        """Return all goal nodes."""
-
-        return [node for node in self.list_nodes() if isinstance(node, GoalNode)]
-
-    def get_constraint_nodes(self) -> list[ConstraintNode]:
-        """Return all constraint nodes."""
-
-        return [node for node in self.list_nodes() if isinstance(node, ConstraintNode)]
 
     def find_process_nodes(
         self,
@@ -561,13 +270,39 @@ class AttackGraph:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AttackGraph":
-        """Restore a graph from serialized data."""
+        """Restore a graph from serialized data.
+
+        Loading is tolerant of legacy/unknown records: nodes or edges that no
+        longer have a model (e.g. retired projection nodes from an older AG
+        snapshot) are skipped instead of failing the whole restore, so existing
+        operations can still resume after the model changes.
+        """
 
         graph = cls()
+        skipped_node_ids: set[str] = set()
         for node_data in payload.get("nodes", []):
-            graph.add_node(parse_ag_node(node_data))
+            try:
+                node = parse_ag_node(node_data)
+            except Exception:
+                node_id = node_data.get("id") if isinstance(node_data, dict) else None
+                if node_id is not None:
+                    skipped_node_ids.add(str(node_id))
+                continue
+            try:
+                graph.add_node(node)
+            except ValueError:
+                continue
         for edge_data in payload.get("edges", []):
-            graph.add_edge(parse_ag_edge(edge_data))
+            try:
+                edge = parse_ag_edge(edge_data)
+            except Exception:
+                continue
+            if edge.source in skipped_node_ids or edge.target in skipped_node_ids:
+                continue
+            try:
+                graph.add_edge(edge)
+            except (ValueError, KeyError):
+                continue
         metadata = payload.get("metadata") or {}
         if isinstance(metadata, dict):
             graph.set_projection_metadata(
@@ -584,28 +319,13 @@ class AttackGraph:
 
     @staticmethod
     def _node_type_key(node: AGNode) -> str:
-        if isinstance(node, AttackProcessNode):
-            return node.node_type.value
-        if isinstance(node, StateNode):
-            return node.node_type.value
-        if isinstance(node, ActionNode):
-            return node.action_type.value
-        if isinstance(node, GoalNode):
-            return node.goal_type.value
-        return node.constraint_type.value
+        return node.node_type.value
 
     @staticmethod
     def _refs_for_index(node: AGNode) -> list[GraphRef]:
         refs: list[GraphRef] = []
         if isinstance(node, AttackProcessNode):
             refs.extend(node.refs)
-        elif isinstance(node, StateNode):
-            refs.extend(node.subject_refs)
-            refs.extend(node.created_from)
-        elif isinstance(node, GoalNode):
-            refs.extend(node.scope_refs)
-        elif isinstance(node, ConstraintNode):
-            refs.extend(node.applies_to)
         if hasattr(node, "source_refs"):
             refs.extend(node.source_refs)
         unique: dict[str, GraphRef] = {ref.key(): ref for ref in refs}
@@ -616,9 +336,6 @@ def parse_ag_node(data: dict[str, Any]) -> AGNode:
     """Instantiate a typed AG node from serialized data."""
 
     kind = data.get("kind")
-    if kind in NODE_KIND_MAP:
-        return NODE_KIND_MAP[kind].model_validate(data)
-
     node_type = data.get("node_type")
     node_type_key = node_type.value if isinstance(node_type, Enum) else node_type
     process_node_types = {item.value for item in AttackProcessNodeType}
@@ -647,9 +364,6 @@ def parse_ag_edge(data: dict[str, Any]) -> AGEdge:
 
     edge_type = data.get("edge_type")
     edge_type_key = edge_type.value if isinstance(edge_type, Enum) else edge_type
-    if edge_type_key in {item.value for item in AGEdgeType}:
-        return BaseAGEdge.model_validate(data)
-
     if edge_type_key in {item.value for item in AttackProcessEdgeType}:
         return AttackProcessEdge.model_validate(data)
 

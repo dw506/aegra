@@ -1,0 +1,189 @@
+version: "3.9"
+
+# Full-chain autonomous pentest lab
+# Topology:
+#   control_net + attacker_net: Aegra API, MCP tools (initial access zone)
+#   dmz_net (10.20.0.0/24): Entry-zone targets - reachable from mcp-tools
+#   internal_net (10.30.0.0/24): Restricted zone - NOT directly reachable from mcp-tools
+#   pivot-ssh bridges dmz_net and internal_net
+#
+# Safety constraints:
+#   - internal_net has no published ports (no host-level access)
+#   - All DMZ containers expose only lab-specific ports
+#   - Lab paths: /opt/aegra/flags/, /opt/aegra/hints/, /opt/aegra/loot/
+#   - No real system paths (/etc/shadow, /root, etc.) are accessible via lab tools
+
+networks:
+  control_net:
+    driver: bridge
+  dmz_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.20.0.0/24
+  internal_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.30.0.0/24
+
+services:
+  # -------------------------------------------------------------------------
+  # Aegra control plane
+  # -------------------------------------------------------------------------
+  aegra-api:
+    build:
+      context: ../../../
+      dockerfile: lab/Dockerfile.aegra
+    container_name: aegra-api
+    env_file:
+      - ../../../.env
+    environment:
+      - AEGRA_MCP_ENABLED=1
+      - AEGRA_MCP_CONFIG_PATH=/app/configs/mcp.lab.full-chain.json
+      - AEGRA_LAB_PROFILE_PATH=/app/lab/environments/full_chain_lab/profile.yml
+    ports:
+      - "8000:8000"
+    networks:
+      - control_net
+      - dmz_net
+    depends_on:
+      - mcp-tools
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # MCP tool server (initial access to dmz_net only)
+  # -------------------------------------------------------------------------
+  mcp-tools:
+    build:
+      context: ../../../
+      dockerfile: lab/Dockerfile.aegra
+    container_name: mcp-tools
+    command: python -m src.integrations.mcp_lab.server
+    environment:
+      - AEGRA_LAB_MODE=1
+      - AEGRA_LAB_PROFILE_PATH=/app/lab/environments/full_chain_lab/profile.yml
+      - AEGRA_MCP_TOOLSET=full_pentest
+    networks:
+      - control_net
+      - dmz_net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # DMZ zone entry targets
+  # -------------------------------------------------------------------------
+  dmz-struts:
+    # Vulhub Struts2 S2-045 (CVE-2017-5638)
+    image: vulhub/struts2:2.3.30
+    container_name: dmz-struts
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.10
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./lab_flags/dmz-struts:/opt/aegra/flags:ro
+      - ./lab_hints/dmz-struts:/opt/aegra/hints:ro
+      - ./lab_loot/dmz-struts:/opt/aegra/loot:ro
+    restart: unless-stopped
+
+  dmz-thinkphp:
+    # Vulhub ThinkPHP 5.0.23 RCE
+    image: vulhub/thinkphp:5.0.23
+    container_name: dmz-thinkphp
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.11
+    ports:
+      - "18081:80"
+    volumes:
+      - ./lab_flags/dmz-thinkphp:/opt/aegra/flags:ro
+      - ./lab_hints/dmz-thinkphp:/opt/aegra/hints:ro
+      - ./lab_loot/dmz-thinkphp:/opt/aegra/loot:ro
+    restart: unless-stopped
+
+  dmz-flask:
+    # Flask SSTI lab
+    image: vulhub/flask:1.1.1
+    container_name: dmz-flask
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.12
+    ports:
+      - "18082:5000"
+    volumes:
+      - ./lab_flags/dmz-flask:/opt/aegra/flags:ro
+      - ./lab_hints/dmz-flask:/opt/aegra/hints:ro
+      - ./lab_loot/dmz-flask:/opt/aegra/loot:ro
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Pivot host (bridges dmz_net <-> internal_net)
+  # -------------------------------------------------------------------------
+  pivot-ssh:
+    image: linuxserver/openssh-server:latest
+    container_name: pivot-ssh
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.50
+      internal_net:
+        ipv4_address: 10.30.0.50
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PUBLIC_KEY_FILE=/opt/aegra/hints/pivot_authorized_key.pub
+    volumes:
+      - ./lab_hints/pivot-ssh:/opt/aegra/hints:ro
+      - ./lab_loot/pivot-ssh:/opt/aegra/loot:ro
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Internal (restricted) zone services
+  # Only reachable via pivot-ssh, no host-level port publishing
+  # -------------------------------------------------------------------------
+  internal-nginx:
+    image: nginx:alpine
+    container_name: internal-nginx
+    networks:
+      internal_net:
+        ipv4_address: 10.30.0.10
+    volumes:
+      - ./internal_web:/usr/share/nginx/html:ro
+      - ./lab_flags/internal:/opt/aegra/flags:ro
+    restart: unless-stopped
+    # No ports: section - not accessible from host
+
+  internal-api:
+    image: python:3.11-slim
+    container_name: internal-api
+    command:
+      - python
+      - -c
+      - >
+        import http.server, os;
+        Handler = type("Handler", (http.server.BaseHTTPRequestHandler,), {
+          "do_GET": lambda self: (
+            self.send_response(200),
+            self.end_headers(),
+            self.wfile.write(("internal-api: operational\nmarker:%s\n" % os.environ.get("AEGRA_FINAL_GOAL_MARKER", "NOT_CONFIGURED")).encode()),
+          ),
+          "log_message": lambda self, *args: None,
+        });
+        http.server.HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+    networks:
+      internal_net:
+        ipv4_address: 10.30.0.11
+    env_file:
+      - ./private/.env
+    restart: unless-stopped
+    # No ports: section
+
+  internal-db-mock:
+    image: alpine:latest
+    container_name: internal-db-mock
+    command: sleep infinity
+    networks:
+      internal_net:
+        ipv4_address: 10.30.0.12
+    restart: unless-stopped
+    # No ports: section

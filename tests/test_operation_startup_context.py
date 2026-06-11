@@ -144,7 +144,7 @@ def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> N
         max_replans=3,
     )
 
-    assert [result.planning.final_output.decisions[0]["planner_decision"]["decision"] for result in results] == [
+    assert [result.planner_decision.decision for result in results] == [
         "replan",
         "replan",
         "stop_success",

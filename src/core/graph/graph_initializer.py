@@ -8,10 +8,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.ag import ActionNode, ActionNodeType, AttackGraph, stable_node_id
+from src.core.models.ag import AttackGraph, stable_node_id
 from src.core.models.kg import BelongsToZoneEdge, Goal, Host, NetworkZone, TargetsEdge
 from src.core.models.kg_enums import EntityStatus
 
@@ -48,14 +47,8 @@ class GraphInitializationResult:
 class GraphInitializer:
     """Create and persist the initial graph memory state for an operation."""
 
-    def __init__(
-        self,
-        store: GraphMemoryStore | None = None,
-        *,
-        projector: AttackGraphProjector | None = None,
-    ) -> None:
+    def __init__(self, store: GraphMemoryStore | None = None) -> None:
         self._store = store or GraphMemoryStore()
-        self._projector = projector or AttackGraphProjector()
 
     def initialize(
         self,
@@ -77,8 +70,10 @@ class GraphInitializer:
             goal_description=goal_description,
             goal_category=goal_category,
         )
-        ag = self._projector.project(kg, goal_context={"goal_ids": [self._goal_id(operation_id)]})
-        initial_actions = self._select_initial_actions(ag, self._host_id(operation_id, normalized_target))
+        # AG 起始为空：主链路只通过 AttackLogExtractor/ResultApplier 写入
+        # attack-process 节点，不再用 KG→AG 投影预置 State/Action 节点。
+        ag = AttackGraph()
+        ag.set_projection_metadata(source_kg_version=kg.version, projection_batch_id=None)
 
         if persist:
             self._store.save_kg(operation_id, kg)
@@ -92,7 +87,7 @@ class GraphInitializer:
             host_id=self._host_id(operation_id, normalized_target),
             goal_id=self._goal_id(operation_id),
             scope_id=self._scope_id(operation_id, normalized_target),
-            initial_action_ids=[action.id for action in initial_actions],
+            initial_action_ids=[],
         )
 
     def _build_initial_kg(
@@ -183,14 +178,6 @@ class GraphInitializer:
             )
         )
         return kg
-
-    def _select_initial_actions(self, ag: AttackGraph, host_id: str) -> list[ActionNode]:
-        actions = [
-            action
-            for action in ag.find_actions(ActionNodeType.ENUMERATE_HOST)
-            if any(ref.graph == "kg" and ref.ref_id == host_id for ref in action.source_refs)
-        ]
-        return sorted(actions, key=lambda action: action.id)
 
     @staticmethod
     def _target_properties(target: InitialTarget) -> dict[str, Any]:

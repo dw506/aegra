@@ -1,0 +1,49 @@
+vuln_profile_id: thinkphp-5-0-23-rce
+display_name: "ThinkPHP 5.0.23 RCE"
+cve: CVE-2018-20062
+cwe: CWE-77
+cvss: 9.8
+description: >
+  Remote code execution via unvalidated controller method name in ThinkPHP 5.0.x
+  before 5.0.24. An attacker can invoke arbitrary PHP functions via crafted URL.
+
+fingerprint_signals:
+  services:
+    - php
+    - apache
+    - nginx
+  protocols:
+    - http
+    - https
+  products:
+    - "ThinkPHP"
+    - "Think PHP"
+  version_ranges:
+    - "5.0.0 - 5.0.23"
+  banner_markers:
+    - "thinkphp"
+    - "think-php"
+  title_markers:
+    - "ThinkPHP"
+    - "Think PHP"
+  header_markers:
+    - "X-Powered-By: ThinkPHP"
+  path_markers:
+    - "/index.php"
+    - "/public/index.php"
+  body_markers:
+    - "ThinkPHP"
+    - "TP5"
+
+confidence_weights:
+  product_match: 0.6
+  version_match: 0.3
+  banner_match: 0.4
+  path_match: 0.2
+
+recommended_exploit_profiles:
+  - thinkphp-5-0-23-lab-exploit
+
+safe_validation_methods:
+  - http_error_page_analysis
+  - response_header_inspection

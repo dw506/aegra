@@ -1,0 +1,12 @@
+{
+  "operation_id": "blackbox-e2e-fix1-20260609-111847",
+  "status": "partial",
+  "stop_reason": "planner_llm_unavailable",
+  "success": false,
+  "success_condition_progress": {},
+  "evidence_ids": [],
+  "findings_url": "/operations/blackbox-e2e-fix1-20260609-111847/findings",
+  "evidence_url": "/operations/blackbox-e2e-fix1-20260609-111847/evidence",
+  "graph_url": "/operations/blackbox-e2e-fix1-20260609-111847/graph",
+  "audit_url": "/operations/blackbox-e2e-fix1-20260609-111847/audit-report"
+}

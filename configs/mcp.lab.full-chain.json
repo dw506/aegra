@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "pentest-tools": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["-m", "src.integrations.mcp_lab.server"],
+      "cwd": "/app",
+      "env": {
+        "AEGRA_LAB_MODE": "1",
+        "AEGRA_LAB_PROFILE_PATH": "/app/lab/environments/full_chain_lab/profile.yml",
+        "AEGRA_MCP_TOOLSET": "full_pentest"
+      }
+    }
+  }
+}

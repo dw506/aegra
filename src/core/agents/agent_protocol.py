@@ -43,6 +43,7 @@ class GraphScope(str, Enum):
 
     KG = "kg"
     AG = "ag"
+    TG = "tg"
     RUNTIME = "runtime"
 
 

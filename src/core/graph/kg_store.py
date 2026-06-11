@@ -80,8 +80,10 @@ class KnowledgeGraph:
         applied_entity_ids: list[str] = []
         applied_relation_ids: list[str] = []
         applied_delta_ids: list[str] = []
+        failed_delta_ids: list[str] = []
+        errors: list[dict[str, Any]] = []
 
-        for delta in state_deltas:
+        for index, delta in enumerate(state_deltas):
             if not isinstance(delta, dict):
                 continue
             patch = delta.get("patch")
@@ -92,12 +94,33 @@ class KnowledgeGraph:
                 if isinstance(delta.get("payload"), dict)
                 else None
             ) or patch.get("entity_kind")
-            if patch_kind == "entity" or patch.get("entity_kind") == "node":
-                entity = self._apply_entity_patch(patch)
-                applied_entity_ids.append(entity.id)
-            elif patch_kind == "relation" or patch.get("entity_kind") == "edge":
-                relation = self._apply_relation_patch(patch)
-                applied_relation_ids.append(relation.id)
+            delta_id = str(delta.get("id") or patch.get("entity_id") or patch.get("relation_id") or f"delta-{index}")
+            # 单条 delta 容错：一条坏 patch 不应拖垮整批写入（否则整个 stage 的写图全部丢失）。
+            try:
+                if patch_kind == "entity" or patch.get("entity_kind") == "node":
+                    entity = self._apply_entity_patch(patch)
+                    applied_entity_ids.append(entity.id)
+                elif patch_kind == "relation" or patch.get("entity_kind") == "edge":
+                    relation = self._apply_relation_patch(patch)
+                    applied_relation_ids.append(relation.id)
+                else:
+                    continue
+            except (
+                ValidationConstraintError,
+                DuplicateEntityError,
+                EntityNotFoundError,
+                ValueError,
+                KeyError,
+            ) as exc:
+                failed_delta_ids.append(delta_id)
+                errors.append(
+                    {
+                        "delta_id": delta_id,
+                        "patch_kind": patch_kind or patch.get("entity_kind"),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                continue
             if delta.get("id"):
                 applied_delta_ids.append(str(delta["id"]))
 
@@ -109,6 +132,8 @@ class KnowledgeGraph:
             "applied_delta_ids": applied_delta_ids,
             "applied_entity_ids": applied_entity_ids,
             "applied_relation_ids": applied_relation_ids,
+            "failed_delta_ids": failed_delta_ids,
+            "errors": errors,
         }
 
     def add_node(self, node: BaseNode) -> BaseNode:
@@ -132,7 +157,14 @@ class KnowledgeGraph:
             raise ValidationConstraintError("node type cannot be changed")
 
         payload = current.model_dump()
+        # properties 走合并而非整体替换：upsert 的精简 patch 不应抹掉之前 stage
+        # 写入的丰富 properties；新键覆盖同名旧键，缺失的旧键保留。
+        merged_properties = dict(payload.get("properties") or {})
+        if isinstance(patch.get("properties"), dict):
+            merged_properties.update(patch["properties"])
         payload.update(patch)
+        if merged_properties:
+            payload["properties"] = merged_properties
         updated = current.__class__.model_validate(payload)
 
         self._unindex_source_refs("node", current.id, current.source_refs)

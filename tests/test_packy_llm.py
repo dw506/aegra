@@ -137,6 +137,37 @@ def test_packy_client_records_usage_and_estimated_cost() -> None:
     assert summary["cost_usd"] == pytest.approx(0.00325)
 
 
+def test_packy_client_retries_retryable_gateway_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(status_code=429, json={"error": {"message": "Too many pending requests"}})
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
+        client = PackyLLMClient(
+            PackyLLMConfig(
+                api_key="test-key",
+                base_url="https://www.packyapi.com/v1",
+                model="gpt-5.2",
+                max_retries=1,
+            ),
+            http_client=http_client,
+        )
+        response = client.complete_chat(user_prompt="hello")
+
+    assert response.text == "ok"
+    assert calls == 2
+
+
 def test_packy_llm_config_from_env_prefers_aegra_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AEGRA_LLM_API_KEY", "aegra-key")
     monkeypatch.setenv("AEGRA_LLM_BASE_URL", "https://aegra.example/v1")

@@ -17,7 +17,7 @@ from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.core.workers.tool_runner import ToolExecutionSpec
+from src.core.tools.tool_runner import ToolExecutionSpec
 
 
 class ToolRecipeError(ValueError):

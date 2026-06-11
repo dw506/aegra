@@ -10,20 +10,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
 from src.app.llm_decision_observer import LLMDecisionObserver
-from src.core.agents.agent_pipeline import PipelineCycleResult, PipelineStepResult
-from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef
+from src.core.agents.pipeline_results import PipelineCycleResult
+from src.core.agents.agent_protocol import GraphRef as AgentGraphRef
 from src.core.agents.graph_context import TwoGraphContextBuilder
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
-from src.core.graph.ag_projector import AttackGraphProjector
 from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
-from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, WorkerRuntime, WorkerStatus, utc_now
+from src.core.models.runtime import OperationRuntime, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
+from src.core.planning.models import PlannerDecision
 from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import (
     append_operation_log,
@@ -48,10 +48,10 @@ from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, Runti
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
 
-
-class TargetHost(BaseModel):
+#把用户输入的目标转换成标准 Asset
+class TargetHost(BaseModel): 
     """Inventory record for host/domain/cidr/url/service target import."""
-
+  
     model_config = ConfigDict(extra="forbid")
 
     address: str | None = None
@@ -96,7 +96,7 @@ class TargetHost(BaseModel):
             return "host"
         return kind or "host"
 
-
+#返回 operation 简要状态
 class OperationSummary(BaseModel):
     """Compact operation summary returned by the orchestrator."""
 
@@ -122,9 +122,10 @@ class OperationCycleResult(BaseModel):
 
     operation_id: str
     cycle_index: int = Field(ge=1)
-    planning: PipelineCycleResult | None = None
-    execution: PipelineCycleResult | None = None
-    feedback: PipelineCycleResult | None = None
+    planner_decision: PlannerDecision | None = None
+    planning_success: bool = False
+    stage_result: dict[str, Any] | None = None
+    execution_success: bool = False
     apply_results: list[PhaseTwoApplyResult] = Field(default_factory=list)
     selected_task_ids: list[str] = Field(default_factory=list)
     applied_task_ids: list[str] = Field(default_factory=list)
@@ -132,7 +133,7 @@ class OperationCycleResult(BaseModel):
     stop_reason: str | None = None
     runtime_state: RuntimeState
 
-
+#表示 /run 最终返回结果
 class OperationRunSummary(BaseModel):
     """Stable final result contract returned to API, scripts and users."""
 
@@ -159,7 +160,6 @@ class AppOrchestrator:
         runtime_store: RuntimeStore | None = None,
         graph_memory_store: GraphMemoryStore | None = None,
         result_applier: PhaseTwoResultApplier | None = None,
-        graph_projector: AttackGraphProjector | None = None,
     ) -> None:
         self.settings = settings or AppSettings.from_env()
         self.runtime_store = runtime_store or self._build_runtime_store(self.settings)
@@ -197,30 +197,31 @@ class AppOrchestrator:
         runtime_policy = self.settings.load_runtime_policy()
         lab_profile = self.settings.load_lab_profile()
         public_lab_profile = self._public_lab_profile_metadata(lab_profile)
-        operation_metadata = {
-            "control_plane": {
-                "audit_enabled": self.settings.audit_enabled,
+        operation_metadata = {        #某一次 operation 的附加运行上下文信息
+            "control_plane": {            #运行控制参数
+                "audit_enabled": self.settings.audit_enabled,               #用于决定 operation 中是否记录审计事件
                 "audit_persist_enabled": self.settings.audit_persist_enabled,
-                # 中文注释：
+                
                 # 日志治理参数跟随 operation 一起固化到 runtime metadata，
                 # 这样后续 resume、export 和不同 store 后端都能复用同一份配置。
                 "audit_max_entries": self.settings.audit_max_entries,
-                "operation_log_max_entries": self.settings.operation_log_max_entries,
-                "audit_redaction_enabled": self.settings.audit_redaction_enabled,
+                "operation_log_max_entries": self.settings.operation_log_max_entries,  #operation 普通运行日志最多保留多少条
+                "audit_redaction_enabled": self.settings.audit_redaction_enabled,      #是否开启审计脱敏
                 "recovery_enabled": self.settings.recovery_enabled,
-                "max_concurrent_workers": self.settings.max_concurrent_workers,
+                "max_concurrent_workers": self.settings.max_concurrent_workers,        #最大并发 worker 数
                 "default_operation_budget": self.settings.default_operation_budget,
                 "default_scan_timeout_sec": self.settings.default_scan_timeout_sec,
-                "llm_advisors": self._llm_advisor_status(self.settings),
-                "agent_architecture": self._agent_architecture_metadata(self.settings),
+                "llm_advisors": self._llm_advisor_status(self.settings),  
+                "agent_architecture": self._agent_architecture_metadata(self.settings),            #当前 agent 架构信息
             },
-            # 中文注释：
+          
             # operation metadata 中只落稳定 JSON 结构，避免把 Pydantic 对象直接塞进 state。
-            "runtime_policy": runtime_policy.to_runtime_metadata(),
+            "runtime_policy": runtime_policy.to_runtime_metadata(),              #保存运行策略和授权范围
             "lab_profile": public_lab_profile,
-            "target_inventory": [],
+            "target_inventory": [],                       #用户导入的目标列表
             "target_count": 0,
-            "llm_decision_history": [],
+            "llm_decision_history": [],                  #LLM 决策历史
+
         }
         if metadata:
             operation_metadata.update(metadata)
@@ -243,7 +244,7 @@ class AppOrchestrator:
         )
         self.runtime_store.save_state(created)
         return created.model_copy(deep=True)
-
+    #导入目标
     def import_targets(self, operation_id: str, targets: list[TargetHost]) -> RuntimeState:
         """Persist the current target inventory in operation metadata."""
 
@@ -281,13 +282,14 @@ class AppOrchestrator:
         )
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
-
-    def start_operation(self, operation_id: str) -> RuntimeState:
+    
+    #启动 operation 流程
+    def start_operation(self, operation_id: str) -> RuntimeState:     
         """Mark an operation ready for the first planning/execution cycle."""
 
         started_at = utc_now()
         state = self.runtime_store.snapshot(operation_id)
-        graph_initialization = self._ensure_graph_initialized_from_targets(state)
+        graph_initialization = self._ensure_graph_initialized_from_targets(state)     #初始化 KG / AG
         if graph_initialization is not None:
             state.execution.metadata["graph_initialization"] = graph_initialization
             kg, ag, graph_runtime = self._load_graph_memory(operation_id)
@@ -420,7 +422,6 @@ class AppOrchestrator:
         state.execution.metadata["lifecycle_state"] = "ready_to_resume"
         state.execution.summary = f"operation recovered: {reason}"
         state.last_updated = utc_now()
-        # 中文注释：
         # recover 和 resume 分开：recover 只做保守整理，便于运维先收口脏状态，
         # 是否继续执行交给后续 resume 或人工确认。
         self._log_operation_event(
@@ -549,7 +550,7 @@ class AppOrchestrator:
             "llm_advisors": self._llm_advisor_status(self.settings),
         }
 
-    def run_operation_cycle(
+    def run_operation_cycle(          #单轮主循环
         self,
         operation_id: str,
         *,
@@ -642,6 +643,11 @@ class AppOrchestrator:
         )
         graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
         graph_snapshot["mcp_tool_catalog"] = tool_catalog
+        # Surface the authoritative success-condition gate so PlannerAgent can read
+        # eligible_for_stop before deciding whether to emit stop_success.
+        graph_snapshot["success_condition_progress"] = self._mapping(
+            state.execution.metadata.get("success_condition_progress")
+        )
         try:
             decision = self.mission_planner.run(
                 goal=goal,
@@ -703,48 +709,15 @@ class AppOrchestrator:
         for delta in planning_apply.visual_graph_deltas:
             graph_delta_publisher.publish_nowait(delta)
 
-        planning_output = AgentOutput(
-            decisions=[{"planner_decision": decision.model_dump(mode="json")}],
-            logs=[decision.reasoning_summary or f"planner decision={decision.decision}"],
-        )
-        now = utc_now()
-        planning = PipelineCycleResult(
-            cycle_name="planner_decision",
-            operation_id=operation_id,
-            success=decision.decision not in {"stop_failed"},
-            steps=[
-                PipelineStepResult(
-                    step_name="planner_agent",
-                    agent_name="planner_agent",
-                    agent_kind=AgentKind.PLANNER,
-                    success=decision.decision not in {"stop_failed"},
-                    agent_input=AgentInput(
-                        graph_refs=graph_refs,
-                        context=AgentContext(operation_id=operation_id),
-                        raw_payload=planner_payload,
-                    ),
-                    agent_output=planning_output,
-                    started_at=now,
-                    finished_at=now,
-                    duration_ms=0,
-                )
-            ],
-            final_output=planning_output,
-            logs=list(planning_output.logs),
-        )
+        planning_success = decision.decision not in {"stop_failed"}
         apply_results: list[PhaseTwoApplyResult] = [planning_apply]
-        execution = PipelineCycleResult(
-            cycle_name="stage_dispatch",
-            operation_id=operation_id,
-            success=True,
-            final_output=AgentOutput(logs=["no stage dispatch requested"]),
-        )
+        stage_result_payload: dict[str, Any] | None = None
+        execution_success = True
         applied_ids: list[str] = []
         stopped = decision.decision in {"stop_success", "stop_failed", "pause_for_review"}
         stop_reason = decision.stop_condition or (decision.decision if stopped else None)
 
         if decision.decision == "dispatch_agent":
-            started_at = utc_now()
             try:
                 stage_result = StageDispatcher(self.stage_registry).dispatch(
                     decision,
@@ -769,7 +742,6 @@ class AppOrchestrator:
                         original_operation_id=original_operation_id,
                         normalized_operation_id=operation_id,
                     )
-                finished_at = utc_now()
                 stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
             except Exception as exc:
                 return self._fail_operation_cycle(
@@ -781,7 +753,8 @@ class AppOrchestrator:
                     phase="stage_dispatch",
                     exc=exc,
                     txt_logger=txt_logger,
-                    planning=planning,
+                    planner_decision=decision,
+                    planning_success=planning_success,
                     apply_results=apply_results,
                 )
             stage_graph_write_payload = {
@@ -790,6 +763,7 @@ class AppOrchestrator:
                 "agent": stage_result.agent_name,
                 "stage_status": stage_result.status,
                 "kg_delta_count": len(stage_apply.kg_state_deltas or []),
+                "kg_write_diagnostics": dict(stage_apply.kg_write_diagnostics or {}),
                 "ag_delta_count": len(stage_apply.ag_state_deltas or []),
                 "tg_delta_count": 0,
                 "runtime_event_count": len(stage_apply.runtime_event_refs or []),
@@ -842,34 +816,9 @@ class AppOrchestrator:
                     graph_delta_publisher.publish_nowait(delta)
             apply_results.extend([stage_apply, log_apply])
             applied_ids.append(stage_result.stage_task_id)
-            stage_output = AgentOutput(
-                outcomes=[stage_result.model_dump(mode="json")],
-                logs=[stage_result.summary],
-            )
-            execution = PipelineCycleResult(
-                cycle_name="stage_dispatch",
-                operation_id=operation_id,
-                success=stage_result.status not in {"failed", "blocked"},
-                steps=[
-                    PipelineStepResult(
-                        step_name=stage_result.agent_name,
-                        agent_name=stage_result.agent_name,
-                        agent_kind=AgentKind.WORKER,
-                        success=stage_result.status not in {"failed", "blocked"},
-                        agent_input=AgentInput(
-                            graph_refs=graph_refs,
-                            context=AgentContext(operation_id=operation_id),
-                            raw_payload={"planner_decision": decision.model_dump(mode="json")},
-                        ),
-                        agent_output=stage_output,
-                        started_at=started_at,
-                        finished_at=finished_at,
-                        duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
-                    )
-                ],
-                final_output=stage_output,
-                logs=[stage_result.summary],
-            )
+            stage_result_payload = stage_result.model_dump(mode="json")
+            execution_success = stage_result.status not in {"failed", "blocked"}
+            self._update_success_condition_progress(state=state, stage_result=stage_result)
             if self._goal_satisfied(state):
                 state.execution.metadata["goal_satisfied"] = True
             if stage_result.status in {"failed", "blocked"}:
@@ -885,19 +834,12 @@ class AppOrchestrator:
                 stop_reason = None
             stopped = False
 
-        feedback = PipelineCycleResult(
-            cycle_name="feedback_disabled",
-            operation_id=operation_id,
-            success=True,
-            logs=["feedback critic phase disabled for stage-agent main path"],
-        )
         summary = {
             "cycle_index": cycle_index,
             "started_at": utc_now().isoformat(),
             "architecture": "planner_stage_agent_graph_main_path",
-            "planning_success": planning.success,
-            "execution_success": execution.success,
-            "feedback_success": feedback.success,
+            "planning_success": planning_success,
+            "execution_success": execution_success,
             "selected_agent": decision.selected_agent,
             "selected_stage": decision.selected_stage,
             "applied_results": len(apply_results),
@@ -968,9 +910,10 @@ class AppOrchestrator:
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planning=planning,
-            execution=execution,
-            feedback=feedback,
+            planner_decision=decision,
+            planning_success=planning_success,
+            stage_result=stage_result_payload,
+            execution_success=execution_success,
             apply_results=apply_results,
             selected_task_ids=applied_ids,
             applied_task_ids=list(applied_ids),
@@ -1019,9 +962,10 @@ class AppOrchestrator:
         """持续运行主循环，直到静止或达到上限。"""
 
         results: list[OperationCycleResult] = []
-        llm_rejection_count = 0
-        supervisor_replan_count = 0
         planner_replan_count = 0
+        # consecutive_llm_rejections is retained for API request compatibility; the
+        # supervisor-driven rejection/replan path is not part of the stage-agent main loop.
+        del consecutive_llm_rejections
         for _ in range(max_cycles):
             state_before = self.runtime_store.snapshot(operation_id)
             if self._budget_guard_triggered(state_before):
@@ -1066,33 +1010,6 @@ class AppOrchestrator:
                     break
             elif planner_decision in {"dispatch_agent"}:
                 planner_replan_count = 0
-            supervisor_control = self._apply_supervisor_control_strategy(
-                operation_id=operation_id,
-                graph_refs=graph_refs,
-                cycle_result=cycle_result,
-                context=context,
-                max_replans=max_replans,
-                supervisor_replan_count=supervisor_replan_count,
-            )
-            if supervisor_control.get("llm_rejected"):
-                llm_rejection_count += 1
-            elif supervisor_control.get("llm_accepted"):
-                llm_rejection_count = 0
-            if supervisor_control.get("replan_requested"):
-                supervisor_replan_count += 1
-            if llm_rejection_count >= consecutive_llm_rejections:
-                state = self.runtime_store.snapshot(operation_id)
-                self._record_control_strategy(
-                    state,
-                    cycle_index=cycle_result.cycle_index,
-                    strategy="deterministic_fallback",
-                    accepted=False,
-                    reason="consecutive llm rejections threshold reached",
-                )
-                self.runtime_store.save_state(state)
-                llm_rejection_count = 0
-            if supervisor_control.get("stop"):
-                break
             if stop_when_quiescent and cycle_result.stopped:
                 break
         return results
@@ -1118,21 +1035,6 @@ class AppOrchestrator:
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
 
-    def _apply_supervisor_control_strategy(
-        self,
-        *,
-        operation_id: str,
-        graph_refs: list[AgentGraphRef],
-        cycle_result: OperationCycleResult,
-        context: dict[str, Any] | None,
-        max_replans: int,
-        supervisor_replan_count: int,
-    ) -> dict[str, Any]:
-        """Supervisor control is temporarily disabled in the main loop."""
-
-        del operation_id, graph_refs, cycle_result, context, max_replans, supervisor_replan_count
-        return {}
-
     def resume_operation(self, operation_id: str, *, reason: str = "manual_resume") -> RuntimeState:
         """Normalize in-flight runtime state so the operation can resume safely."""
 
@@ -1143,52 +1045,6 @@ class AppOrchestrator:
         self._log_operation_event(state, event_type="operation_resumed", **summary)
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
-
-    def _supervisor_payload_from_cycle(
-        self,
-        state: RuntimeState,
-        cycle_result: OperationCycleResult,
-    ) -> dict[str, Any]:
-        last_control_cycle = self._mapping(state.execution.metadata.get("last_control_cycle"))
-        return {
-            "runtime_summary": self._runtime_summary(state),
-            "last_control_cycle": last_control_cycle,
-            "planner_summary": {
-                "success": cycle_result.planning.success if cycle_result.planning is not None else False,
-                "step_count": len(cycle_result.planning.steps) if cycle_result.planning is not None else 0,
-            },
-            "critic_summary": {
-                "success": cycle_result.feedback.success if cycle_result.feedback is not None else False,
-                "finding_count": self._critic_finding_count(cycle_result.feedback),
-                "replan_request_count": len(state.replan_requests),
-            },
-            "budget_summary": self._budget_summary(state),
-        }
-
-    def _validated_supervisor_strategy(self, cycle: PipelineCycleResult) -> dict[str, Any] | None:
-        for decision in cycle.final_output.decisions:
-            payload = self._mapping(decision.get("payload"))
-            validation = self._mapping(payload.get("llm_decision_validation"))
-            if not bool(payload.get("control_only")):
-                continue
-            if not bool(payload.get("llm_adopted")) or not bool(validation.get("accepted")):
-                continue
-            supervisor_decision = self._mapping(payload.get("supervisor_decision"))
-            strategy = supervisor_decision.get("strategy")
-            if strategy not in {
-                "continue_planning",
-                "continue_execution",
-                "request_replan",
-                "pause_for_review",
-                "stop_when_quiescent",
-            }:
-                continue
-            return {
-                "strategy": str(strategy),
-                "rationale": supervisor_decision.get("rationale"),
-                "requires_human_review": bool(supervisor_decision.get("requires_human_review", False)),
-            }
-        return None
 
     def _record_control_strategy(
         self,
@@ -1242,25 +1098,6 @@ class AppOrchestrator:
             reason=reason,
         )
 
-    def _request_supervisor_replan(self, state: RuntimeState, *, cycle_index: int, rationale: str) -> None:
-        request = ReplanRequest(
-            request_id=f"supervisor-replan-{cycle_index}-{len(state.replan_requests) + 1}",
-            reason="supervisor requested existing replan flow",
-            scope="local",
-            metadata={
-                "source": "supervisor",
-                "cycle_index": cycle_index,
-                "rationale": rationale,
-            },
-        )
-        state.request_replan(request)
-        self._log_operation_event(
-            state,
-            event_type="supervisor_replan_requested",
-            cycle_index=cycle_index,
-            request_id=request.request_id,
-        )
-
     @staticmethod
     def _budget_summary(state: RuntimeState) -> dict[str, Any]:
         budgets = state.budgets
@@ -1293,17 +1130,6 @@ class AppOrchestrator:
     @staticmethod
     def _budget_exhausted(used: float | int, maximum: float | int | None) -> bool:
         return maximum is not None and used >= maximum
-
-    @staticmethod
-    def _critic_finding_count(feedback: PipelineCycleResult | None) -> int:
-        if feedback is None:
-            return 0
-        count = 0
-        for decision in feedback.final_output.decisions:
-            payload = decision.get("payload") if isinstance(decision, dict) else None
-            if isinstance(payload, dict) and "recommendation" in payload:
-                count += 1
-        return count
 
     def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, RuntimeState | None]:
         """Load KG / AG / Runtime snapshots for operation bootstrap."""
@@ -1355,23 +1181,227 @@ class AppOrchestrator:
                     return value.strip()
         return None
 
+    def _update_success_condition_progress(
+        self,
+        *,
+        state: RuntimeState,
+        stage_result: Any | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate configured success conditions against the latest stage signals.
+
+        Generic, environment-agnostic producer for
+        ``metadata["success_condition_progress"]``. Condition names come from the
+        active profile's ``success_conditions.require_all`` list; their meaning is
+        resolved by deterministic stage-signal detectors (never by an LLM, never
+        using raw secrets). The result accumulates across cycles: once a condition
+        is satisfied it stays satisfied, and evidence ids are unioned in.
+
+        ``eligible_for_stop`` is computed here and is the only authoritative gate
+        that lets PlannerAgent emit ``stop_success``.
+        """
+
+        success_conditions = self._mapping(self.settings.load_lab_profile().get("success_conditions"))
+        require_all = [str(name) for name in success_conditions.get("require_all", []) if str(name).strip()]
+        if not require_all:
+            return self._mapping(state.execution.metadata.get("success_condition_progress"))
+
+        progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
+        conditions = {k: dict(v) for k, v in self._mapping(progress.get("conditions")).items() if isinstance(v, dict)}
+        signals = self._stage_condition_signals(state=state, stage_result=stage_result)
+
+        for name in require_all:
+            existing = self._mapping(conditions.get(name))
+            satisfied = bool(existing.get("satisfied"))
+            evidence_ids = [str(e) for e in existing.get("evidence_ids", []) if str(e).strip()]
+            newly = signals.get(name)
+            if newly is not None:
+                satisfied = True
+                for evidence_id in newly:
+                    if evidence_id and evidence_id not in evidence_ids:
+                        evidence_ids.append(evidence_id)
+            conditions[name] = {"satisfied": satisfied, "evidence_ids": evidence_ids}
+
+        missing = [name for name in require_all if not conditions.get(name, {}).get("satisfied")]
+        all_required_satisfied = not missing
+        new_progress = {
+            "conditions": conditions,
+            "missing": missing,
+            "all_required_satisfied": all_required_satisfied,
+            "eligible_for_stop": all_required_satisfied,
+            "recommended_planner_action": "stop_success" if all_required_satisfied else "continue",
+        }
+        state.execution.metadata["success_condition_progress"] = new_progress
+        return new_progress
+
+    def _stage_condition_signals(
+        self,
+        *,
+        state: RuntimeState,
+        stage_result: Any | None,
+    ) -> dict[str, list[str]]:
+        """Map one stage result to the success-condition names it newly satisfies."""
+
+        if stage_result is None:
+            return {}
+
+        stage_type = str(getattr(stage_result, "stage_type", "") or "").upper()
+        status = str(getattr(stage_result, "status", "") or "").lower()
+        findings = getattr(stage_result, "findings", None) or []
+        observations = getattr(stage_result, "observations", None) or []
+        discovered_entities = getattr(stage_result, "discovered_entities", None) or []
+        runtime_hints = self._mapping(getattr(stage_result, "runtime_hints", None))
+        evidence_ids = self._stage_evidence_ids(stage_result)
+        signal_text = " ".join(
+            [
+                str(getattr(stage_result, "summary", "") or ""),
+                *[
+                    str(item.get("type") or item.get("kind") or item.get("category") or item.get("summary") or "")
+                    for item in findings
+                    if isinstance(item, dict)
+                ],
+                *[
+                    str(item.get("type") or item.get("kind") or item.get("category") or item.get("summary") or "")
+                    for item in observations
+                    if isinstance(item, dict)
+                ],
+                *[
+                    str(item.get("type") or item.get("kind") or item.get("entity_type") or item.get("summary") or "")
+                    for item in discovered_entities
+                    if isinstance(item, dict)
+                ],
+                " ".join(str(key) for key, value in runtime_hints.items() if value),
+            ]
+        ).lower()
+        finding_text = " ".join(
+            str(item.get("type") or item.get("kind") or item.get("summary") or "")
+            for item in findings
+            if isinstance(item, dict)
+        ).lower()
+        zone = self._stage_zone(stage_result=stage_result, finding_text=signal_text)
+        has_pivot_route = self._has_pivot_route(state) or bool(runtime_hints.get("register_pivot_route"))
+
+        is_service_discovery = "recon" in stage_type or "service" in signal_text or "discover" in signal_text
+        is_vuln_candidate = "vuln" in stage_type or "candidate" in signal_text or "vulnerab" in signal_text
+        is_exploit = "exploit" in stage_type or "exploit" in signal_text
+        is_session = bool(runtime_hints.get("session_id") or runtime_hints.get("capability")) or "pivot" in stage_type or "access" in stage_type
+        is_controlled_proof = (
+            bool(runtime_hints.get("exploit_executed") or runtime_hints.get("validated") or runtime_hints.get("marker_found"))
+            or "controlled_proof" in signal_text
+            or "validated access" in signal_text
+            or "validated_access" in signal_text
+        )
+        is_post_access = (
+            "post_access" in signal_text
+            or "post-access" in signal_text
+            or "postaccess" in signal_text
+            or "artifact observed" in signal_text
+            or bool(runtime_hints.get("post_access_observed"))
+        )
+        is_goal_check = (
+            "goal" in stage_type
+            or bool(runtime_hints.get("goal_satisfied"))
+            or "goalcheck" in signal_text.replace(" ", "")
+        )
+
+        signals: dict[str, list[str]] = {}
+
+        def emit(name: str) -> None:
+            signals[name] = list(evidence_ids)
+
+        def emit_with_evidence(name: str, ids: list[str] | None = None) -> None:
+            clean_name = str(name or "").strip()
+            if not clean_name:
+                return
+            clean_ids = [str(ref) for ref in (ids or evidence_ids) if str(ref).strip()]
+            existing = signals.setdefault(clean_name, [])
+            for ref in clean_ids:
+                if ref not in existing:
+                    existing.append(ref)
+
+        generic_conditions = runtime_hints.get("satisfied_conditions") or runtime_hints.get("condition_signals")
+        if isinstance(generic_conditions, list):
+            for item in generic_conditions:
+                if isinstance(item, dict):
+                    refs = item.get("evidence_ids") or item.get("evidence_refs")
+                    emit_with_evidence(
+                        str(item.get("condition") or item.get("name") or ""),
+                        [str(ref) for ref in refs] if isinstance(refs, list) else None,
+                    )
+                else:
+                    emit_with_evidence(str(item))
+        elif isinstance(generic_conditions, dict):
+            for name, refs in generic_conditions.items():
+                emit_with_evidence(
+                    str(name),
+                    [str(ref) for ref in refs] if isinstance(refs, list) else None,
+                )
+
+        if is_service_discovery and zone != "restricted":
+            emit("dmz_service_discovered")
+            emit("entry_zone_service_discovered")
+        if is_service_discovery and zone == "restricted" and has_pivot_route:
+            emit("internal_service_discovered_after_authorized_route")
+            emit("restricted_zone_service_discovered")
+        if "recon" in stage_type and ("host" in finding_text or "host" in status):
+            emit("entry_zone_host_discovered")
+        if "fingerprint" in stage_type or "fingerprint" in finding_text:
+            emit("service_fingerprint_recorded")
+        if is_vuln_candidate:
+            emit("vulnerability_candidate_recorded")
+        if is_exploit:
+            emit("exploit_attempt_recorded")
+            if status in {"succeeded", "success"} or "success" in finding_text:
+                emit("exploit_success_recorded")
+        if is_controlled_proof:
+            emit("at_least_one_controlled_proof_or_validated_access")
+        if is_session:
+            emit("capability_or_session_recorded")
+        if is_post_access:
+            emit("post_access_observation_recorded")
+        if has_pivot_route:
+            emit("pivot_route_recorded")
+        if is_goal_check:
+            emit("goal_check_recorded")
+            if bool(runtime_hints.get("goal_satisfied")):
+                emit("final_goal_proof_valid")
+        return signals
+
     @staticmethod
-    def _goal_satisfied(state: RuntimeState) -> bool:
-        if bool(state.execution.metadata.get("goal_satisfied")):
+    def _stage_evidence_ids(stage_result: Any) -> list[str]:
+        """Resolve evidence ids for a stage: evidence_refs first, then tool raw refs."""
+
+        evidence_ids = [str(ref) for ref in (getattr(stage_result, "evidence_refs", None) or []) if str(ref).strip()]
+        if not evidence_ids:
+            for trace in getattr(stage_result, "tool_trace", None) or []:
+                ref = getattr(trace, "raw_output_ref", None)
+                if ref and str(ref).strip():
+                    evidence_ids.append(str(ref))
+        return evidence_ids
+
+    @staticmethod
+    def _stage_zone(*, stage_result: Any, finding_text: str) -> str:
+        """Classify the stage's target zone as 'restricted' or 'entry' (generic)."""
+
+        stage_type = str(getattr(stage_result, "stage_type", "") or "").lower()
+        runtime_hints = getattr(stage_result, "runtime_hints", None) or {}
+        zone_ref = str(
+            (runtime_hints.get("zone_ref") if isinstance(runtime_hints, dict) else None) or ""
+        ).lower()
+        if zone_ref in {"restricted", "internal"}:
+            return "restricted"
+        if "internal" in stage_type or "restricted" in finding_text or "internal" in finding_text:
+            return "restricted"
+        return "entry"
+
+    @staticmethod
+    def _has_pivot_route(state: RuntimeState) -> bool:
+        """Return whether the runtime already recorded at least one pivot route."""
+
+        routes = getattr(state, "pivot_routes", None)
+        if routes:
             return True
-        for outcome in state.recent_outcomes:
-            payload = outcome.metadata.get("outcome_payload")
-            if not isinstance(payload, dict):
-                continue
-            stage_result = payload.get("stage_result")
-            if not isinstance(stage_result, dict):
-                continue
-            if stage_result.get("stage_type") == "GOAL_STAGE" and stage_result.get("status") == "succeeded":
-                hints = stage_result.get("runtime_hints")
-                if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
-                    state.execution.metadata["goal_satisfied"] = True
-                    return True
-        return False
+        metadata_routes = state.execution.metadata.get("pivot_routes")
+        return bool(metadata_routes)
 
     @staticmethod
     def _mission_goal(*, planner_payload: dict[str, Any], context: dict[str, Any] | None) -> str:
@@ -1418,25 +1448,6 @@ class AppOrchestrator:
         snapshot["cycle_index"] = cycle_index
         return snapshot
 
-    def _append_llm_decision_history_from_cycle(
-        self,
-        state: RuntimeState,
-        *,
-        cycle_index: int,
-        cycle: PipelineCycleResult,
-    ) -> None:
-        records = self._extract_llm_decision_history(cycle_index=cycle_index, cycle=cycle)
-        if not records:
-            return
-        append_llm_decision_history(state, records)
-        self._log_operation_event(
-            state,
-            event_type="llm_decision_history_recorded",
-            cycle_index=cycle_index,
-            cycle_name=cycle.cycle_name,
-            record_count=len(records),
-        )
-
     def _extract_llm_decision_history(
         self,
         *,
@@ -1473,15 +1484,6 @@ class AppOrchestrator:
                 }
             )
         return results
-
-    @staticmethod
-    def _runtime_summary(state: RuntimeState) -> dict[str, Any]:
-        return {
-            "operation_status": state.operation_status.value,
-            "task_count": len(state.execution.tasks),
-            "pending_event_count": len(state.pending_events),
-            "replan_request_count": len(state.replan_requests),
-        }
 
     @staticmethod
     def _blackbox_policy_context(policy_context: dict[str, Any], state: RuntimeState) -> dict[str, Any]:
@@ -1546,14 +1548,10 @@ class AppOrchestrator:
 
     @staticmethod
     def _cycle_planner_decision(cycle_result: OperationCycleResult) -> str | None:
-        if cycle_result.planning is None:
+        if cycle_result.planner_decision is None:
             return None
-        for item in cycle_result.planning.final_output.decisions:
-            payload = item.get("planner_decision") if isinstance(item, dict) else None
-            if isinstance(payload, dict):
-                decision = payload.get("decision")
-                return str(decision) if decision is not None else None
-        return None
+        decision = cycle_result.planner_decision.decision
+        return str(decision) if decision is not None else None
 
     def _load_tool_catalog(self) -> dict[str, Any]:
         if self.mcp_client is None:
@@ -1573,8 +1571,12 @@ class AppOrchestrator:
         """
 
         profile_id = str(lab_profile.get("profile_id") or "")
+        full_pentest_profiles = {
+            "full-vulhub-multihost-pentest",
+            "full-chain-autonomous-pentest-lab",
+        }
         return {
-            "full_pentest_active": profile_id == "full-vulhub-multihost-pentest",
+            "full_pentest_active": profile_id in full_pentest_profiles,
             "profile_id": profile_id or None,
             "source": "lab_profile.profile_id",
         }
@@ -1684,7 +1686,8 @@ class AppOrchestrator:
         phase: str,
         exc: Exception,
         txt_logger: TxtTraceLogger | None = None,
-        planning: PipelineCycleResult | None = None,
+        planner_decision: PlannerDecision | None = None,
+        planning_success: bool = False,
         apply_results: list[PhaseTwoApplyResult] | None = None,
     ) -> OperationCycleResult:
         error_type = "llm_transport_error" if "llm_transport_error" in str(exc) else exc.__class__.__name__
@@ -1739,9 +1742,8 @@ class AppOrchestrator:
                     "cycle_index": cycle_index,
                     "started_at": error_record["recorded_at"],
                     "architecture": "planner_stage_agent_graph_main_path",
-                    "planning_success": planning.success if planning is not None else False,
+                    "planning_success": planning_success,
                     "execution_success": False,
-                    "feedback_success": False,
                     "selected_agent": None,
                     "selected_stage": None,
                     "applied_results": len(apply_results or []),
@@ -1767,23 +1769,13 @@ class AppOrchestrator:
         self.graph_memory_store.save_ag(operation_id, ag)
         self.graph_memory_store.save_runtime(operation_id, state)
         self.graph_memory_store.save_snapshot(operation_id, cycle_index)
-        failed_output = AgentOutput(
-            logs=[state.execution.summary],
-            errors=[f"{error_type}: {exc}"],
-        )
-        failed_cycle = PipelineCycleResult(
-            cycle_name=phase,
-            operation_id=operation_id,
-            success=False,
-            final_output=failed_output,
-            logs=[state.execution.summary],
-        )
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planning=planning or failed_cycle,
-            execution=failed_cycle if phase != "planning" else None,
-            feedback=None,
+            planner_decision=planner_decision,
+            planning_success=planning_success,
+            stage_result=None,
+            execution_success=False,
             apply_results=list(apply_results or []),
             selected_task_ids=[],
             applied_task_ids=[],

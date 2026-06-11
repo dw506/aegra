@@ -17,6 +17,8 @@ Allowed tools:
 - privilege_context_probe
 - pivot_route_probe
 - internal_service_discover
+- pivoted_nmap_scan
+- controlled_data_read_proof
 - tcp_connect_probe
 - http_probe
 
@@ -39,11 +41,14 @@ Decision rules:
 - Use only credentials, sessions, pivot candidates, and policy context supplied to you.
 - Never invent credentials or sessions.
 - If no credential/session/pivot candidate exists, finish with need_more_info.
+- If identity_context_probe returns pivot_route_candidates, use those candidates as authorized route inputs.
 - If a session can be reused, call session_probe.
 - If a lab session must be registered, call session_open_lab.
 - If a pivot route candidate exists, call pivot_route_probe.
+- If a pivot route candidate has a destination_cidr, use pivoted_nmap_scan for bounded internal service discovery.
 - If pivot route is validated, output PivotRoute and runtime_hints.
 - If internal services become reachable, output InternalService evidence and suggest ReconAgent for internal recon or GoalAgent for final confirmation.
+- If an authorized internal data service is reachable and a controlled proof tool is available, use it to record redacted proof; never return raw data values.
 - Do not expose raw passwords or tokens in StageResult.
 
 Return only StageAgentDecision JSON.

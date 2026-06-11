@@ -103,6 +103,14 @@ p { color: var(--muted); margin-top: 4px; font-size: 13px; }
   padding: 14px;
   min-height: 0;
 }
+.focusedWorkspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  min-height: 0;
+}
 .consoleSurface {
   min-width: 0;
   min-height: 0;
@@ -145,6 +153,36 @@ p { color: var(--muted); margin-top: 4px; font-size: 13px; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
+.overviewGrid.twoColumn {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-bottom: 12px;
+}
+.overviewHeader {
+  display: grid;
+  grid-template-columns: 1.3fr 1.7fr 0.8fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.overviewHeader div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+.overviewHeader span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.overviewHeader strong {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+  font-size: 14px;
+}
 .plainPanel {
   min-width: 0;
   padding: 12px;
@@ -154,6 +192,47 @@ p { color: var(--muted); margin-top: 4px; font-size: 13px; }
 }
 .plainPanel h2 {
   margin-bottom: 8px;
+}
+.relationPanel {
+  min-height: 460px;
+}
+.relationshipGraph {
+  height: 420px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fbfcfd;
+}
+.relationshipGraph .cyGraph {
+  min-height: 420px;
+}
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tagList span {
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.tagList.compact {
+  gap: 4px;
+}
+.tagList.compact span {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 12px;
 }
 .pathList {
   margin: 8px 0 0;
@@ -267,6 +346,155 @@ p { color: var(--muted); margin-top: 4px; font-size: 13px; }
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 8px;
+}
+.compactDl.wide div {
+  grid-template-columns: 105px minmax(0, 1fr);
+}
+.assetLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 12px;
+  align-items: start;
+}
+.assetTableWrap {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.assetTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+.assetTable th,
+.assetTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+.assetTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.assetTable tbody tr {
+  cursor: pointer;
+}
+.assetTable tbody tr:hover,
+.assetTable tbody tr.selected {
+  background: #eef6f5;
+}
+.assetDetail {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.assetDetail h3 {
+  margin: 4px 0 -4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.serviceList {
+  display: grid;
+  gap: 6px;
+}
+.serviceRow {
+  display: grid;
+  grid-template-columns: 76px minmax(90px, 0.8fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+  font-size: 12px;
+}
+.serviceRow code,
+.serviceRow strong,
+.serviceRow span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.serviceRow em {
+  color: var(--muted);
+  font-style: normal;
+}
+.cycleMiniList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cycleMiniList li {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+.cycleMiniList strong {
+  font-size: 12px;
+}
+.cycleMiniList span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cycleCards {
+  display: grid;
+  gap: 12px;
+}
+.cycleSummaryCard {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.cycleSummaryCard header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cycleSummaryCard header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cycleSummaryCard h2 {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.cycleFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+.cycleFields div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px;
+}
+.cycleFields dd {
+  overflow-wrap: anywhere;
 }
 .tracePanel {
   display: grid;
@@ -797,6 +1025,9 @@ pre {
   .topbarControls { flex-wrap: wrap; }
   .workspace, .consoleWorkspace { grid-template-columns: 1fr; }
   .metricGrid, .overviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overviewGrid.twoColumn, .overviewHeader, .assetLayout, .cycleFields { grid-template-columns: 1fr; }
+  .serviceRow { grid-template-columns: 1fr; }
+  .cycleFields div { grid-template-columns: 1fr; }
   .tracePanel { grid-template-columns: 1fr; }
   .agentGrid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
   .timelineEvent { grid-template-columns: 1fr; }

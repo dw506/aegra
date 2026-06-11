@@ -172,10 +172,20 @@ class RuntimePolicy(BaseModel):
                 raise ValueError(f"policy mapping '{key}' must be >= 1")
         return value
 
-    def to_runtime_metadata(self) -> dict[str, Any]:
-        """导出到 RuntimeState metadata 的稳定 JSON 结构。"""
+    def to_runtime_metadata(self, *, include_private: bool = False) -> dict[str, Any]:
+        """Export stable JSON policy metadata for RuntimeState.
 
-        return self.model_dump(mode="json")
+        The default export is the public black-box view. Execution-private
+        adapter details, route hints and credentials stay out of operation
+        metadata unless a caller explicitly asks for the private view.
+        """
+
+        payload = self.model_dump(mode="json")
+        if include_private:
+            return payload
+        payload.pop("adapter_policy", None)
+        payload.pop("tool_bindings", None)
+        return payload
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
         payload = super().model_dump(*args, **kwargs)
@@ -235,7 +245,11 @@ def load_runtime_policy_payload(
 def policy_from_runtime_state(runtime_state: RuntimeState) -> RuntimePolicy:
     """Read one normalized runtime policy from RuntimeState metadata."""
 
-    value = runtime_state.execution.metadata.get("runtime_policy", {})
+    public_value = runtime_state.execution.metadata.get("runtime_policy", {})
+    private_value = runtime_state.execution.metadata.get("runtime_policy_private", {})
+    value = dict(public_value) if isinstance(public_value, dict) else {}
+    if isinstance(private_value, dict):
+        value.update(private_value)
     if isinstance(value, RuntimePolicy):
         return value
     try:

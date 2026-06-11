@@ -208,7 +208,10 @@ class ConfiguredMCPClient:
         payload_success = self._payload_field(content, "success")
         parsed_output = self._payload_field(content, "parsed")
         payload_metadata = self._payload_field(content, "metadata")
+        raw_output_ref = self._payload_field(content, "raw_output_ref")
         metadata = payload_metadata if isinstance(payload_metadata, dict) else {}
+        if raw_output_ref and "raw_output_ref" not in metadata:
+            metadata["raw_output_ref"] = str(raw_output_ref)
         if isinstance(payload_success, bool):
             success = (not is_error) and payload_success
         else:

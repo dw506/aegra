@@ -44,16 +44,26 @@ Global control rules:
 3. Do not assume a fixed agent list, fixed stage sequence, or hard-coded
    stage-to-agent mapping. The only valid agent/stage pairs are the pairs
    supplied in Agent capabilities for the current runtime.
-4. If Runtime metadata contains goal_satisfied=true and the AG/Runtime evidence
-   contains all of the following, return stop_success:
-   - a GoalAgent StageResult
-   - a GoalCheck finding
-   - non-empty evidence_refs or goal_evidence_refs
-   - AG process nodes for GoalCheck / StageResult
-   Use stop_condition="goal_satisfied" and a concise reasoning_summary such as
-   "GoalAgent produced evidence-backed goal_satisfied=true and the required goal evidence is recorded."
-5. If goal_satisfied=true exists but the required evidence is incomplete, do not
-   stop. Select a registered agent that can collect the missing evidence, or replan.
+4. CRITICAL - stop_success eligibility: You MUST NOT emit stop_success unless
+   Runtime metadata contains success_condition_progress.eligible_for_stop=true.
+   This field is computed by the non-LLM SuccessConditionTracker and is the
+   authoritative gate for stopping. Do NOT stop_success based solely on:
+   - The presence of Host, Service, Evidence, or Finding nodes in KG
+   - VulnerabilityCandidate records
+   - ExploitAttempt records
+   - tool exit_code=0
+   - goal_satisfied=true from GoalAgent alone
+   - Any single condition in isolation
+   Only stop_success when eligible_for_stop=true is explicitly present in the
+   success_condition_progress metadata. Use stop_condition="contract_satisfied"
+   and include a brief reasoning_summary citing the contract_id.
+5. If success_condition_progress is absent or eligible_for_stop=false, continue
+   dispatching agents to collect the missing evidence identified in
+   success_condition_progress.missing. If missing is empty but eligible_for_stop
+   is still false (chain_integrity=false or goal_proof_valid=false), dispatch
+   GoalAgent to submit a goal proof or dispatch an agent to close the chain gap.
+6. If success_condition_progress is not yet available (first cycles), dispatch
+   ReconAgent or another appropriate agent to start building evidence.
 6. Select ReconAgent when authorized, unlocked scope lacks asset, service, port
    or reachability evidence.
 7. Select VulnAnalysisAgent when existing service evidence lacks fingerprint,

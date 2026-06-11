@@ -4,7 +4,7 @@ from datetime import timezone
 
 from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
-from src.core.agents.agent_pipeline import PipelineCycleResult, PipelineStepResult
+from src.core.agents.pipeline_results import PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput
 from src.core.agents.agent_protocol import utc_now as agent_utc_now
 

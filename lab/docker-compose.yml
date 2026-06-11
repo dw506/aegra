@@ -23,6 +23,10 @@ services:
         AEGRA_LAB_PIVOT_USER: pivot
         AEGRA_LAB_PIVOT_PASSWORD: pivotpass
         AEGRA_LAB_PIVOT_SOCKS: socks5://127.0.0.1:1080
+        AEGRA_LAB_DB_USER: lab
+        AEGRA_LAB_DB_PASSWORD: labpass
+        AEGRA_LAB_DB_NAME: labdb
+        AEGRA_LAB_DB_PROOF_QUERY: "select current_database(), current_user, version()"
     ports:
       - "127.0.0.1:8001:8000"
     volumes:

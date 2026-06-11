@@ -1,0 +1,151 @@
+contract_id: full_chain_pentest_contract_v1
+mode: full_chain_pentest
+
+require_all:
+  - target_imported
+  - entry_zone_host_discovered
+  - entry_zone_service_discovered
+  - service_fingerprint_recorded
+  - vulnerability_candidate_recorded
+  - exploit_attempt_recorded
+  - exploit_success_recorded
+  - capability_or_session_recorded
+  - post_access_observation_recorded
+  - credential_or_pivot_hint_discovered
+  - pivot_route_recorded
+  - restricted_zone_service_discovered
+  - final_goal_proof_valid
+
+require_chain:
+  - [entry_zone_service_discovered, service_fingerprint_recorded]
+  - [service_fingerprint_recorded, vulnerability_candidate_recorded]
+  - [vulnerability_candidate_recorded, exploit_attempt_recorded]
+  - [exploit_attempt_recorded, exploit_success_recorded]
+  - [exploit_success_recorded, capability_or_session_recorded]
+  - [capability_or_session_recorded, post_access_observation_recorded]
+  - [post_access_observation_recorded, credential_or_pivot_hint_discovered]
+  - [credential_or_pivot_hint_discovered, pivot_route_recorded]
+  - [pivot_route_recorded, restricted_zone_service_discovered]
+  - [restricted_zone_service_discovered, final_goal_proof_valid]
+
+condition_bindings:
+  target_imported:
+    predicate: exists_node
+    args:
+      graph: kg
+      type: Goal
+      filters:
+        category: imported_target
+
+  entry_zone_host_discovered:
+    predicate: exists_node
+    args:
+      graph: kg
+      type: Host
+      filters:
+        zone_ref: entry
+
+  entry_zone_service_discovered:
+    predicate: exists_node
+    args:
+      graph: kg
+      type: Service
+      filters:
+        zone_ref: entry
+
+  service_fingerprint_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - Evidence
+          - Observation
+          - Finding
+      filters:
+        zone_ref: entry
+
+  vulnerability_candidate_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - VulnerabilityCandidate
+          - Vulnerability
+      filters: {}
+
+  exploit_attempt_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - VulnerabilityCandidate
+          - Vulnerability
+          - Evidence
+      filters: {}
+
+  exploit_success_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - ExploitCapability
+          - Vulnerability
+          - Session
+      filters: {}
+
+  capability_or_session_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - ExploitCapability
+          - Session
+      filters: {}
+
+  post_access_observation_recorded:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - PostAccessObservation
+          - LabHint
+          - LabFlag
+          - Observation
+          - Evidence
+      filters: {}
+
+  credential_or_pivot_hint_discovered:
+    predicate: exists_node
+    args:
+      graph: kg
+      type:
+        in:
+          - Credential
+          - LabHint
+          - Observation
+          - Evidence
+      filters: {}
+
+  pivot_route_recorded:
+    predicate: exists_node
+    args:
+      graph: runtime
+      type: PivotRoute
+      filters: {}
+
+  restricted_zone_service_discovered:
+    predicate: service_discovered_via_route
+    args:
+      zone_ref: restricted
+      route_type: pivot_route
+
+  final_goal_proof_valid:
+    predicate: oracle_proof_valid
+    args:
+      goal_id: final_internal_goal

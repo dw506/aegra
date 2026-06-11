@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.models.ag import GraphRef
+from src.core.runtime.tool_trace_fact_extractor import ToolTraceFactExtractor
 from src.core.models.events import (
     AgentResultStatus,
     AgentRole,
@@ -195,6 +196,8 @@ class StageResultAdapter:
     @classmethod
     def _fact_writes(cls, stage_result: StageResult) -> list[FactWriteRequest]:
         writes: list[FactWriteRequest] = []
+
+        # 1. Explicit entity/relation writes from LLM-processed result
         for item in stage_result.discovered_entities + stage_result.capabilities_gained:
             if not isinstance(item, dict):
                 continue
@@ -231,6 +234,40 @@ class StageResultAdapter:
                     summary=str(item.get("summary") or f"stage discovered relation {relation_type}"),
                 )
             )
+
+        # 2. Deterministic extraction from successful ToolTraces.
+        # This runs even when stage_result.status == "partial" (LLM postprocess failed).
+        # Only tool traces with success=True are processed.
+        all_traces = list(stage_result.tool_trace) + [
+            t for t in stage_result.tool_traces if t not in stage_result.tool_trace
+        ]
+        if all_traces:
+            extractor = ToolTraceFactExtractor()
+            extraction_results = extractor.extract_all(all_traces)
+            for extraction in extraction_results:
+                for fact in extraction.facts:
+                    fact_ref = GraphRef(
+                        graph="kg",
+                        ref_id=f"tool-fact-{extraction.trace_id}-{fact.entity_type}-{fact.label[:40]}",
+                        ref_type=fact.entity_type,
+                        label=fact.label,
+                    )
+                    writes.append(
+                        FactWriteRequest(
+                            kind=FactWriteKind.ENTITY_UPSERT,
+                            source_task_id=stage_result.stage_task_id,
+                            subject_ref=fact_ref,
+                            attributes={
+                                **fact.properties,
+                                "tool_name": fact.source_tool,
+                                "zone_ref": fact.zone_ref,
+                                "extracted_from_trace": extraction.trace_id,
+                            },
+                            confidence=fact.confidence,
+                            summary=f"tool-extracted: {fact.label}",
+                        )
+                    )
+
         return writes
 
     @classmethod

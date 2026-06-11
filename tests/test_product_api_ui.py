@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.app import api as app_api
@@ -35,7 +37,7 @@ def _client(tmp_path):
     return client_cls(app_api.create_app(orchestrator=orchestrator, settings=settings)), orchestrator
 
 
-def test_product_api_contract_workspace_assets_tasks_and_validators(tmp_path) -> None:
+def test_product_api_contract_workspace_assets_and_tasks(tmp_path) -> None:
     client, _ = _client(tmp_path)
 
     workspace = client.post("/workspaces", json={"id": "ws-product", "name": "Product Workspace"})
@@ -52,55 +54,19 @@ def test_product_api_contract_workspace_assets_tasks_and_validators(tmp_path) ->
     assert client.get("/workspaces").json()[0]["asset_count"] == 1
     assert client.get("/workspaces/ws-product/assets").json()[0]["links"]["audit"]
 
-    validators = client.get("/validators")
-    assert validators.status_code == 200
-    assert {item["id"] for item in validators.json()} >= {"http-fingerprint", "struts2-s2-045"}
-
-    validator_test = client.post(
-        "/validators/http-fingerprint/test",
-        json={
-            "target": {
-                "host": "127.0.0.1",
-                "port": 8080,
-                "service_id": "svc-1",
-                "target_url": "http://127.0.0.1:8080/",
-                "vulnerability_id": "vuln-http",
-                "protocol": "http",
-            },
-            "metadata": {
-                "http_fingerprint_output": {
-                    "status": "suspected",
-                    "summary": "fixture fingerprint",
-                    "indicators": ["server"],
-                }
-            },
-        },
-    )
-    assert validator_test.status_code == 200
-    assert validator_test.json()["safe_payload_summary"]
-
 
 def test_frontend_smoke_serves_required_pages(tmp_path) -> None:
+    if not (Path(__file__).resolve().parents[1] / "web" / "dashboard" / "dist").exists():
+        pytest.skip("web dashboard dist is not built")
     client, _ = _client(tmp_path)
 
     response = client.get("/ui/")
 
     assert response.status_code == 200
     html = response.text
-    for label in (
-        "Workspace / Asset",
-        "Operation Run",
-        "KG Graph",
-        "AG Graph",
-        "Tool Trace",
-        "Evidence & Findings",
-        "Operation Trace",
-        "Approval",
-        "Report Export",
-    ):
-        assert label in html
-    assert "scope" in html.lower()
-    assert "policy" in html.lower()
+    assert '<div id="root"></div>' in html
+    assert "/ui/assets/" in html
+    assert "Aegra Graph Dashboard" in html
 
 
 def test_graph_rendering_contract_has_host_service_vulnerability_evidence_chain(tmp_path) -> None:

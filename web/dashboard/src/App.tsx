@@ -1,87 +1,59 @@
-import {
-  Activity,
-  Bot,
-  Download,
-  Eye,
-  Filter,
-  GitBranch,
-  ListChecks,
-  RefreshCw,
-  Route,
-  Search,
-} from "lucide-react";
+import { Activity, Database, Download, ListChecks, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { fetchVisualization, listOperations } from "./api";
 import { CytoscapeGraph } from "./components/CytoscapeGraph";
 import type { GraphState } from "./graphState";
 import type {
   OperationSummary,
-  UnifiedAgEdge,
   UnifiedAgNode,
-  UnifiedEvidence,
-  UnifiedKgEdge,
   UnifiedKgNode,
+  UnifiedServiceMatrixRow,
   UnifiedTimelineEvent,
   UnifiedVisualization,
   VisualEdge,
   VisualNode,
 } from "./types";
 
-type ViewId = "overview" | "kg" | "ag" | "timeline" | "evidence" | "trace" | "attack-path";
-type DetailItem =
-  | { kind: "KG Node"; payload: UnifiedKgNode }
-  | { kind: "AG Node"; payload: UnifiedAgNode }
-  | { kind: "Timeline Event"; payload: UnifiedTimelineEvent }
-  | { kind: "Evidence"; payload: UnifiedEvidence }
-  | null;
+type ViewId = "overview" | "assets" | "cycles";
+type AssetRow = UnifiedServiceMatrixRow & { vulnerability_tags: string[] };
+type CycleRow = {
+  cycle_index: number;
+  title: string;
+  agent: string;
+  capability: string;
+  target: string;
+  intent: string;
+  result_summary: string;
+  status: string;
+  asset_updates: string[];
+  service_updates: string[];
+  vulnerability_tags: string[];
+};
 
 const views: Array<{ id: ViewId; label: string; icon: typeof Activity }> = [
   { id: "overview", label: "Overview", icon: Activity },
-  { id: "kg", label: "KG View", icon: GitBranch },
-  { id: "ag", label: "AG View", icon: Route },
-  { id: "timeline", label: "Timeline", icon: ListChecks },
-  { id: "evidence", label: "Evidence", icon: Eye },
-  { id: "trace", label: "Agent Trace", icon: Bot },
-  { id: "attack-path", label: "Attack Path", icon: Search },
+  { id: "assets", label: "Assets", icon: Database },
+  { id: "cycles", label: "Attack Cycles", icon: ListChecks },
 ];
-
-const kgTypeOptions = ["Host", "Service", "Network", "Finding", "Evidence", "Credential", "Session", "Goal", "Unknown"];
-const kgStatusOptions = ["observed", "suspected", "verified", "rejected", "active", "failed", "blocked"];
-const statusOptions = ["pending", "running", "success", "failed", "blocked", "skipped", "observed", "suspected", "verified", "active"];
 
 export default function App() {
   const [operations, setOperations] = useState<OperationSummary[]>([]);
   const [operationId, setOperationId] = useState("");
   const [visualization, setVisualization] = useState<UnifiedVisualization | null>(null);
   const [activeView, setActiveView] = useState<ViewId>("overview");
-  const [detail, setDetail] = useState<DetailItem>(null);
-  const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [agentFilter, setAgentFilter] = useState("");
-  const [roundFilter, setRoundFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
-  const [targetFilter, setTargetFilter] = useState("");
-  const [mainPathOnly, setMainPathOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     listOperations().then((items) => {
-      const sorted = [...items].sort((left, right) => {
-        const leftLoadError = Boolean(left.metadata?.load_error);
-        const rightLoadError = Boolean(right.metadata?.load_error);
-        if (leftLoadError !== rightLoadError) return leftLoadError ? 1 : -1;
-        return Date.parse(right.last_updated || "") - Date.parse(left.last_updated || "");
-      });
+      const sorted = [...items].sort((left, right) => Date.parse(right.last_updated || "") - Date.parse(left.last_updated || ""));
       setOperations(sorted);
       setOperationId((current) => current || sorted[0]?.operation_id || "");
     });
   }, []);
 
   useEffect(() => {
-    if (!operationId) return;
-    refreshVisualization(operationId);
+    if (operationId) refreshVisualization(operationId);
   }, [operationId]);
 
   const refreshVisualization = async (id = operationId) => {
@@ -90,7 +62,6 @@ export default function App() {
     setLoadError("");
     try {
       setVisualization(await fetchVisualization(id));
-      setDetail(null);
     } catch (error) {
       setVisualization(null);
       setLoadError(error instanceof Error ? error.message : String(error));
@@ -98,35 +69,6 @@ export default function App() {
       setLoading(false);
     }
   };
-
-  const kgNodes = useMemo(() => {
-    const nodes = visualization?.kg.nodes || [];
-    return nodes.filter((node) => matches(typeFilter, node.type) && matches(statusFilter, node.status));
-  }, [visualization, typeFilter, statusFilter]);
-
-  const agNodes = useMemo(() => {
-    const nodes = visualization?.ag.nodes || [];
-    return nodes.filter((node) => {
-      const roundOk = !roundFilter || String(node.round) === roundFilter;
-      const mainOk = !mainPathOnly || node.is_main_path;
-      return roundOk && mainOk && matches(agentFilter, node.agent) && matches(statusFilter, node.status);
-    });
-  }, [visualization, roundFilter, mainPathOnly, agentFilter, statusFilter]);
-
-  const evidenceItems = useMemo(() => {
-    const items = visualization?.evidence || [];
-    return items.filter((item) => {
-      const roundOk = !roundFilter || String(item.round ?? "") === roundFilter;
-      const sourceOk = !sourceFilter || item.source === sourceFilter || item.source_name === sourceFilter || item.created_by === sourceFilter;
-      const targetOk = !targetFilter || item.target === targetFilter;
-      return roundOk && sourceOk && targetOk;
-    });
-  }, [visualization, roundFilter, sourceFilter, targetFilter]);
-
-  const rounds = useMemo(() => unique((visualization?.ag.nodes || []).map((node) => String(node.round))), [visualization]);
-  const agents = useMemo(() => unique((visualization?.ag.nodes || []).map((node) => node.agent)), [visualization]);
-  const evidenceSources = useMemo(() => unique((visualization?.evidence || []).flatMap((item) => [item.source, item.source_name, item.created_by || ""])), [visualization]);
-  const targets = useMemo(() => unique((visualization?.evidence || []).map((item) => item.target || "")), [visualization]);
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(visualization || {}, null, 2)], { type: "application/json" });
@@ -138,11 +80,15 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const assets = useMemo(() => buildAssets(visualization), [visualization]);
+  const cycles = useMemo(() => buildCycles(visualization), [visualization]);
+  const riskTags = useMemo(() => collectRiskTags(visualization, assets, cycles), [visualization, assets, cycles]);
+
   return (
     <div className="appShell">
       <header className="topbar">
         <div>
-          <h1>Aegra Automation Console</h1>
+          <h1>Aegra Visualization</h1>
           <p>{visualization?.operation.id || operationId || "No operation selected"}</p>
         </div>
         <div className="topbarControls">
@@ -163,7 +109,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="consoleWorkspace">
+      <main className="focusedWorkspace">
         <section className="consoleSurface">
           <div className="tabs">
             {views.map((view) => {
@@ -179,324 +125,207 @@ export default function App() {
 
           {visualization ? (
             <>
-              {activeView === "overview" && <OverviewView data={visualization} onSelectEvidence={(item) => setDetail({ kind: "Evidence", payload: item })} />}
-              {activeView === "kg" && (
-                <GraphPanel
-                  title="Environment Facts"
-                  filters={
-                    <>
-                      <FilterSelect value={typeFilter} onChange={setTypeFilter} label="Type" options={kgTypeOptions} />
-                      <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" options={kgStatusOptions} />
-                    </>
-                  }
-                  graph={kgGraphState(kgNodes, visualization.kg.edges)}
-                  onSelectNode={(node) => {
-                    const payload = visualization.kg.nodes.find((item) => item.id === node.id);
-                    if (payload) setDetail({ kind: "KG Node", payload });
-                  }}
-                  countLabel={`${kgNodes.length} nodes / ${visibleEdgeCount(kgNodes, visualization.kg.edges)} edges`}
-                />
-              )}
-              {activeView === "ag" && (
-                <GraphPanel
-                  title="Attack Process"
-                  filters={
-                    <>
-                      <FilterSelect value={roundFilter} onChange={setRoundFilter} label="Round" options={rounds} />
-                      <FilterSelect value={agentFilter} onChange={setAgentFilter} label="Agent" options={agents} />
-                      <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" options={statusOptions} />
-                      <label className="toggleControl">
-                        <input type="checkbox" checked={mainPathOnly} onChange={(event) => setMainPathOnly(event.target.checked)} />
-                        Main path
-                      </label>
-                    </>
-                  }
-                  graph={agGraphState(agNodes, visualization.ag.edges)}
-                  onSelectNode={(node) => {
-                    const payload = visualization.ag.nodes.find((item) => item.id === node.id);
-                    if (payload) setDetail({ kind: "AG Node", payload });
-                  }}
-                  countLabel={`${agNodes.length} nodes / ${visibleEdgeCount(agNodes, visualization.ag.edges)} edges`}
-                />
-              )}
-              {activeView === "timeline" && <TimelineView events={visualization.timeline} onSelect={(item) => setDetail({ kind: "Timeline Event", payload: item })} />}
-              {activeView === "evidence" && (
-                <EvidenceView
-                  items={evidenceItems}
-                  rounds={rounds}
-                  sources={evidenceSources}
-                  targets={targets}
-                  roundFilter={roundFilter}
-                  setRoundFilter={setRoundFilter}
-                  sourceFilter={sourceFilter}
-                  setSourceFilter={setSourceFilter}
-                  targetFilter={targetFilter}
-                  setTargetFilter={setTargetFilter}
-                  onSelect={(item) => setDetail({ kind: "Evidence", payload: item })}
-                />
-              )}
-              {activeView === "trace" && <AgentTraceView traces={visualization.agent_trace} roundFilter={roundFilter} setRoundFilter={setRoundFilter} rounds={rounds} />}
-              {activeView === "attack-path" && (
-                <GraphPanel
-                  title="Current Main Attack Path"
-                  filters={<div className="counts">Main chain only</div>}
-                  graph={agGraphState(visualization.attack_path.nodes, visualization.attack_path.edges)}
-                  onSelectNode={(node) => {
-                    const payload = visualization.attack_path.nodes.find((item) => item.id === node.id);
-                    if (payload) setDetail({ kind: "AG Node", payload });
-                  }}
-                  countLabel={`${visualization.attack_path.nodes.length} nodes / ${visualization.attack_path.edges.length} edges`}
-                />
-              )}
+              {activeView === "overview" && <OverviewView data={visualization} assets={assets} cycles={cycles} riskTags={riskTags} />}
+              {activeView === "assets" && <AssetsView assets={assets} />}
+              {activeView === "cycles" && <AttackCyclesView cycles={cycles} />}
             </>
           ) : (
             <div className="emptyState">{loadError ? `Visualization failed to load: ${loadError}` : "No visualization data"}</div>
           )}
         </section>
-
-        <UnifiedDetailPanel detail={detail} onClose={() => setDetail(null)} />
       </main>
     </div>
   );
 }
 
-function OverviewView({ data, onSelectEvidence }: { data: UnifiedVisualization; onSelectEvidence: (item: UnifiedEvidence) => void }) {
+function OverviewView({
+  data,
+  assets,
+  cycles,
+  riskTags,
+}: {
+  data: UnifiedVisualization;
+  assets: AssetRow[];
+  cycles: CycleRow[];
+  riskTags: string[];
+}) {
   const overview = data.overview;
+  const latest = overview.last_cycle_summary || cycles[cycles.length - 1];
+  const openPorts = overview.open_ports ?? assets.reduce((total, asset) => total + asset.services.length, 0);
+  const serviceCount = overview.identified_services ?? overview.service_count ?? assets.reduce((total, asset) => total + asset.services.length, 0);
+  const target = formatTarget(data.operation.target_scope);
+
   return (
     <div className="consoleView">
+      <section className="overviewHeader">
+        <div>
+          <span>Operation</span>
+          <strong>{data.operation.id}</strong>
+        </div>
+        <div>
+          <span>Target</span>
+          <strong>{target}</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong>{data.operation.status}</strong>
+        </div>
+      </section>
+
       <section className="metricGrid">
-        <Metric label="Operation ID" value={data.operation.id} />
-        <Metric label="Target scope" value={String(data.operation.target_scope.length)} />
-        <Metric label="Current round" value={data.operation.current_round} />
-        <Metric label="Current agent" value={overview.current_agent || "Unknown"} />
-        <Metric label="Goal status" value={data.operation.goal_status} />
-        <Metric label="Discovered assets" value={overview.asset_count} />
-        <Metric label="Services" value={overview.service_count} />
-        <Metric label="Findings" value={overview.finding_count} />
-        <Metric label="Verified findings" value={overview.verified_finding_count} />
-        <Metric label="Evidence items" value={overview.evidence_count} />
-        <Metric label="Active access" value={overview.access_count} />
-        <Metric label="Status" value={data.operation.status} />
+        <Metric label="Cycle Count" value={cycles.length || data.operation.current_round} />
+        <Metric label="Discovered Hosts" value={overview.discovered_hosts ?? assets.length} />
+        <Metric label="Open Ports" value={openPorts} />
+        <Metric label="Identified Services" value={serviceCount} />
+        <Metric label="Detected Vulnerability Tags / Risk Tags" value={riskTags.length} />
       </section>
 
-      <section className="overviewGrid">
+      <section className="overviewGrid twoColumn">
         <article className="plainPanel">
-          <h2>Current Main Attack Path</h2>
-          {overview.main_path_summary.length ? (
-            <ol className="pathList">
-              {overview.main_path_summary.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
-            </ol>
+          <h2>Latest</h2>
+          {latest ? (
+            <>
+              <strong>{latest.title || `Cycle ${latest.cycle_index}`}</strong>
+              <p>{("summary" in latest ? latest.summary : latest.result_summary) || "No summary available"}</p>
+            </>
           ) : (
-            <p>No main path available</p>
+            <p>No cycle has been recorded</p>
           )}
         </article>
         <article className="plainPanel">
-          <h2>Latest Planner Decision</h2>
-          <p>{stringValue(overview.latest_decision?.decision_summary) || "No planner decision recorded"}</p>
-          <p>{stringValue(overview.latest_decision?.reason) || "No reason recorded"}</p>
+          <h2>Risk Tags</h2>
+          <TagList tags={riskTags} />
         </article>
-        <article className="plainPanel">
-          <h2>Latest Evidence</h2>
-          {overview.latest_evidence ? (
-            <button className="listButton" onClick={() => onSelectEvidence(overview.latest_evidence as UnifiedEvidence)}>
-              <strong>{overview.latest_evidence.summary}</strong>
-              <span>{overview.latest_evidence.source_name} / {overview.latest_evidence.target || "Unknown target"}</span>
-            </button>
-          ) : (
-            <p>No evidence</p>
-          )}
-        </article>
+      </section>
+
+      <section className="plainPanel relationPanel">
+        <h2>Target to Attack Cycle Map</h2>
+        <div className="relationshipGraph">
+          <CytoscapeGraph graph={relationshipGraph(data, assets, cycles, riskTags, target)} onSelectNode={() => undefined} />
+        </div>
       </section>
     </div>
   );
 }
 
-function GraphPanel({
-  title,
-  filters,
-  graph,
-  countLabel,
-  onSelectNode,
-}: {
-  title: string;
-  filters: ReactNode;
-  graph: GraphState;
-  countLabel: string;
-  onSelectNode: (node: VisualNode) => void;
-}) {
-  return (
-    <div className="graphPanel">
-      <div className="toolbar">
-        <h2>{title}</h2>
-        {filters}
-        <div className="counts">{countLabel}</div>
-      </div>
-      <div className="graphViewport">
-        <CytoscapeGraph graph={graph} onSelectNode={onSelectNode} />
-      </div>
-    </div>
-  );
-}
+function AssetsView({ assets }: { assets: AssetRow[] }) {
+  const [selectedId, setSelectedId] = useState("");
+  const selected = assets.find((asset) => asset.host_id === selectedId) || assets[0];
 
-function TimelineView({ events, onSelect }: { events: UnifiedTimelineEvent[]; onSelect: (item: UnifiedTimelineEvent) => void }) {
-  const groups = new Map<number, UnifiedTimelineEvent[]>();
-  for (const event of events) {
-    if (!groups.has(event.round)) groups.set(event.round, []);
-    groups.get(event.round)?.push(event);
-  }
+  useEffect(() => {
+    if (!selectedId && assets[0]) setSelectedId(assets[0].host_id);
+    if (selectedId && assets.length && !assets.some((asset) => asset.host_id === selectedId)) setSelectedId(assets[0].host_id);
+  }, [assets, selectedId]);
+
   return (
     <div className="consoleView">
-      {Array.from(groups.entries()).map(([round, items]) => (
-        <details key={round} className="roundBlock" open>
-          <summary>Round {round}</summary>
-          <div className="timelineRail">
-            {items.map((event) => (
-              <button key={event.id} className={`timelineEvent ${event.status}`} onClick={() => onSelect(event)}>
-                <span>{humanPhase(event.phase)}</span>
-                <strong>{event.display_name}</strong>
-                <small>{event.agent || "System"} / {event.target || "Unknown target"} / {event.created_at || "No timestamp"}</small>
-                <p>{event.summary || "No summary available"}</p>
-                <small>Evidence: {event.evidence_ids.length ? event.evidence_ids.join(", ") : "No evidence"}</small>
-              </button>
-            ))}
+      <div className="assetLayout">
+        <div className="assetTableWrap">
+          <table className="assetTable">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Hostname</th>
+                <th>Role / Guess</th>
+                <th>Open Ports</th>
+                <th>Services</th>
+                <th>Vulnerability Tags</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assets.map((asset) => (
+                <tr key={asset.host_id} className={selected?.host_id === asset.host_id ? "selected" : ""} onClick={() => setSelectedId(asset.host_id)}>
+                  <td>{asset.host}</td>
+                  <td>{asset.hostname || "unknown"}</td>
+                  <td>{asset.role_guess || asset.role || "unknown"}</td>
+                  <td>{asset.open_ports ?? asset.services.length}</td>
+                  <td>{unique(asset.services.map((service) => service.name)).join(", ") || "none"}</td>
+                  <td><TagList tags={asset.vulnerability_tags} compact /></td>
+                  <td>{formatCycleSeen(asset.last_seen)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!assets.length && <div className="emptyState compact">No assets discovered</div>}
+        </div>
+
+        {selected && <AssetDetail asset={selected} />}
+      </div>
+    </div>
+  );
+}
+
+function AssetDetail({ asset }: { asset: AssetRow }) {
+  return (
+    <aside className="assetDetail">
+      <h2>Host: {asset.host}</h2>
+      <dl className="compactDl wide">
+        <div><dt>Hostname</dt><dd>{asset.hostname || "unknown"}</dd></div>
+        <div><dt>Role Guess</dt><dd>{asset.role_guess || asset.role || "unknown"}</dd></div>
+        <div><dt>Confidence</dt><dd>{confidenceLabel(asset.confidence)}</dd></div>
+        <div><dt>First Seen</dt><dd>{formatCycleSeen(asset.first_seen)}</dd></div>
+        <div><dt>Last Updated</dt><dd>{formatCycleSeen(asset.last_seen)}</dd></div>
+      </dl>
+
+      <h3>Ports & Services</h3>
+      <div className="serviceList">
+        {asset.services.map((service) => (
+          <div key={service.service_id} className="serviceRow">
+            <code>{service.port || "?"}/{service.protocol || "tcp"}</code>
+            <strong>{service.name || "unknown"}</strong>
+            <span>{service.product || "unknown product"}{service.version ? ` ${service.version}` : ""}</span>
+            <em>{service.status}</em>
           </div>
-        </details>
-      ))}
-      {!events.length && <div className="emptyState">No timeline events</div>}
-    </div>
+        ))}
+        {!asset.services.length && <p>No open service recorded</p>}
+      </div>
+
+      <h3>Vulnerability / Risk Tags</h3>
+      <TagList tags={asset.vulnerability_tags} />
+
+      <h3>Related Cycles</h3>
+      <ul className="cycleMiniList">
+        {(asset.related_cycles || []).map((cycle) => (
+          <li key={`${cycle.cycle_index}:${cycle.summary}`}>
+            <strong>Cycle {cycle.cycle_index}</strong>
+            <span>{cycle.summary || cycle.title}</span>
+          </li>
+        ))}
+        {!(asset.related_cycles || []).length && <li><span>No related cycle recorded</span></li>}
+      </ul>
+    </aside>
   );
 }
 
-function EvidenceView({
-  items,
-  rounds,
-  sources,
-  targets,
-  roundFilter,
-  setRoundFilter,
-  sourceFilter,
-  setSourceFilter,
-  targetFilter,
-  setTargetFilter,
-  onSelect,
-}: {
-  items: UnifiedEvidence[];
-  rounds: string[];
-  sources: string[];
-  targets: string[];
-  roundFilter: string;
-  setRoundFilter: (value: string) => void;
-  sourceFilter: string;
-  setSourceFilter: (value: string) => void;
-  targetFilter: string;
-  setTargetFilter: (value: string) => void;
-  onSelect: (item: UnifiedEvidence) => void;
-}) {
+function AttackCyclesView({ cycles }: { cycles: CycleRow[] }) {
   return (
     <div className="consoleView">
-      <div className="toolbar inlineToolbar">
-        <FilterSelect value={sourceFilter} onChange={setSourceFilter} label="Source" options={sources} />
-        <FilterSelect value={roundFilter} onChange={setRoundFilter} label="Round" options={rounds} />
-        <FilterSelect value={targetFilter} onChange={setTargetFilter} label="Target" options={targets} />
-        <div className="counts">{items.length} evidence items</div>
-      </div>
-      <div className="evidenceList">
-        {items.map((item) => (
-          <article key={item.id} className="evidenceItem">
-            <button className="listButton" onClick={() => onSelect(item)}>
-              <strong>{item.summary || "No summary available"}</strong>
-              <span>{item.source_name} / {item.target || "Unknown target"} / Round {item.round ?? "Unknown"}</span>
-            </button>
-            <dl className="compactDl">
-              <div><dt>KG</dt><dd>{item.linked_kg_node_ids.length ? item.linked_kg_node_ids.join(", ") : "No KG links"}</dd></div>
-              <div><dt>AG</dt><dd>{item.linked_ag_node_ids.length ? item.linked_ag_node_ids.join(", ") : "No AG links"}</dd></div>
+      <div className="cycleCards">
+        {cycles.map((cycle) => (
+          <article key={cycle.cycle_index} className="cycleSummaryCard">
+            <header>
+              <div>
+                <span>Cycle {cycle.cycle_index}</span>
+                <h2>{cycle.title}</h2>
+              </div>
+              <strong className={`nodeStatus ${cycle.status}`}>{cycle.status}</strong>
+            </header>
+            <dl className="cycleFields">
+              <div><dt>agent</dt><dd>{cycle.agent}</dd></div>
+              <div><dt>capability</dt><dd>{cycle.capability}</dd></div>
+              <div><dt>target</dt><dd>{cycle.target}</dd></div>
+              <div><dt>intent</dt><dd>{cycle.intent}</dd></div>
+              <div><dt>result_summary</dt><dd>{cycle.result_summary}</dd></div>
+              <div><dt>asset_updates</dt><dd>{cycle.asset_updates.join(", ") || "none"}</dd></div>
+              <div><dt>service_updates</dt><dd>{cycle.service_updates.join(", ") || "none"}</dd></div>
+              <div><dt>vulnerability_tags</dt><dd><TagList tags={cycle.vulnerability_tags} compact /></dd></div>
             </dl>
-            <details>
-              <summary>Structured facts</summary>
-              <pre>{JSON.stringify(item.structured_facts, null, 2)}</pre>
-            </details>
-            <details>
-              <summary>Raw output</summary>
-              <pre>{maskSensitive(item.raw_output || "No raw output")}</pre>
-            </details>
           </article>
         ))}
+        {!cycles.length && <div className="emptyState">No attack cycles recorded</div>}
       </div>
     </div>
-  );
-}
-
-function AgentTraceView({
-  traces,
-  rounds,
-  roundFilter,
-  setRoundFilter,
-}: {
-  traces: UnifiedVisualization["agent_trace"];
-  rounds: string[];
-  roundFilter: string;
-  setRoundFilter: (value: string) => void;
-}) {
-  const visible = traces.filter((trace) => !roundFilter || String(trace.round) === roundFilter);
-  return (
-    <div className="consoleView">
-      <div className="toolbar inlineToolbar">
-        <FilterSelect value={roundFilter} onChange={setRoundFilter} label="Round" options={rounds} />
-      </div>
-      {visible.map((trace) => (
-        <article key={trace.id} className="tracePanel">
-          <div className="plannerHub">
-            <strong>PlannerAgent</strong>
-            <span>Round {trace.round}</span>
-            <p>{trace.planner_decision.decision_summary || "No planner decision recorded"}</p>
-            <p>{trace.planner_decision.reason || "No reason recorded"}</p>
-            <p>{trace.planner_decision.expected_outcome || "No expected outcome recorded"}</p>
-          </div>
-          <div className="agentGrid">
-            {trace.agent_states.map((agent) => (
-              <div key={agent.agent} className={`agentTile ${agent.state}`}>
-                <strong>{agent.agent}</strong>
-                <span>{agent.state}</span>
-                <p>{agent.summary || "No summary available"}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-      ))}
-      {!visible.length && <div className="emptyState">No agent trace</div>}
-    </div>
-  );
-}
-
-function UnifiedDetailPanel({ detail, onClose }: { detail: DetailItem; onClose: () => void }) {
-  const payload = detail?.payload;
-  const record = (payload || {}) as unknown as Record<string, unknown>;
-  const title = payload ? stringValue(record.display_name) || stringValue(record.summary) || "Detail" : "Detail";
-  return (
-    <aside className="detailPanel">
-      <div className="detailHeader">
-        <div>
-          <h2>{title}</h2>
-          <p>{detail?.kind || "No selection"}</p>
-        </div>
-        <button className="iconButton" onClick={onClose} title="Close details">x</button>
-      </div>
-      {payload ? (
-        <>
-          <dl className="summaryList">
-            {Object.entries(payload)
-              .filter(([key]) => !["metadata", "raw_output", "structured_facts"].includes(key))
-              .slice(0, 18)
-              .map(([key, value]) => (
-                <div key={key}><dt>{key}</dt><dd>{formatValue(value)}</dd></div>
-              ))}
-          </dl>
-          <pre>{JSON.stringify(payload, null, 2)}</pre>
-        </>
-      ) : (
-        <div className="emptyState">Select an item</div>
-      )}
-    </aside>
   );
 }
 
@@ -509,88 +338,268 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function FilterSelect({ value, onChange, label, options }: { value: string; onChange: (value: string) => void; label: string; options: string[] }) {
+function TagList({ tags, compact = false }: { tags: string[]; compact?: boolean }) {
+  const visible = unique(tags).filter(Boolean);
+  if (!visible.length) return <span className="muted">none</span>;
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
-      <option value="">All {label.toLowerCase()}</option>
-      {options.filter(Boolean).map((option) => <option key={option} value={option}>{option}</option>)}
-    </select>
+    <div className={compact ? "tagList compact" : "tagList"}>
+      {visible.map((tag) => <span key={tag}>{tag}</span>)}
+    </div>
   );
 }
 
-function kgGraphState(nodes: UnifiedKgNode[], edges: UnifiedKgEdge[]): GraphState {
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  return {
-    version: 0,
-    highlighted: {},
-    nodes: Object.fromEntries(nodes.map((node) => [node.id, toVisualNode("kg", node)])),
-    edges: Object.fromEntries(edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => [edge.id, toVisualEdge("kg", edge)])),
+function buildAssets(data: UnifiedVisualization | null): AssetRow[] {
+  if (!data) return [];
+  if (data.service_matrix?.length) {
+    return data.service_matrix.map((row) => ({
+      ...row,
+      vulnerability_tags: unique(row.vulnerability_tags || row.services.flatMap((service) => service.vulnerability_tags || [])),
+    }));
+  }
+  const hosts = data.kg.nodes.filter((node) => node.type === "Host");
+  return hosts.map((host) => {
+    const services = relatedServices(host, data);
+    return {
+      host_id: host.id,
+      host: host.display_name,
+      hostname: firstString(readMeta(host).hostname, readMeta(host).name, "unknown"),
+      role: host.role || "unknown",
+      role_guess: host.role || "unknown",
+      status: host.status,
+      confidence: host.confidence,
+      services,
+      open_ports: services.length,
+      vulnerability_tags: collectNodeTags([host, ...services.map((service) => data.kg.nodes.find((node) => node.id === service.service_id)).filter(Boolean) as UnifiedKgNode[]]),
+      first_seen: host.created_at,
+      last_seen: host.updated_at || String(host.round || ""),
+      related_cycles: relatedCycles(host, data.ag.nodes),
+      evidence_ids: host.evidence_ids,
+    };
+  });
+}
+
+function relatedServices(host: UnifiedKgNode, data: UnifiedVisualization): AssetRow["services"] {
+  const relatedIds = new Set<string>();
+  for (const edge of data.kg.edges) {
+    if (edge.source === host.id) relatedIds.add(edge.target);
+    if (edge.target === host.id) relatedIds.add(edge.source);
+  }
+  return data.kg.nodes
+    .filter((node) => node.type === "Service")
+    .filter((node) => relatedIds.has(node.id) || firstString(readMeta(node).host, node.target) === host.display_name || firstString(readMeta(node).host) === host.id)
+    .map((node) => {
+      const meta = readMeta(node);
+      return {
+        service_id: node.id,
+        name: firstString(meta.service_name, meta.service, node.display_name, "unknown"),
+        port: nullableString(meta.port),
+        protocol: nullableString(meta.protocol) || "tcp",
+        product: nullableString(meta.product || meta.product_name || meta.technology),
+        version: nullableString(meta.version || meta.product_version),
+        status: node.status,
+        confidence: node.confidence,
+        evidence_ids: node.evidence_ids,
+        summary: node.summary,
+        vulnerability_tags: tagsFromRecord(meta),
+      };
+    });
+}
+
+function buildCycles(data: UnifiedVisualization | null): CycleRow[] {
+  if (!data) return [];
+  const groups = new Map<number, Array<UnifiedAgNode | UnifiedTimelineEvent>>();
+  for (const node of data.ag.nodes) {
+    const index = node.cycle_index || node.round || 0;
+    if (!groups.has(index)) groups.set(index, []);
+    groups.get(index)?.push(node);
+  }
+  for (const event of data.timeline) {
+    const index = event.cycle_index || event.round || 0;
+    if (!groups.has(index)) groups.set(index, []);
+    groups.get(index)?.push(event);
+  }
+
+  return Array.from(groups.entries())
+    .filter(([index]) => index > 0)
+    .sort(([left], [right]) => left - right)
+    .map(([cycleIndex, items]) => {
+      const records = items.map((item) => item as unknown as Record<string, unknown>);
+      const selected = records.find((item) => firstString(item.result_summary)) || records[records.length - 1] || {};
+      const title = firstString(selected.title, selected.display_name, selected.intent, selected.action_summary, `Cycle ${cycleIndex}`);
+      return {
+        cycle_index: cycleIndex,
+        title: title.startsWith("Cycle ") ? title : `Cycle ${cycleIndex} - ${title}`,
+        agent: firstString(selected.agent, records.map((item) => item.agent).find(Boolean), "unknown"),
+        capability: firstString(selected.capability, records.map((item) => item.capability).find(Boolean), "unknown"),
+        target: firstString(selected.target_summary, selected.target, records.map((item) => item.target).find(Boolean), "unknown"),
+        intent: firstString(selected.intent, selected.action_summary, selected.summary, "No intent recorded"),
+        result_summary: firstString(selected.result_summary, selected.summary, "No result summary recorded"),
+        status: firstString(selected.status, records.map((item) => item.status).find(Boolean), "unknown"),
+        asset_updates: unique(records.flatMap((item) => extractUpdates(item, "Host"))),
+        service_updates: unique(records.flatMap((item) => extractUpdates(item, "Service"))),
+        vulnerability_tags: unique(records.flatMap((item) => tagsFromRecord(asRecord(item.metadata)))),
+      };
+    });
+}
+
+function relationshipGraph(data: UnifiedVisualization, assets: AssetRow[], cycles: CycleRow[], riskTags: string[], target: string): GraphState {
+  const nodes: Record<string, VisualNode> = {};
+  const edges: Record<string, VisualEdge> = {};
+  const addNode = (id: string, label: string, type: string) => {
+    nodes[id] = { id, label, type, graph: "kg", status: "observed", properties: { label, display_name: label } };
   };
-}
-
-function agGraphState(nodes: UnifiedAgNode[], edges: UnifiedAgEdge[]): GraphState {
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  return {
-    version: 0,
-    highlighted: {},
-    nodes: Object.fromEntries(nodes.map((node) => [node.id, toVisualNode("ag", node)])),
-    edges: Object.fromEntries(edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => [edge.id, toVisualEdge("ag", edge)])),
+  const addEdge = (source: string, targetId: string, label: string) => {
+    const id = `${source}->${targetId}:${label}`;
+    edges[id] = { id, source, target: targetId, label, type: label, graph: "kg", properties: {} };
   };
+
+  addNode("target", target || data.operation.id, "Target");
+  for (const asset of assets) {
+    addNode(asset.host_id, asset.host, "Host");
+    addEdge("target", asset.host_id, "contains");
+    for (const service of asset.services) {
+      addNode(service.service_id, serviceLabel(service), "Service");
+      addEdge(asset.host_id, service.service_id, "exposes");
+    }
+  }
+  for (const tag of riskTags.slice(0, 24)) {
+    const id = `tag:${tag}`;
+    addNode(id, tag, "Tag");
+    for (const asset of assets.filter((item) => item.vulnerability_tags.includes(tag))) {
+      addEdge(asset.host_id, id, "tagged");
+      for (const service of asset.services.filter((item) => (item.vulnerability_tags || []).includes(tag))) {
+        addEdge(service.service_id, id, "tagged");
+      }
+    }
+  }
+  for (const cycle of cycles.slice(-12)) {
+    const id = `cycle:${cycle.cycle_index}`;
+    addNode(id, `Cycle ${cycle.cycle_index}`, "AttackCycle");
+    const matchedAssets = assets.filter((asset) => cycleMentionsAsset(cycle, asset));
+    for (const asset of matchedAssets.length ? matchedAssets : assets.slice(0, 1)) {
+      addEdge(asset.host_id, id, "observed_in");
+    }
+    for (const tag of cycle.vulnerability_tags) {
+      if (nodes[`tag:${tag}`]) addEdge(`tag:${tag}`, id, "used_by");
+    }
+  }
+
+  return { version: 0, highlighted: {}, nodes, edges };
 }
 
-function toVisualNode(graph: "kg" | "ag", node: UnifiedKgNode | UnifiedAgNode): VisualNode {
-  return {
-    id: node.id,
-    label: node.display_name,
-    type: node.type,
-    graph,
-    status: node.status,
-    properties: { ...node, label: node.display_name, display_name: node.display_name },
-  };
+function collectRiskTags(data: UnifiedVisualization | null, assets: AssetRow[], cycles: CycleRow[]) {
+  return unique([
+    ...(data?.risk_tags || []),
+    ...(data?.overview.vulnerability_tags || []),
+    ...assets.flatMap((asset) => asset.vulnerability_tags),
+    ...cycles.flatMap((cycle) => cycle.vulnerability_tags),
+  ]);
 }
 
-function toVisualEdge(graph: "kg" | "ag", edge: UnifiedKgEdge | UnifiedAgEdge): VisualEdge {
-  return {
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    label: edge.display_name || edge.type,
-    type: edge.type,
-    graph,
-    properties: { ...edge },
-  };
+function collectNodeTags(nodes: UnifiedKgNode[]) {
+  return unique(nodes.flatMap((node) => tagsFromRecord(readMeta(node))));
 }
 
-function visibleEdgeCount(nodes: Array<{ id: string }>, edges: Array<{ source: string; target: string }>) {
-  const ids = new Set(nodes.map((node) => node.id));
-  return edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)).length;
+function relatedCycles(host: UnifiedKgNode, nodes: UnifiedAgNode[]) {
+  const refs = [host.id, host.display_name, host.target].filter(Boolean).map(String);
+  return nodes
+    .filter((node) => refs.some((ref) => JSON.stringify(node).includes(ref)))
+    .map((node) => ({
+      cycle_index: node.cycle_index || node.round,
+      title: `Cycle ${node.cycle_index || node.round} - ${node.intent || node.action_summary}`,
+      summary: node.result_summary || node.action_summary,
+      agent: node.agent,
+      status: node.status,
+    }));
 }
 
-function matches(filter: string, value: string | null | undefined) {
-  return !filter || value === filter;
+function extractUpdates(item: Record<string, unknown>, type: "Host" | "Service") {
+  const values: string[] = [];
+  const delta = asRecord(item.kg_delta);
+  for (const update of [...asArray(delta.updates), ...asArray(item.kg_updates), ...asArray(item.kg_node_ids)]) {
+    if (typeof update === "string") values.push(update);
+    if (isRecord(update) && firstString(update.type, update.entity_type).includes(type)) {
+      values.push(firstString(update.id, update.ref_id, update.label));
+    }
+  }
+  return values.filter(Boolean);
+}
+
+function cycleMentionsAsset(cycle: CycleRow, asset: AssetRow) {
+  const text = JSON.stringify(cycle);
+  return [asset.host_id, asset.host, asset.hostname, ...asset.services.map((service) => service.service_id)].filter(Boolean).some((ref) => text.includes(String(ref)));
+}
+
+function serviceLabel(service: AssetRow["services"][number]) {
+  const port = service.port ? `${service.port}/${service.protocol || "tcp"}` : service.protocol || "";
+  const product = [service.product, service.version].filter(Boolean).join(" ");
+  return [port, service.name, product].filter(Boolean).join(" ");
+}
+
+function formatTarget(value: unknown[]) {
+  if (!value?.length) return "unknown";
+  return value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(", ");
+}
+
+function formatCycleSeen(value: unknown) {
+  const text = firstString(value);
+  if (!text) return "unknown";
+  if (/^\d+$/.test(text)) return `Cycle ${text}`;
+  return text;
+}
+
+function confidenceLabel(value: number) {
+  if (value >= 0.75) return "high";
+  if (value >= 0.4) return "medium";
+  if (value > 0) return "low";
+  return "unknown";
+}
+
+function tagsFromRecord(record: Record<string, unknown>): string[] {
+  const explicitKeys = ["vulnerability_tags", "risk_tags", "risk_labels", "vulnerability_labels", "detected_tags", "candidate_tags"];
+  const parsedKeys = [...explicitKeys, "tags", "labels"];
+  const tags = explicitKeys.flatMap((key) => normalizeTags(record[key]));
+  const parsed = asRecord(record.parsed || record.parsed_output || record.tool_result);
+  return unique([...tags, ...parsedKeys.flatMap((key) => normalizeTags(parsed[key]))]);
+}
+
+function normalizeTags(value: unknown): string[] {
+  const items = typeof value === "string" ? value.replace(/;/g, ",").split(",") : asArray(value);
+  return items
+    .map((item) => isRecord(item) ? firstString(item.tag, item.label, item.name, item.kind, item.type) : firstString(item))
+    .map((item) => item.trim().toLowerCase().replace(/[-\s]+/g, "_"))
+    .filter((item) => item && !["none", "unknown", "n/a"].includes(item));
+}
+
+function readMeta(node: UnifiedKgNode) {
+  return asRecord(node.metadata);
+}
+
+function nullableString(value: unknown): string | null {
+  return firstString(value) || null;
 }
 
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort();
 }
 
-function stringValue(value: unknown) {
-  if (value === undefined || value === null) return "";
-  return String(value);
+function firstString(...values: unknown[]) {
+  for (const value of values.flat()) {
+    if (value === undefined || value === null || value === "") continue;
+    return String(value);
+  }
+  return "";
 }
 
-function formatValue(value: unknown) {
-  if (Array.isArray(value)) return value.length ? value.map(String).join(", ") : "None";
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return value === undefined || value === null || value === "" ? "Unknown" : String(value);
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
 }
 
-function humanPhase(value: string) {
-  return value.replace(/_/g, " ");
+function asArray(value: unknown): unknown[] {
+  if (value === undefined || value === null) return [];
+  return Array.isArray(value) ? value : [value];
 }
 
-function maskSensitive(value: string) {
-  return value
-    .replace(/(token|password|private[_ -]?key|secret)(\s*[:=]\s*)([^\s]+)/gi, "$1$2***")
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer ***");
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -15,3 +15,9 @@ tmp-orchestrator-*/
 .env.*
 !.env.example
 *.log
+
+# Lab private secrets (never commit real secrets)
+lab/environments/*/private/.env
+lab/environments/*/private/*.env
+!lab/environments/*/private/.gitkeep
+!lab/environments/*/private/*.env.example

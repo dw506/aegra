@@ -573,6 +573,30 @@ class StateWriterAgent(BaseAgent):
 
         return self._dedupe_entity_patches(entity_patches), self._dedupe_relation_patches(relation_patches)
 
+    def build_state_deltas(
+        self,
+        *,
+        entity_patches: Sequence[KGEntityPatch] = (),
+        relation_patches: Sequence[KGRelationPatch] = (),
+        require_known_endpoints: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Public entry to turn entity/relation patches into ordered KG state deltas.
+
+        当 require_known_endpoints 为真时，只保留两端实体出现在本批 entity_patches
+        中的关系，避免产生指向未知节点的悬挂边。实体 delta 始终排在关系 delta 之前。
+        """
+
+        entity_deltas = [self._build_entity_state_delta(patch) for patch in entity_patches]
+        known_entity_ids = {patch.entity_id for patch in entity_patches}
+        relation_deltas: list[dict[str, Any]] = []
+        for patch in relation_patches:
+            if require_known_endpoints and (
+                patch.source not in known_entity_ids or patch.target not in known_entity_ids
+            ):
+                continue
+            relation_deltas.append(self._build_relation_state_delta(patch))
+        return entity_deltas + relation_deltas
+
     def _build_entity_state_delta(self, patch: KGEntityPatch) -> dict[str, Any]:
         """Wrap one entity patch as a formal KG state delta fragment."""
 

@@ -1,0 +1,24 @@
+# Schema reference for goal oracle configuration files.
+# This file documents the expected structure; it is not a functional oracle config.
+
+oracle_id: string          # unique identifier for this oracle
+type: string               # oracle type: marker_oracle | structural_oracle
+goal_id: string            # goal ID matched by oracle_proof_valid predicate
+
+public:
+  goal_type: string        # human-readable goal type description
+  required_zone_ref: string # zone_ref that must be reached
+  required_route_type: string # e.g. pivot_route
+  required_evidence_kind:
+    - string               # e.g. lab_marker, internal_service_response
+
+private:
+  expose_to_llm: false     # MUST be false - raw secrets never go to LLMs
+  marker_env: string       # env var name containing the marker secret
+  token_env: string        # env var name containing the token secret
+
+validation:
+  require_access_path: bool    # GoalOracleInput.access_path_refs must be non-empty
+  require_session_ref: bool    # GoalOracleInput.session_refs must be non-empty
+  require_pivot_route_ref: bool # GoalOracleInput.pivot_route_refs must be non-empty
+  require_evidence_ref: bool   # GoalOracleInput.evidence_refs must be non-empty

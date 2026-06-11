@@ -6,7 +6,7 @@ from time import perf_counter
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.runtime.policy import RuntimePolicy
 from src.core.runtime.policy_engine import PolicyEngine
-from src.core.workers.tool_runner import ToolExecutionSpec, ToolRunner
+from src.core.tools.tool_runner import ToolExecutionSpec, ToolRunner
 
 
 def build_state() -> RuntimeState:

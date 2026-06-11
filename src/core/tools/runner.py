@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.tools.recipe import ToolRecipe, ToolRecipeError
-from src.core.workers.tool_runner import ToolExecutionResult, ToolRunner
+from src.core.tools.tool_runner import ToolExecutionResult, ToolRunner
 
 
 class RecipeRunResult(BaseModel):

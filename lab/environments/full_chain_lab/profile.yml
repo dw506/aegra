@@ -1,0 +1,91 @@
+profile_id: full-chain-autonomous-pentest-lab
+mode: local_docker_multihost
+user_input_style: target_only
+
+environment:
+  id: full_chain_lab
+  type: docker_lab
+  compose_file: lab/environments/full_chain_lab/docker-compose.yml
+
+entry_scope:
+  cidrs:
+    - 10.20.0.0/24
+  hostnames:
+    - dmz-struts
+    - dmz-thinkphp
+    - dmz-flask
+    - pivot-ssh
+
+zone_bindings:
+  entry:
+    name: dmz
+    cidrs:
+      - 10.20.0.0/24
+    directly_reachable: true
+
+  restricted:
+    name: internal
+    cidrs:
+      - 10.30.0.0/24
+    directly_reachable: false
+    requires:
+      - pivot_route
+      - capability
+
+authorization:
+  docker_lab_only: true
+  deny_public_internet: true
+  deny_host_network: true
+  allow_dmz_discovery: true
+  allow_lab_authorized_exploit: true
+  allow_lab_session_management: true
+  allow_lab_credential_discovery: true
+  allow_lab_credential_validation: true
+  allow_post_access_observation: true
+  allow_pivot_after_valid_session: true
+  allow_internal_discovery_after_pivot: true
+
+safety:
+  destructive_commands: false
+  dos: false
+  public_target_scan: false
+  host_escape: false
+  real_data_exfiltration: false
+  persistence: false
+  reverse_shell: false
+  unrestricted_bruteforce: false
+
+tool_policy:
+  default_deny: true
+  allowed_categories:
+    - recon
+    - fingerprint
+    - vulnerability_analysis
+    - exploit_precheck
+    - lab_authorized_exploit
+    - session_management
+    - post_access_observation
+    - credential_discovery
+    - credential_validation
+    - pivot_discovery
+    - pivot_execution
+    - internal_recon
+    - goal_check
+
+success_contract_ref: lab/environments/full_chain_lab/success_contract.yml
+goal_oracle_ref: lab/environments/full_chain_lab/goal_oracle.yml
+
+mission:
+  default_goal: >
+    Starting only from the imported target, autonomously complete an authorized
+    Docker lab multi-host penetration chain. The system must discover entry-zone
+    services, identify vulnerability candidates, execute lab-authorized exploit
+    primitives, obtain a capability or session, perform post-access observation,
+    establish an authorized pivot route, discover restricted-zone services, and
+    submit a final goal proof. Do not follow a hard-coded stage order.
+
+automation_defaults:
+  max_cycles: 20
+  stop_when_quiescent: false
+  max_replans: 8
+  consecutive_llm_rejections: 5
