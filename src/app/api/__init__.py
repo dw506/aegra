@@ -99,6 +99,20 @@ class OperationRunRequest(OperationCycleRequest):
     consecutive_llm_rejections: int = Field(default=3, ge=1, le=20)
 
 
+class OperationSubmitRequest(OperationRunRequest):
+    """Unified operation payload.
+
+    When targets are provided, `POST /operations` creates the operation, imports
+    the targets, starts the runtime and runs the bounded operation loop.
+    """
+
+    operation_id: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    targets: list[TargetHost] = Field(default_factory=list)
+    auto_start: bool = True
+    run: bool = True
+
+
 def _default_graph_refs() -> list[GraphRef]:
     return [
         GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
@@ -181,6 +195,37 @@ def _operation_policy_summary(orchestrator: AppOrchestrator, operation_id: str) 
         "policy": policy.to_runtime_metadata(),
         "approval_count": len(ApprovalManager().list_approvals(state)),
         "audit_link": f"/operations/{operation_id}/audit-report",
+    }
+
+
+def _run_operation_response(
+    orchestrator: AppOrchestrator,
+    operation_id: str,
+    request: OperationRunRequest,
+) -> dict[str, Any]:
+    _ensure_operation_runnable(orchestrator, operation_id)
+    results = orchestrator.run_until_quiescent(
+        operation_id,
+        graph_refs=request.graph_refs or _default_graph_refs(),
+        planner_payload=dict(request.planner_payload),
+        feedback_payload=dict(request.feedback_payload),
+        context=dict(request.context),
+        max_cycles=request.max_cycles,
+        max_replans=request.max_replans,
+        consecutive_llm_rejections=request.consecutive_llm_rejections,
+        stop_when_quiescent=request.stop_when_quiescent,
+    )
+    run_summary = orchestrator.get_operation_run_summary(
+        operation_id,
+        cycle_results=results,
+        max_cycles=request.max_cycles,
+    ).model_dump(mode="json")
+    return {
+        **run_summary,
+        "result": run_summary,
+        "operation": orchestrator.get_operation_summary(operation_id).model_dump(mode="json"),
+        "policy_summary": _operation_policy_summary(orchestrator, operation_id),
+        "cycles": [cycle_result.model_dump(mode="json") for cycle_result in results],
     }
 
 
@@ -276,9 +321,15 @@ def create_app(
         return assets[-1] if assets else {}
 
     @app.post("/operations")
-    def create_operation(request: OperationCreateRequest) -> dict[str, Any]:
+    def submit_operation(request: OperationSubmitRequest) -> dict[str, Any]:
         try:
             state = resolved_orchestrator.create_operation(request.operation_id, metadata=request.metadata)
+            if request.targets:
+                state = resolved_orchestrator.import_targets(request.operation_id, request.targets)
+                if request.auto_start:
+                    state = resolved_orchestrator.start_operation(request.operation_id)
+                if request.run:
+                    return _run_operation_response(resolved_orchestrator, request.operation_id, request)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return state.model_dump(mode="json")
@@ -318,32 +369,9 @@ def create_app(
     def run_operation(operation_id: str, request: OperationRunRequest | None = None) -> dict[str, Any]:
         request = request or OperationRunRequest()
         try:
-            _ensure_operation_runnable(resolved_orchestrator, operation_id)
-            results = resolved_orchestrator.run_until_quiescent(
-                operation_id,
-                graph_refs=request.graph_refs or _default_graph_refs(),
-                planner_payload=dict(request.planner_payload),
-                feedback_payload=dict(request.feedback_payload),
-                context=dict(request.context),
-                max_cycles=request.max_cycles,
-                max_replans=request.max_replans,
-                consecutive_llm_rejections=request.consecutive_llm_rejections,
-                stop_when_quiescent=request.stop_when_quiescent,
-            )
+            return _run_operation_response(resolved_orchestrator, operation_id, request)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        run_summary = resolved_orchestrator.get_operation_run_summary(
-            operation_id,
-            cycle_results=results,
-            max_cycles=request.max_cycles,
-        ).model_dump(mode="json")
-        return {
-            **run_summary,
-            "result": run_summary,
-            "operation": resolved_orchestrator.get_operation_summary(operation_id).model_dump(mode="json"),
-            "policy_summary": _operation_policy_summary(resolved_orchestrator, operation_id),
-            "cycles": [cycle_result.model_dump(mode="json") for cycle_result in results],
-        }
 
     @app.post("/operations/{operation_id}/stop")
     def stop_operation(operation_id: str, request: OperationActionRequest) -> dict[str, Any]:
@@ -509,6 +537,7 @@ __all__ = [
     "OperationCreateRequest",
     "OperationCycleRequest",
     "OperationRunRequest",
+    "OperationSubmitRequest",
     "app",
     "create_app",
 ]

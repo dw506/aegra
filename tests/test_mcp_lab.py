@@ -552,6 +552,33 @@ def test_optional_external_tool_returns_structured_unavailable(monkeypatch) -> N
     assert payload["parsed"]["runtime_hints"]["missing_binary"] == "nuclei"
 
 
+def test_vuln_profile_match_uses_title_path_framework_and_banner_signals(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+
+    struts = call_lab_tool(
+        "vuln_profile_match",
+        {
+            "service": "http",
+            "target_url": "http://10.20.0.10:8080/",
+            "title": "Struts2 Showcase - Fileupload sample",
+            "path": "/struts2-showcase/fileupload/doUpload.action",
+            "banner": "Apache-Coyote",
+        },
+    )
+    thinkphp = call_lab_tool(
+        "vuln_profile_match",
+        {
+            "service": "http",
+            "target_url": "http://10.20.0.11/",
+            "framework": "ThinkPHP",
+            "body_excerpt": "ThinkPHP V5.0.23 application",
+        },
+    )
+
+    assert any(item["vulnerability_id"] == "struts2-s2-045" for item in json.loads(struts["stdout"]))
+    assert any(item["vulnerability_id"] == "thinkphp-5-rce" for item in json.loads(thinkphp["stdout"]))
+
+
 def _tool_names(catalog: dict[str, Any]) -> set[str]:
     return _tool_names_for(catalog, "pentest-tools")
 

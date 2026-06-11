@@ -1,0 +1,2712 @@
+{
+  "edges": [
+    {
+      "created_at": "2026-06-11T13:21:48.892488Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::00a90c258616b921",
+      "label": "produced result",
+      "properties": {},
+      "source": "tool-call::37465802ad97e3f0",
+      "target": "stage-result::stage-result::523ec9eed3d90cb6"
+    },
+    {
+      "created_at": "2026-06-11T13:23:38.151493Z",
+      "edge_type": "PLANNED",
+      "id": "edge::094b9bc3cd82be48",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::5",
+      "target": "planner-decision::4b0db2705b750336"
+    },
+    {
+      "created_at": "2026-06-11T13:21:20.408438Z",
+      "edge_type": "PLANNED",
+      "id": "edge::128e81e625ea4b97",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::2",
+      "target": "planner-decision::20a5e7733945380d"
+    },
+    {
+      "created_at": "2026-06-11T13:23:38.151536Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::158c6de2a56a203b",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::4b0db2705b750336",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::5::exploit_validation_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.032947Z",
+      "edge_type": "PLANNED",
+      "id": "edge::15e07e8239674cba",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::1",
+      "target": "planner-decision::7cf3eb7488bfba82"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892401Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::1d14602df50fe384",
+      "label": "called tool",
+      "properties": {
+        "step": 2,
+        "tool_name": "vuln_profile_match"
+      },
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "tool-call::37465802ad97e3f0"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.630853Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::2567f661b2849284",
+      "label": "called tool",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent",
+      "target": "tool-call::a295ec85136a2bae"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.033214Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::474045c1a841d85a",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent",
+      "target": "stage-result::stage-result::1982f706e146f056"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.637000Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::50fc048f7d3afe84",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent",
+      "target": "stage-result::stage-result::1c0be0ec5d9fc401"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.885739Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::51c72c02c6f65748",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "stage-result::stage-result::523ec9eed3d90cb6"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.637008Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::55f7a5b4719c922b",
+      "label": "produced result",
+      "properties": {},
+      "source": "tool-call::a295ec85136a2bae",
+      "target": "stage-result::stage-result::1c0be0ec5d9fc401"
+    },
+    {
+      "created_at": "2026-06-11T13:23:13.513552Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::5fc58284b0d4c2f1",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::50a92fdfaf4d3593",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::4::vuln_analysis_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892097Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::69ef884ed4213fa7",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::20a5e7733945380d",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.630759Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::710f54c5218dc28c",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent",
+      "target": "stage-result::stage-result::1c0be0ec5d9fc401"
+    },
+    {
+      "created_at": "2026-06-11T13:22:02.193634Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::7d0d2e0e9a661430",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::a166bcc0c01196d2",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.636966Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::800f4c8aaa27ff1a",
+      "label": "called tool",
+      "properties": {
+        "step": 1,
+        "tool_name": "web_discover"
+      },
+      "source": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent",
+      "target": "tool-call::a295ec85136a2bae"
+    },
+    {
+      "created_at": "2026-06-11T13:23:38.151607Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::885705c1f6d93600",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::5::exploit_validation_agent",
+      "target": "stage-result::stage-result::c4e2238f589e5af2"
+    },
+    {
+      "created_at": "2026-06-11T13:23:27.120758Z",
+      "edge_type": "PLANNED",
+      "id": "edge::8c1374b425ef8b90",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::5",
+      "target": "planner-decision::4b0db2705b750336"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.885796Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::8db289451ccf3e83",
+      "label": "called tool",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "tool-call::ec9adfbb0741a3be"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.033225Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::92f9e71f09476c0f",
+      "label": "produced result",
+      "properties": {},
+      "source": "tool-call::ba018b4e9fa0d26d",
+      "target": "stage-result::stage-result::1982f706e146f056"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892461Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::984a82b4965bfc2f",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "stage-result::stage-result::523ec9eed3d90cb6"
+    },
+    {
+      "created_at": "2026-06-11T13:22:56.406782Z",
+      "edge_type": "PLANNED",
+      "id": "edge::a5f8e39fd0d07915",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::4",
+      "target": "planner-decision::50a92fdfaf4d3593"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.030067Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::aba091aa15cd8a8e",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent",
+      "target": "stage-result::stage-result::1982f706e146f056"
+    },
+    {
+      "created_at": "2026-06-11T13:23:13.513528Z",
+      "edge_type": "PLANNED",
+      "id": "edge::adc9674d732a6b47",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::4",
+      "target": "planner-decision::50a92fdfaf4d3593"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.030120Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::ae8ff2607e7d9999",
+      "label": "called tool",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent",
+      "target": "tool-call::ba018b4e9fa0d26d"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.636848Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::af840188a28a49f8",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::a166bcc0c01196d2",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:23:38.146382Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::b0ef8c6008e41aef",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::5::exploit_validation_agent",
+      "target": "stage-result::stage-result::c4e2238f589e5af2"
+    },
+    {
+      "created_at": "2026-06-11T13:20:25.483405Z",
+      "edge_type": "PLANNED",
+      "id": "edge::b22b91ec358f4708",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::1",
+      "target": "planner-decision::7cf3eb7488bfba82"
+    },
+    {
+      "created_at": "2026-06-11T13:22:02.193572Z",
+      "edge_type": "PLANNED",
+      "id": "edge::b6307dd88818f820",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::3",
+      "target": "planner-decision::a166bcc0c01196d2"
+    },
+    {
+      "created_at": "2026-06-11T13:21:20.408483Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::c043c2e8933a887f",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::20a5e7733945380d",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892282Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::c9f059536e377f8e",
+      "label": "called tool",
+      "properties": {
+        "step": 1,
+        "tool_name": "web_fingerprint"
+      },
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "tool-call::ec9adfbb0741a3be"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.885831Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::cb9d44b90d3a733b",
+      "label": "called tool",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "target": "tool-call::37465802ad97e3f0"
+    },
+    {
+      "created_at": "2026-06-11T13:23:13.513610Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::d0610e126e6a7443",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::4::vuln_analysis_agent",
+      "target": "stage-result::stage-result::f54d50d1692ca903"
+    },
+    {
+      "created_at": "2026-06-11T13:20:25.483465Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::d87b10b481209f57",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::7cf3eb7488bfba82",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:23:27.120814Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::e0a2ded06f1a1f00",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::4b0db2705b750336",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::5::exploit_validation_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892040Z",
+      "edge_type": "PLANNED",
+      "id": "edge::e288b7c820f4be41",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::2",
+      "target": "planner-decision::20a5e7733945380d"
+    },
+    {
+      "created_at": "2026-06-11T13:22:56.406837Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::e4f2af16ab056964",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::50a92fdfaf4d3593",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::4::vuln_analysis_agent"
+    },
+    {
+      "created_at": "2026-06-11T13:23:13.508575Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::f047d814d8e413f4",
+      "label": "produced result",
+      "properties": {},
+      "source": "agent-execution::blackbox-e2e-20260611-212014::4::vuln_analysis_agent",
+      "target": "stage-result::stage-result::f54d50d1692ca903"
+    },
+    {
+      "created_at": "2026-06-11T13:21:48.892475Z",
+      "edge_type": "PRODUCED_RESULT",
+      "id": "edge::f82799366b142747",
+      "label": "produced result",
+      "properties": {},
+      "source": "tool-call::ec9adfbb0741a3be",
+      "target": "stage-result::stage-result::523ec9eed3d90cb6"
+    },
+    {
+      "created_at": "2026-06-11T13:22:36.636823Z",
+      "edge_type": "PLANNED",
+      "id": "edge::fae0ec5a1f6226c2",
+      "label": "planned",
+      "properties": {},
+      "source": "attack-cycle::blackbox-e2e-20260611-212014::3",
+      "target": "planner-decision::a166bcc0c01196d2"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.033180Z",
+      "edge_type": "CALLED_TOOL",
+      "id": "edge::fdbe7a76968e0aa0",
+      "label": "called tool",
+      "properties": {
+        "step": 1,
+        "tool_name": "nmap_scan"
+      },
+      "source": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent",
+      "target": "tool-call::ba018b4e9fa0d26d"
+    },
+    {
+      "created_at": "2026-06-11T13:21:07.032967Z",
+      "edge_type": "DISPATCHED_TO",
+      "id": "edge::ff45662a8d7e7d8d",
+      "label": "dispatched to",
+      "properties": {},
+      "source": "planner-decision::7cf3eb7488bfba82",
+      "target": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent"
+    }
+  ],
+  "metadata": {
+    "projection_batch_id": null,
+    "source_kg_version": 5,
+    "version": 66
+  },
+  "nodes": [
+    {
+      "agent_name": "recon_agent",
+      "created_at": "2026-06-11T13:20:25.483433Z",
+      "cycle_index": 1,
+      "evidence_refs": [],
+      "id": "agent-execution::blackbox-e2e-20260611-212014::1::recon_agent",
+      "kind": "process",
+      "label": "recon_agent execution",
+      "node_type": "AGENT_EXECUTION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 1,
+        "display_name": "\u6267\u884c Agent\uff1arecon_agent",
+        "node_role": "AGENT_EXECUTION",
+        "planner_decision_id": "planner-decision::7cf3eb7488bfba82",
+        "selected_agent": "recon_agent",
+        "selected_stage": "RECON_STAGE",
+        "step_order": 3
+      },
+      "refs": [],
+      "stage_type": "RECON_STAGE",
+      "status": "planned",
+      "summary": "Establish initial authorized asset and service visibility within 10.20.0.0/24 to build the first evidence for the mission goal."
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:21:20.408456Z",
+      "cycle_index": 2,
+      "evidence_refs": [],
+      "id": "agent-execution::blackbox-e2e-20260611-212014::2::vuln_analysis_agent",
+      "kind": "process",
+      "label": "vuln_analysis_agent execution",
+      "node_type": "AGENT_EXECUTION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 2,
+        "display_name": "\u6267\u884c Agent\uff1avuln_analysis_agent",
+        "node_role": "AGENT_EXECUTION",
+        "planner_decision_id": "planner-decision::20a5e7733945380d",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "step_order": 3
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8080/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:80/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8000/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "planned",
+      "summary": "Analyze discovered services to improve fingerprinting and identify bounded candidate findings relevant to the authorized mission goal."
+    },
+    {
+      "agent_name": "exploit_validation_agent",
+      "created_at": "2026-06-11T13:22:02.193600Z",
+      "cycle_index": 3,
+      "evidence_refs": [],
+      "id": "agent-execution::blackbox-e2e-20260611-212014::3::exploit_validation_agent",
+      "kind": "process",
+      "label": "exploit_validation_agent execution",
+      "node_type": "AGENT_EXECUTION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 3,
+        "display_name": "\u6267\u884c Agent\uff1aexploit_validation_agent",
+        "node_role": "AGENT_EXECUTION",
+        "planner_decision_id": "planner-decision::a166bcc0c01196d2",
+        "selected_agent": "exploit_validation_agent",
+        "selected_stage": "EXPLOIT_STAGE",
+        "step_order": 3
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "planned",
+      "summary": "Perform bounded non-destructive validation of the most plausible web vulnerability candidate on the discovered Jetty/Struts2-style HTTP service at 10.20.0.10:8080 and determine whether actionable exploit evidence can be confirmed within policy."
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:22:56.406804Z",
+      "cycle_index": 4,
+      "evidence_refs": [],
+      "id": "agent-execution::blackbox-e2e-20260611-212014::4::vuln_analysis_agent",
+      "kind": "process",
+      "label": "vuln_analysis_agent execution",
+      "node_type": "AGENT_EXECUTION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 4,
+        "display_name": "\u6267\u884c Agent\uff1avuln_analysis_agent",
+        "node_role": "AGENT_EXECUTION",
+        "planner_decision_id": "planner-decision::50a92fdfaf4d3593",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "step_order": 3
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": "tool-extracted: ssh:2222/tcp@10.20.0.0/24",
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": "tool-extracted: rpcbind:111/tcp@10.20.0.0/24",
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "planned",
+      "summary": "Analyze the discovered in-scope services, especially the HTTP service on 10.20.0.10:8080, to refine fingerprints, map plausible bounded validation candidates, and determine whether a safe exploit-validation path actually exists."
+    },
+    {
+      "agent_name": "exploit_validation_agent",
+      "created_at": "2026-06-11T13:23:27.120781Z",
+      "cycle_index": 5,
+      "evidence_refs": [],
+      "id": "agent-execution::blackbox-e2e-20260611-212014::5::exploit_validation_agent",
+      "kind": "process",
+      "label": "exploit_validation_agent execution",
+      "node_type": "AGENT_EXECUTION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 5,
+        "display_name": "\u6267\u884c Agent\uff1aexploit_validation_agent",
+        "node_role": "AGENT_EXECUTION",
+        "planner_decision_id": "planner-decision::4b0db2705b750336",
+        "selected_agent": "exploit_validation_agent",
+        "selected_stage": "EXPLOIT_STAGE",
+        "step_order": 3
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "planned",
+      "summary": "Perform bounded non-destructive validation of the strongest existing candidate on 10.20.0.10:8080 and determine whether it yields concrete goal-relevant evidence or should be ruled out."
+    },
+    {
+      "agent_name": null,
+      "created_at": "2026-06-11T13:20:25.483227Z",
+      "cycle_index": 1,
+      "evidence_refs": [],
+      "id": "attack-cycle::blackbox-e2e-20260611-212014::1",
+      "kind": "process",
+      "label": "Attack cycle 1",
+      "node_type": "ATTACK_CYCLE",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 1,
+        "display_name": "Cycle 1",
+        "node_role": "ATTACK_CYCLE",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "status": "running",
+        "step_order": 1
+      },
+      "refs": [],
+      "stage_type": null,
+      "status": "running",
+      "summary": "cycle 1"
+    },
+    {
+      "agent_name": null,
+      "created_at": "2026-06-11T13:21:20.408327Z",
+      "cycle_index": 2,
+      "evidence_refs": [],
+      "id": "attack-cycle::blackbox-e2e-20260611-212014::2",
+      "kind": "process",
+      "label": "Attack cycle 2",
+      "node_type": "ATTACK_CYCLE",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 2,
+        "display_name": "Cycle 2",
+        "node_role": "ATTACK_CYCLE",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "status": "running",
+        "step_order": 1
+      },
+      "refs": [],
+      "stage_type": null,
+      "status": "running",
+      "summary": "cycle 2"
+    },
+    {
+      "agent_name": null,
+      "created_at": "2026-06-11T13:22:02.193395Z",
+      "cycle_index": 3,
+      "evidence_refs": [],
+      "id": "attack-cycle::blackbox-e2e-20260611-212014::3",
+      "kind": "process",
+      "label": "Attack cycle 3",
+      "node_type": "ATTACK_CYCLE",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 3,
+        "display_name": "Cycle 3",
+        "node_role": "ATTACK_CYCLE",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "status": "running",
+        "step_order": 1
+      },
+      "refs": [],
+      "stage_type": null,
+      "status": "running",
+      "summary": "cycle 3"
+    },
+    {
+      "agent_name": null,
+      "created_at": "2026-06-11T13:22:56.406482Z",
+      "cycle_index": 4,
+      "evidence_refs": [],
+      "id": "attack-cycle::blackbox-e2e-20260611-212014::4",
+      "kind": "process",
+      "label": "Attack cycle 4",
+      "node_type": "ATTACK_CYCLE",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 4,
+        "display_name": "Cycle 4",
+        "node_role": "ATTACK_CYCLE",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "status": "running",
+        "step_order": 1
+      },
+      "refs": [],
+      "stage_type": null,
+      "status": "running",
+      "summary": "cycle 4"
+    },
+    {
+      "agent_name": null,
+      "created_at": "2026-06-11T13:23:27.120619Z",
+      "cycle_index": 5,
+      "evidence_refs": [],
+      "id": "attack-cycle::blackbox-e2e-20260611-212014::5",
+      "kind": "process",
+      "label": "Attack cycle 5",
+      "node_type": "ATTACK_CYCLE",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "cycle_index": 5,
+        "display_name": "Cycle 5",
+        "node_role": "ATTACK_CYCLE",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "status": "running",
+        "step_order": 1
+      },
+      "refs": [],
+      "stage_type": null,
+      "status": "running",
+      "summary": "cycle 5"
+    },
+    {
+      "agent_name": "planner_agent",
+      "created_at": "2026-06-11T13:21:20.408396Z",
+      "cycle_index": 2,
+      "evidence_refs": [],
+      "id": "planner-decision::20a5e7733945380d",
+      "kind": "process",
+      "label": "Planner decision: dispatch_agent",
+      "node_type": "PLANNER_DECISION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 2,
+        "decision": "dispatch_agent",
+        "display_name": "\u89c4\u5212\u51b3\u7b56\uff1aVULN_ANALYSIS_STAGE",
+        "handoff_acceptance": "Accept if service fingerprints and candidate findings are updated with supporting evidence or if the agent documents why no bounded candidate path exists.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess the discovered in-scope services, prioritize the HTTP endpoints for deeper fingerprinting, and determine whether any bounded non-destructive candidate findings can be supported for later validation. Do not attempt exploitation; focus on analysis and evidence building.",
+          "usage": {
+            "completion_tokens": 620,
+            "prompt_tokens": 8365,
+            "total_tokens": 8985
+          }
+        },
+        "node_role": "PLANNER_DECISION",
+        "objective": "Analyze discovered services to improve fingerprinting and identify bounded candidate findings relevant to the authorized mission goal.",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "reasoning_summary": "Recon established reachable services, but current evidence lacks application-level fingerprinting and candidate finding analysis needed to choose a safe next step.",
+        "required_context": {
+          "ag_summary": "One recon cycle completed with successful nmap service discovery; no candidate findings or goal evidence yet.",
+          "known_services_summary": "Initial recon found exposed HTTP services on 80, 8000, and 8080 plus SSH 2222 and rpcbind 111 within authorized scope.",
+          "mission_goal": "Validate the authorized mission goal",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_scope": [
+              "10.20.0.0/24"
+            ]
+          },
+          "runtime": {
+            "active_sessions": []
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "step_order": 2,
+        "stop_condition": null,
+        "success_criteria": [
+          "Refine service metadata for the most promising exposed services using authorized safe probes.",
+          "Produce candidate findings or rule out obvious bounded validation paths based on observed product/version/context.",
+          "Attach evidence refs supporting any identified candidate findings or notable dead ends."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": null,
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8080/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": null,
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:80/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": null,
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8000/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": null,
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": null,
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8080/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:80/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-http:8000/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": null,
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "dispatch_agent",
+      "summary": "Recon established reachable services, but current evidence lacks application-level fingerprinting and candidate finding analysis needed to choose a safe next step."
+    },
+    {
+      "agent_name": "planner_agent",
+      "created_at": "2026-06-11T13:23:27.120709Z",
+      "cycle_index": 5,
+      "evidence_refs": [],
+      "id": "planner-decision::4b0db2705b750336",
+      "kind": "process",
+      "label": "Planner decision: dispatch_agent",
+      "node_type": "PLANNER_DECISION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.84,
+        "cycle_index": 5,
+        "decision": "dispatch_agent",
+        "display_name": "\u89c4\u5212\u51b3\u7b56\uff1aEXPLOIT_STAGE",
+        "handoff_acceptance": "Accept if the stage returns validated evidence, a supported safe-validation conclusion, or a clear determination that another agent should take over.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess the strongest existing vulnerability candidate for the in-scope HTTP service on 10.20.0.10:8080 using only bounded, non-destructive methods. Use current KG evidence and available validation-oriented tools to confirm or eliminate a safe validation path, collect concrete evidence, and avoid speculative or destructive actions.",
+          "usage": {
+            "completion_tokens": 574,
+            "prompt_tokens": 8088,
+            "total_tokens": 8662
+          }
+        },
+        "node_role": "PLANNER_DECISION",
+        "objective": "Perform bounded non-destructive validation of the strongest existing candidate on 10.20.0.10:8080 and determine whether it yields concrete goal-relevant evidence or should be ruled out.",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "reasoning_summary": "Recent analysis strengthened the 10.20.0.10:8080 fingerprint and identified it as the highest-value target. Policy and available tools allow bounded validation, while no stop condition is yet satisfied.",
+        "required_context": {
+          "evidence_gap": "KG and recent vuln analysis indicate a likely Struts2/Jetty web target on 10.20.0.10:8080, but there is still no validated candidate, no goal proof, and no success_condition_progress showing stop eligibility.",
+          "known_service_focus": "HTTP service on 10.20.0.10:8080 with prior fingerprinting suggesting Jetty 9.2.11 and Struts2 Showcase fileupload sample.",
+          "mission_goal": "Validate the authorized mission goal",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_scope": "10.20.0.0/24"
+          }
+        },
+        "risk_level": "medium",
+        "selected_agent": "exploit_validation_agent",
+        "selected_stage": "EXPLOIT_STAGE",
+        "step_order": 2,
+        "stop_condition": null,
+        "success_criteria": [
+          "A supported bounded validation profile is matched and safely checked against the 10.20.0.10:8080 target, producing concrete evidence.",
+          "Or the target is ruled out for safe bounded validation with clear justification and evidence for replanning.",
+          "Any resulting evidence is sufficient to guide either GoalAgent assessment or a different next-stage decision."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.10",
+            "ref_id": "host::10.20.0.10",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.10:8080/tcp http",
+            "ref_id": "service::10.20.0.10:8080/tcp",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "dispatch_agent",
+      "summary": "Recent analysis strengthened the 10.20.0.10:8080 fingerprint and identified it as the highest-value target. Policy and available tools allow bounded validation, while no stop condition is yet satisfied."
+    },
+    {
+      "agent_name": "planner_agent",
+      "created_at": "2026-06-11T13:22:56.406742Z",
+      "cycle_index": 4,
+      "evidence_refs": [],
+      "id": "planner-decision::50a92fdfaf4d3593",
+      "kind": "process",
+      "label": "Planner decision: dispatch_agent",
+      "node_type": "PLANNER_DECISION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.84,
+        "cycle_index": 4,
+        "decision": "dispatch_agent",
+        "display_name": "\u89c4\u5212\u51b3\u7b56\uff1aVULN_ANALYSIS_STAGE",
+        "handoff_acceptance": "Accept if the stage returns stronger fingerprints, a supported bounded validation candidate, or a clear conclusion that another agent should take over.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously analyze the existing in-scope service evidence, prioritizing the HTTP service on 10.20.0.10:8080. Refine product/version/app fingerprinting, review whether the observed web behavior supports any bounded non-destructive validation profile, and assess whether other discovered services merit higher-priority analysis. Do not force validation without evidence; if no safe candidate is supportable, return that conclusion with the best evidence-backed next step.",
+          "usage": {
+            "completion_tokens": 799,
+            "prompt_tokens": 8035,
+            "total_tokens": 8834
+          }
+        },
+        "node_role": "PLANNER_DECISION",
+        "objective": "Analyze the discovered in-scope services, especially the HTTP service on 10.20.0.10:8080, to refine fingerprints, map plausible bounded validation candidates, and determine whether a safe exploit-validation path actually exists.",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "reasoning_summary": "Current evidence shows exposed services but no confirmed validation path or goal proof. The last exploit-validation attempt returned only basic web discovery, so vulnerability analysis is the best next step to close fingerprint and candidate gaps.",
+        "required_context": {
+          "evidence_gap": "Service/product/version and candidate-to-validation mapping are still insufficient; no success_condition_progress metadata is present.",
+          "known_services_summary": [
+            "10.20.0.10:8080/tcp http",
+            "10.20.0.0/24 inferred http on 80/tcp",
+            "10.20.0.0/24 inferred http on 8000/tcp",
+            "10.20.0.0/24 inferred http on 8080/tcp",
+            "10.20.0.0/24 inferred rpcbind on 111/tcp",
+            "10.20.0.0/24 inferred ssh on 2222/tcp"
+          ],
+          "mission_goal": "Validate the authorized mission goal",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_scope": "10.20.0.0/24"
+          },
+          "recent_result_summary": "Previous exploit-validation cycle produced only benign web path observation on / with no confirmation evidence or validated candidate."
+        },
+        "risk_level": "low",
+        "selected_agent": "vuln_analysis_agent",
+        "selected_stage": "VULN_ANALYSIS_STAGE",
+        "step_order": 2,
+        "stop_condition": null,
+        "success_criteria": [
+          "Produce improved service fingerprint or application characterization for the primary web target.",
+          "Identify at least one well-supported bounded validation candidate or conclude none is currently supportable.",
+          "Generate actionable next-step guidance grounded in evidence for either exploit validation, additional recon, access/pivot, or goal assessment."
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.10",
+            "ref_id": "host::10.20.0.10",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.10:8080/tcp http",
+            "ref_id": "service::10.20.0.10:8080/tcp",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: ssh:2222/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          },
+          {
+            "graph": "kg",
+            "label": "tool-extracted: rpcbind:111/tcp@10.20.0.0/24",
+            "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": "tool-extracted: ssh:2222/tcp@10.20.0.0/24",
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-ssh:2222/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        },
+        {
+          "graph": "kg",
+          "label": "tool-extracted: rpcbind:111/tcp@10.20.0.0/24",
+          "ref_id": "tool-fact-tool-trace::6dcc6cd8515caa58-Service-rpcbind:111/tcp@10.20.0.0/24",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "dispatch_agent",
+      "summary": "Current evidence shows exposed services but no confirmed validation path or goal proof. The last exploit-validation attempt returned only basic web discovery, so vulnerability analysis is the best next step to close fingerprint and candidate gaps."
+    },
+    {
+      "agent_name": "planner_agent",
+      "created_at": "2026-06-11T13:20:25.483335Z",
+      "cycle_index": 1,
+      "evidence_refs": [],
+      "id": "planner-decision::7cf3eb7488bfba82",
+      "kind": "process",
+      "label": "Planner decision: dispatch_agent",
+      "node_type": "PLANNER_DECISION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.93,
+        "cycle_index": 1,
+        "decision": "dispatch_agent",
+        "display_name": "\u89c4\u5212\u51b3\u7b56\uff1aRECON_STAGE",
+        "handoff_acceptance": "Accept if the stage returns concrete host/service evidence, bounded negative recon evidence, or a justified next-step suggestion based on observed services.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously perform bounded initial reconnaissance within the authorized 10.20.0.0/24 scope to identify reachable hosts and exposed services, then return concise evidence and the most relevant next-step recommendation.",
+          "usage": {
+            "completion_tokens": 486,
+            "prompt_tokens": 6007,
+            "total_tokens": 6493
+          }
+        },
+        "node_role": "PLANNER_DECISION",
+        "objective": "Establish initial authorized asset and service visibility within 10.20.0.0/24 to build the first evidence for the mission goal.",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "reasoning_summary": "Initial cycle has only scope-level knowledge and no service evidence; authorized low-risk recon is the needed first step.",
+        "required_context": {
+          "current_goal": "bootstrap control cycle initialized",
+          "known_assets": [
+            {
+              "ref": {
+                "graph": "kg",
+                "label": "10.20.0.0/24",
+                "ref_id": "kg-host::e026bf274678da3b",
+                "ref_type": "Host"
+              }
+            },
+            {
+              "cidr": "10.20.0.0/24",
+              "ref": {
+                "graph": "kg",
+                "label": "Scope: 10.20.0.0/24",
+                "ref_id": "kg-scope::e026bf274678da3b",
+                "ref_type": "NetworkZone"
+              }
+            }
+          ],
+          "known_services": [],
+          "mission_goal": "Validate the authorized mission goal",
+          "policy_scope": [
+            "10.20.0.0/24"
+          ],
+          "runtime_summary": {
+            "active_sessions": 0,
+            "credentials": 0,
+            "pivot_routes": 0
+          }
+        },
+        "risk_level": "low",
+        "selected_agent": "recon_agent",
+        "selected_stage": "RECON_STAGE",
+        "step_order": 2,
+        "stop_condition": null,
+        "success_criteria": [
+          "At least one authorized live host or reachable service in 10.20.0.0/24 is identified and evidenced, or bounded negative recon evidence is produced.",
+          "New KG-relevant evidence is generated for host reachability, open ports, or service metadata.",
+          "Results remain within authorized scope and safe probing policy."
+        ],
+        "target_refs": [],
+        "target_selection": null,
+        "task_brief": null
+      },
+      "refs": [],
+      "stage_type": "RECON_STAGE",
+      "status": "dispatch_agent",
+      "summary": "Initial cycle has only scope-level knowledge and no service evidence; authorized low-risk recon is the needed first step."
+    },
+    {
+      "agent_name": "planner_agent",
+      "created_at": "2026-06-11T13:22:02.193506Z",
+      "cycle_index": 3,
+      "evidence_refs": [],
+      "id": "planner-decision::a166bcc0c01196d2",
+      "kind": "process",
+      "label": "Planner decision: dispatch_agent",
+      "node_type": "PLANNER_DECISION",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "allowed_tool_names": null,
+        "autonomy_level": null,
+        "confidence": 0.8,
+        "cycle_index": 3,
+        "decision": "dispatch_agent",
+        "display_name": "\u89c4\u5212\u51b3\u7b56\uff1aEXPLOIT_STAGE",
+        "handoff_acceptance": "Accept if the stage returns confirmed validation evidence, a clearly unsupported validation path, or concrete evidence that another agent is needed next.",
+        "handoff_policy": null,
+        "max_steps": 3,
+        "metadata": {
+          "accepted": true,
+          "allowed_tool_names": "*",
+          "handoff_policy": "stage_agent_may_suggest_next_agent",
+          "model": "gpt-5.4-high",
+          "planner": "llm_mission_planner",
+          "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
+          "task_brief": "Autonomously assess the discovered HTTP service at 10.20.0.10:8080 for a bounded, non-destructive validation path based on the observed Jetty/Struts2-style application fingerprint. Prefer safe validation and precheck workflows. If validation is possible, collect concise evidence of success or failure. If not, explain the blocking gap and preserve evidence for the next planning cycle.",
+          "usage": {
+            "completion_tokens": 610,
+            "prompt_tokens": 8114,
+            "total_tokens": 8724
+          }
+        },
+        "node_role": "PLANNER_DECISION",
+        "objective": "Perform bounded non-destructive validation of the most plausible web vulnerability candidate on the discovered Jetty/Struts2-style HTTP service at 10.20.0.10:8080 and determine whether actionable exploit evidence can be confirmed within policy.",
+        "operation_id": "blackbox-e2e-20260611-212014",
+        "reasoning_summary": "Recon and fingerprinting identified a likely vulnerable web target, but no goal evidence or stop eligibility is present. The next evidence gap is bounded validation of the candidate web exposure on 10.20.0.10:8080.",
+        "required_context": {
+          "constraints": [
+            "use only bounded non-destructive validation paths",
+            "do not attempt destructive exploitation",
+            "stay within authorized target scope"
+          ],
+          "known_observations": [
+            "HTTP service on 10.20.0.10:8080 is reachable",
+            "web fingerprint indicates Jetty(9.2.11.v20150529)",
+            "page title indicates Struts2 Showcase - Fileupload sample"
+          ],
+          "mission_goal": "Validate the authorized mission goal",
+          "policy": {
+            "allow_fingerprint": true,
+            "allow_safe_probe": true,
+            "authorized_scope": "10.20.0.0/24"
+          },
+          "recent_results": [
+            "vuln_analysis produced web fingerprint for http://10.20.0.10:8080/",
+            "vuln_profile_match returned no matches"
+          ]
+        },
+        "risk_level": "medium",
+        "selected_agent": "exploit_validation_agent",
+        "selected_stage": "EXPLOIT_STAGE",
+        "step_order": 2,
+        "stop_condition": null,
+        "success_criteria": [
+          "Identify whether a safe validation profile or other bounded validation applies to the 10.20.0.10:8080 web application",
+          "If a valid bounded profile exists, execute non-destructive validation and return evidence-backed result",
+          "If no safe validation path exists, document why and provide evidence sufficient for replanning or goal assessment"
+        ],
+        "target_refs": [
+          {
+            "graph": "kg",
+            "label": "10.20.0.10",
+            "ref_id": "host::10.20.0.10",
+            "ref_type": "Host"
+          },
+          {
+            "graph": "kg",
+            "label": "10.20.0.10:8080/tcp http",
+            "ref_id": "service::10.20.0.10:8080/tcp",
+            "ref_type": "Service"
+          }
+        ],
+        "target_selection": null,
+        "task_brief": null
+      },
+      "refs": [
+        {
+          "graph": "kg",
+          "label": "10.20.0.10",
+          "ref_id": "host::10.20.0.10",
+          "ref_type": "Host"
+        },
+        {
+          "graph": "kg",
+          "label": "10.20.0.10:8080/tcp http",
+          "ref_id": "service::10.20.0.10:8080/tcp",
+          "ref_type": "Service"
+        }
+      ],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "dispatch_agent",
+      "summary": "Recon and fingerprinting identified a likely vulnerable web target, but no goal evidence or stop eligibility is present. The next evidence gap is bounded validation of the candidate web exposure on 10.20.0.10:8080."
+    },
+    {
+      "agent_name": "recon_agent",
+      "created_at": "2026-06-11T13:21:07.030005Z",
+      "cycle_index": 1,
+      "evidence_refs": [],
+      "id": "stage-result::stage-result::1982f706e146f056",
+      "kind": "process",
+      "label": "RECON_STAGE result",
+      "node_type": "STAGE_RESULT",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "confidence": 0.5,
+        "created_at": "2026-06-11T13:21:07.019105+00:00",
+        "discovered_entity_count": 0,
+        "discovered_relation_count": 0,
+        "evidence_count": 1,
+        "finding_count": 0,
+        "observation_count": 2,
+        "policy_notes": [],
+        "replan_recommendation": null,
+        "result_id": "stage-result::1982f706e146f056",
+        "retry_recommendation": null,
+        "risk_level": "medium",
+        "stage_task_id": "stage-blackbox-e2e-20260611-212014-1-recon_agent",
+        "status": "succeeded",
+        "tool_trace_count": 1
+      },
+      "refs": [],
+      "stage_type": "RECON_STAGE",
+      "status": "succeeded",
+      "summary": "Recon established initial authorized visibility in 10.20.0.0/24 from existing stage evidence. Nmap scan evidenced 6 live hosts: 10.20.0.1, 10.20.0.2, 10.20.0.3, 10.20.0.10, 10.20.0.11, 10.20.0.50. Open services discovered: 10.20.0.1:111/tcp rpcbind 2-4 (RPC #100000); 10.20.0.3:8000/tcp HTTP/Uvicorn; 10.20.0.10:8080/tcp HTTP/Jetty 9.2.11.v20150529; 10.20.0.11:80/tcp HTTP/Apache httpd 2.4.25 ((Debian)); 10.20.0.50:2222/tcp SSH/OpenSSH 10.2. Negative evidence: 10.20.0.2 was up but all 1000 scanned TCP ports were closed/reset; 10.20.0.1 had 8000/tcp filtered. This satisfies the success criteria by identifying multiple authorized live hosts and reachable services with evidenced metadata."
+    },
+    {
+      "agent_name": "exploit_validation_agent",
+      "created_at": "2026-06-11T13:22:36.630674Z",
+      "cycle_index": 3,
+      "evidence_refs": [],
+      "id": "stage-result::stage-result::1c0be0ec5d9fc401",
+      "kind": "process",
+      "label": "EXPLOIT_STAGE result",
+      "node_type": "STAGE_RESULT",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "confidence": 0.5,
+        "created_at": "2026-06-11T13:22:36.619459+00:00",
+        "discovered_entity_count": 0,
+        "discovered_relation_count": 0,
+        "evidence_count": 0,
+        "finding_count": 0,
+        "observation_count": 2,
+        "policy_notes": [],
+        "replan_recommendation": null,
+        "result_id": "stage-result::1c0be0ec5d9fc401",
+        "retry_recommendation": null,
+        "risk_level": "medium",
+        "stage_task_id": "stage-blackbox-e2e-20260611-212014-3-exploit_validation_agent",
+        "status": "succeeded",
+        "tool_trace_count": 1
+      },
+      "refs": [],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "succeeded",
+      "summary": "exploit_validation_agent finished"
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:21:48.885678Z",
+      "cycle_index": 2,
+      "evidence_refs": [
+        "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58",
+        "runtime:var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+        "runtime:var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+      ],
+      "id": "stage-result::stage-result::523ec9eed3d90cb6",
+      "kind": "process",
+      "label": "VULN_ANALYSIS_STAGE result",
+      "node_type": "STAGE_RESULT",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "confidence": 0.5,
+        "created_at": "2026-06-11T13:21:48.881467+00:00",
+        "discovered_entity_count": 0,
+        "discovered_relation_count": 0,
+        "evidence_count": 3,
+        "finding_count": 1,
+        "observation_count": 7,
+        "policy_notes": [],
+        "replan_recommendation": null,
+        "result_id": "stage-result::523ec9eed3d90cb6",
+        "retry_recommendation": null,
+        "risk_level": "medium",
+        "stage_task_id": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+        "status": "succeeded",
+        "tool_trace_count": 2
+      },
+      "refs": [],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "succeeded",
+      "summary": "\u5df2\u57fa\u4e8e\u5df2\u6709\u8bc1\u636e\u4e0e\u672c\u9636\u6bb5\u5de5\u5177\u7ed3\u679c\u5b8c\u6210\u6709\u754c\u6f0f\u6d1e\u5206\u6790\u3002\u6700\u6709\u5e0c\u671b\u7684\u76ee\u6807\u662f 10.20.0.10:8080\uff1aNmap \u8bc6\u522b\u4e3a Jetty 9.2.11.v20150529\uff0c\u4e14 web_fingerprint \u660e\u786e\u8fd4\u56de\u9875\u9762\u6807\u9898\u201cStruts2 Showcase - Fileupload sample\u201d\uff0c\u8bf4\u660e\u8be5 HTTP \u670d\u52a1\u5f88\u53ef\u80fd\u8fd0\u884c Apache Struts2 Showcase \u793a\u4f8b\u5e94\u7528\u3002\u8be5\u4e0a\u4e0b\u6587\u4f7f\u5176\u6210\u4e3a\u540e\u7eed\u5b89\u5168\u9a8c\u8bc1\u7684\u4f18\u5148\u5019\u9009\uff0c\u4f46\u5f53\u524d\u4ec5\u80fd\u8bc1\u660e\u4ea7\u54c1/\u9875\u9762\u7279\u5f81\uff0c\u5c1a\u65e0\u6f0f\u6d1e\u5b58\u5728\u8bc1\u636e\u3002\u5bf9\u8be5\u76ee\u6807\u6267\u884c vuln_profile_match \u672a\u8fd4\u56de\u4efb\u4f55\u53ef\u76f4\u63a5\u5957\u7528\u7684\u53d7\u63a7\u9a8c\u8bc1 profile\uff0c\u56e0\u6b64\u5f53\u524d\u4e0d\u80fd\u76f4\u63a5\u58f0\u79f0\u5b58\u5728\u7279\u5b9a CVE\uff0c\u4e5f\u7f3a\u5c11\u53ef\u7acb\u5373\u6267\u884c\u7684 validation profile\u3002\u5176\u4f59\u670d\u52a1\u4e2d\uff0c10.20.0.11:80 \u4e3a Apache httpd 2.4.25 (Debian)\u300110.20.0.3:8000 \u4e3a Uvicorn\u300110.20.0.50:2222 \u4e3a OpenSSH 10.2\u300110.20.0.1:111 \u4e3a rpcbind\uff1b\u57fa\u4e8e\u73b0\u6709\u5143\u6570\u636e\u5747\u4e0d\u8db3\u4ee5\u5f62\u6210\u53ef\u4fe1\u6f0f\u6d1e\u7ed3\u8bba\uff0c\u53ea\u80fd\u4f5c\u4e3a\u540e\u7eed\u8865\u5145\u6307\u7eb9\u6216\u76ee\u5f55\u53d1\u73b0\u5019\u9009\u3002"
+    },
+    {
+      "agent_name": "exploit_validation_agent",
+      "created_at": "2026-06-11T13:23:38.146321Z",
+      "cycle_index": 5,
+      "evidence_refs": [],
+      "id": "stage-result::stage-result::c4e2238f589e5af2",
+      "kind": "process",
+      "label": "EXPLOIT_STAGE result",
+      "node_type": "STAGE_RESULT",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "confidence": 0.5,
+        "created_at": "2026-06-11T13:23:38.144364+00:00",
+        "discovered_entity_count": 0,
+        "discovered_relation_count": 0,
+        "evidence_count": 0,
+        "finding_count": 0,
+        "observation_count": 0,
+        "policy_notes": [],
+        "replan_recommendation": "invalid finish payload: 3 validation errors for StageResult\nobservations.0\n  Input should be a valid dictionary [type=dict_type, input_value='No active sessions or cr...e available in runtime.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type\nobservations.1\n  Input should be a valid dictionary [type=dict_type, input_value='No supported validation ...uted without invention.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type\nobservations.2\n  Input should be a valid dictionary [type=dict_type, input_value='Prior exploit-validation...ttp://10.20.0.10:8080/.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type",
+        "result_id": "stage-result::c4e2238f589e5af2",
+        "retry_recommendation": null,
+        "risk_level": "medium",
+        "stage_task_id": "stage-blackbox-e2e-20260611-212014-5-exploit_validation_agent",
+        "status": "needs_replan",
+        "tool_trace_count": 0
+      },
+      "refs": [],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "needs_replan",
+      "summary": "invalid finish payload: 3 validation errors for StageResult\nobservations.0\n  Input should be a valid dictionary [type=dict_type, input_value='No active sessions or cr...e available in runtime.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type\nobservations.1\n  Input should be a valid dictionary [type=dict_type, input_value='No supported validation ...uted without invention.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type\nobservations.2\n  Input should be a valid dictionary [type=dict_type, input_value='Prior exploit-validation...ttp://10.20.0.10:8080/.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/dict_type"
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:23:13.508523Z",
+      "cycle_index": 4,
+      "evidence_refs": [],
+      "id": "stage-result::stage-result::f54d50d1692ca903",
+      "kind": "process",
+      "label": "VULN_ANALYSIS_STAGE result",
+      "node_type": "STAGE_RESULT",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "confidence": 0.5,
+        "created_at": "2026-06-11T13:23:13.507406+00:00",
+        "discovered_entity_count": 0,
+        "discovered_relation_count": 0,
+        "evidence_count": 0,
+        "finding_count": 2,
+        "observation_count": 1,
+        "policy_notes": [],
+        "replan_recommendation": null,
+        "result_id": "stage-result::f54d50d1692ca903",
+        "retry_recommendation": null,
+        "risk_level": "medium",
+        "stage_task_id": "stage-blackbox-e2e-20260611-212014-4-vuln_analysis_agent",
+        "status": "succeeded",
+        "tool_trace_count": 0
+      },
+      "refs": [],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "succeeded",
+      "summary": "\u5df2\u57fa\u4e8e\u73b0\u6709 KG/Runtime/evidence \u5b8c\u6210\u672c\u8f6e\u6f0f\u6d1e\u5206\u6790\uff0c\u4e14\u5f53\u524d\u6ca1\u6709\u65b0\u7684\u5de5\u5177\u7ed3\u679c\u53ef\u652f\u6301\u66f4\u5f3a\u7ed3\u8bba\u3002\u4e3b\u76ee\u6807 10.20.0.10:8080/tcp \u4ecd\u662f\u6700\u503c\u5f97\u5173\u6ce8\u7684\u670d\u52a1\uff1a\u5df2\u6709\u8bc1\u636e\u663e\u793a\u5176 HTTP \u6839\u8def\u5f84\u53ef\u8fbe\uff08200\uff09\uff0cNmap \u6307\u7eb9\u4e3a Jetty 9.2.11.v20150529\uff0cweb_fingerprint \u8fd4\u56de\u6807\u9898\u4e3a\u201cStruts2 Showcase - Fileupload sample\u201d\uff0c\u8fd9\u8db3\u4ee5\u652f\u6301\u2018\u5f88\u53ef\u80fd\u662f\u8fd0\u884c\u5728 Jetty \u4e0a\u7684 Apache Struts2 Showcase/Fileupload \u793a\u4f8b\u5e94\u7528\u2019\u8fd9\u4e00\u5e94\u7528\u7ea7\u523b\u753b\u3002"
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:21:48.885816Z",
+      "cycle_index": 2,
+      "evidence_refs": [],
+      "id": "tool-call::37465802ad97e3f0",
+      "kind": "process",
+      "label": "vuln_profile_match",
+      "node_type": "TOOL_CALL",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "argument_keys": [
+          "operation_id",
+          "product",
+          "service",
+          "target_url",
+          "trace_id",
+          "version"
+        ],
+        "ended_at": "2026-06-11T13:21:28.468897+00:00",
+        "exit_code": 0,
+        "input_summary": "arguments: operation_id, product, service, target_url, trace_id, version",
+        "metadata": {
+          "content": {
+            "artifacts": [],
+            "exit_code": 0,
+            "generated_at": "2026-06-11T13:21:28.468334+00:00",
+            "metadata": {
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+            },
+            "parsed": {
+              "entities": [],
+              "evidence": [],
+              "findings": [],
+              "observations": [],
+              "relations": [],
+              "runtime_hints": {},
+              "writeback_hints": {
+                "observation_category": "vulnerability_profile_match",
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+              }
+            },
+            "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json",
+            "stderr": "",
+            "stdout": "[]",
+            "success": true
+          },
+          "parsed_output": {
+            "entities": [],
+            "evidence": [],
+            "findings": [],
+            "observations": [],
+            "relations": [],
+            "runtime_hints": {},
+            "writeback_hints": {
+              "observation_category": "vulnerability_profile_match",
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+            }
+          },
+          "raw_mcp": {
+            "id": 5,
+            "jsonrpc": "2.0",
+            "result": {
+              "content": [
+                {
+                  "text": "{\"artifacts\": [], \"exit_code\": 0, \"generated_at\": \"2026-06-11T13:21:28.468334+00:00\", \"metadata\": {\"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json\"}, \"parsed\": {\"entities\": [], \"evidence\": [], \"findings\": [], \"observations\": [], \"relations\": [], \"runtime_hints\": {}, \"writeback_hints\": {\"observation_category\": \"vulnerability_profile_match\", \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json\"}}, \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json\", \"stderr\": \"\", \"stdout\": \"[]\", \"success\": true}",
+                  "type": "text"
+                }
+              ],
+              "isError": false,
+              "structuredContent": {
+                "artifacts": [],
+                "exit_code": 0,
+                "generated_at": "2026-06-11T13:21:28.468334+00:00",
+                "metadata": {
+                  "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+                },
+                "parsed": {
+                  "entities": [],
+                  "evidence": [],
+                  "findings": [],
+                  "observations": [],
+                  "relations": [],
+                  "runtime_hints": {},
+                  "writeback_hints": {
+                    "observation_category": "vulnerability_profile_match",
+                    "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+                  }
+                },
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json",
+                "stderr": "",
+                "stdout": "[]",
+                "success": true
+              }
+            }
+          },
+          "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json",
+          "server_id": "pentest-tools"
+        },
+        "output_summary": "[]",
+        "policy_check": {
+          "allowed": true,
+          "metadata": {
+            "adapter": "mcp",
+            "mcp_server_id": "pentest-tools",
+            "mcp_tool_name": "vuln_profile_match",
+            "original_allowed": true,
+            "original_reason": "policy allowed MCP tool call",
+            "policy_audit_only": true
+          },
+          "reason": "MCP policy is audit-only in authorized lab mode; execution continued."
+        },
+        "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json",
+        "server_id": "pentest-tools",
+        "started_at": "2026-06-11T13:21:28.468960+00:00",
+        "stderr_chars": 0,
+        "stdout_chars": 2,
+        "step": 2,
+        "success": true,
+        "tool_category": "",
+        "tool_name": "vuln_profile_match",
+        "trace_id": "tool-trace::867dce6467b629e7"
+      },
+      "refs": [],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "succeeded",
+      "summary": "[]"
+    },
+    {
+      "agent_name": "exploit_validation_agent",
+      "created_at": "2026-06-11T13:22:36.630817Z",
+      "cycle_index": 3,
+      "evidence_refs": [],
+      "id": "tool-call::a295ec85136a2bae",
+      "kind": "process",
+      "label": "web_discover",
+      "node_type": "TOOL_CALL",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "argument_keys": [
+          "base_url",
+          "operation_id",
+          "paths",
+          "timeout_seconds",
+          "trace_id"
+        ],
+        "ended_at": "2026-06-11T13:22:20.246096+00:00",
+        "exit_code": 0,
+        "input_summary": "arguments: base_url, operation_id, paths, timeout_seconds, trace_id",
+        "metadata": {
+          "content": {
+            "artifacts": [],
+            "exit_code": 0,
+            "generated_at": "2026-06-11T13:22:20.244913+00:00",
+            "metadata": {
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json"
+            },
+            "parsed": {
+              "entities": [
+                {
+                  "content_type": "text/html; charset=ISO-8859-1",
+                  "path": "/",
+                  "status": 200,
+                  "type": "web_path",
+                  "url": "http://10.20.0.10:8080/"
+                }
+              ],
+              "evidence": [],
+              "findings": [],
+              "observations": [],
+              "relations": [],
+              "runtime_hints": {},
+              "writeback_hints": {
+                "base_url": "http://10.20.0.10:8080/",
+                "observation_category": "web_discovery",
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json"
+              }
+            },
+            "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json",
+            "stderr": "",
+            "stdout": "[{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}]",
+            "success": true
+          },
+          "parsed_output": {
+            "entities": [
+              {
+                "content_type": "text/html; charset=ISO-8859-1",
+                "path": "/",
+                "status": 200,
+                "type": "web_path",
+                "url": "http://10.20.0.10:8080/"
+              }
+            ],
+            "evidence": [],
+            "findings": [],
+            "observations": [],
+            "relations": [],
+            "runtime_hints": {},
+            "writeback_hints": {
+              "base_url": "http://10.20.0.10:8080/",
+              "observation_category": "web_discovery",
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json"
+            }
+          },
+          "raw_mcp": {
+            "id": 6,
+            "jsonrpc": "2.0",
+            "result": {
+              "content": [
+                {
+                  "text": "{\"artifacts\": [], \"exit_code\": 0, \"generated_at\": \"2026-06-11T13:22:20.244913+00:00\", \"metadata\": {\"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json\"}, \"parsed\": {\"entities\": [{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}], \"evidence\": [], \"findings\": [], \"observations\": [], \"relations\": [], \"runtime_hints\": {}, \"writeback_hints\": {\"base_url\": \"http://10.20.0.10:8080/\", \"observation_category\": \"web_discovery\", \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json\"}}, \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json\", \"stderr\": \"\", \"stdout\": \"[{\\\"content_type\\\": \\\"text/html; charset=ISO-8859-1\\\", \\\"path\\\": \\\"/\\\", \\\"status\\\": 200, \\\"type\\\": \\\"web_path\\\", \\\"url\\\": \\\"http://10.20.0.10:8080/\\\"}]\", \"success\": true}",
+                  "type": "text"
+                }
+              ],
+              "isError": false,
+              "structuredContent": {
+                "artifacts": [],
+                "exit_code": 0,
+                "generated_at": "2026-06-11T13:22:20.244913+00:00",
+                "metadata": {
+                  "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json"
+                },
+                "parsed": {
+                  "entities": [
+                    {
+                      "content_type": "text/html; charset=ISO-8859-1",
+                      "path": "/",
+                      "status": 200,
+                      "type": "web_path",
+                      "url": "http://10.20.0.10:8080/"
+                    }
+                  ],
+                  "evidence": [],
+                  "findings": [],
+                  "observations": [],
+                  "relations": [],
+                  "runtime_hints": {},
+                  "writeback_hints": {
+                    "base_url": "http://10.20.0.10:8080/",
+                    "observation_category": "web_discovery",
+                    "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json"
+                  }
+                },
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json",
+                "stderr": "",
+                "stdout": "[{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}]",
+                "success": true
+              }
+            }
+          },
+          "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json",
+          "server_id": "pentest-tools"
+        },
+        "output_summary": "[{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}]",
+        "policy_check": {
+          "allowed": true,
+          "metadata": {
+            "adapter": "mcp",
+            "mcp_server_id": "pentest-tools",
+            "mcp_tool_name": "web_discover",
+            "original_allowed": true,
+            "original_reason": "policy allowed MCP tool call",
+            "policy_audit_only": true
+          },
+          "reason": "MCP policy is audit-only in authorized lab mode; execution continued."
+        },
+        "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/3-exploit_validation_agent-1-web_discover.json",
+        "server_id": "pentest-tools",
+        "started_at": "2026-06-11T13:22:20.246222+00:00",
+        "stderr_chars": 0,
+        "stdout_chars": 133,
+        "step": 1,
+        "success": true,
+        "tool_category": "",
+        "tool_name": "web_discover",
+        "trace_id": "tool-trace::51f22049bb329537"
+      },
+      "refs": [],
+      "stage_type": "EXPLOIT_STAGE",
+      "status": "succeeded",
+      "summary": "[{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}]"
+    },
+    {
+      "agent_name": "recon_agent",
+      "created_at": "2026-06-11T13:21:07.030101Z",
+      "cycle_index": 1,
+      "evidence_refs": [],
+      "id": "tool-call::ba018b4e9fa0d26d",
+      "kind": "process",
+      "label": "nmap_scan",
+      "node_type": "TOOL_CALL",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "argument_keys": [
+          "no_dns",
+          "operation_id",
+          "service_detection",
+          "skip_ping",
+          "target",
+          "timeout_seconds",
+          "trace_id"
+        ],
+        "ended_at": "2026-06-11T13:20:50.648451+00:00",
+        "exit_code": 0,
+        "input_summary": "arguments: no_dns, operation_id, service_detection, skip_ping, target, timeout_seconds, trace_id",
+        "metadata": {
+          "argv": [
+            "nmap",
+            "-n",
+            "-Pn",
+            "-sV",
+            "10.20.0.0/24"
+          ],
+          "command": "nmap -n -Pn -sV 10.20.0.0/24",
+          "content": {
+            "artifacts": [],
+            "exit_code": 0,
+            "generated_at": "2026-06-11T13:20:50.647259+00:00",
+            "metadata": {
+              "argv": [
+                "nmap",
+                "-n",
+                "-Pn",
+                "-sV",
+                "10.20.0.0/24"
+              ],
+              "command": "nmap -n -Pn -sV 10.20.0.0/24",
+              "cwd": null,
+              "duration_ms": 21680,
+              "env_keys": [],
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+              "returncode": 0,
+              "shell_command_used": false,
+              "stderr_excerpt": "",
+              "stdout_excerpt": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSION\n111/tcp  open     rpcbind  2-4 (RPC #100000)\n8000/tcp filtered http-alt\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\n\nNmap scan report for 10.20.0.2\nHost is up (0.000011s latency).\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\nNot shown: 1000 closed tcp ports (reset)\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\n\nNmap scan report for 10.20.0.10\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8080/tcp open  http    Jetty 9.2.11.v20150529\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\n\nNmap scan report for 10.20.0.11\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT   STATE SERVICE VERSION\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\n\nNmap scan report for 10.20.0.50\nHost is up (0.000011s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\n\nNmap scan report for 10.20.0.3\nHost is up (0.000015s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8000/tcp open  http    Uvicorn\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\n",
+              "timeout_seconds": 120
+            },
+            "parsed": {
+              "entities": [
+                {
+                  "address": "10.20.0.0/24",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.0/24",
+                  "type": "Host"
+                },
+                {
+                  "address": "10.20.0.1",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.1",
+                  "type": "Host"
+                },
+                {
+                  "banner": "2-4 (RPC #100000)",
+                  "confidence": 0.85,
+                  "host": "10.20.0.1",
+                  "id": "service::10.20.0.1:111/tcp",
+                  "port": 111,
+                  "product": "2-4",
+                  "protocol": "tcp",
+                  "service": "rpcbind",
+                  "state": "open",
+                  "type": "Service",
+                  "version": "(RPC"
+                },
+                {
+                  "address": "10.20.0.2",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.2",
+                  "type": "Host"
+                },
+                {
+                  "address": "10.20.0.10",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.10",
+                  "type": "Host"
+                },
+                {
+                  "banner": "Jetty 9.2.11.v20150529",
+                  "confidence": 0.85,
+                  "host": "10.20.0.10",
+                  "id": "service::10.20.0.10:8080/tcp",
+                  "port": 8080,
+                  "product": "Jetty",
+                  "protocol": "tcp",
+                  "service": "http",
+                  "state": "open",
+                  "type": "Service",
+                  "version": "9.2.11.v20150529"
+                },
+                {
+                  "address": "10.20.0.11",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.11",
+                  "type": "Host"
+                },
+                {
+                  "banner": "Apache httpd 2.4.25 ((Debian))",
+                  "confidence": 0.85,
+                  "host": "10.20.0.11",
+                  "id": "service::10.20.0.11:80/tcp",
+                  "port": 80,
+                  "product": "Apache",
+                  "protocol": "tcp",
+                  "service": "http",
+                  "state": "open",
+                  "type": "Service",
+                  "version": "httpd"
+                },
+                {
+                  "address": "10.20.0.50",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.50",
+                  "type": "Host"
+                },
+                {
+                  "banner": "OpenSSH 10.2 (protocol 2.0)",
+                  "confidence": 0.85,
+                  "host": "10.20.0.50",
+                  "id": "service::10.20.0.50:2222/tcp",
+                  "port": 2222,
+                  "product": "OpenSSH",
+                  "protocol": "tcp",
+                  "service": "ssh",
+                  "state": "open",
+                  "type": "Service",
+                  "version": "10.2"
+                },
+                {
+                  "address": "10.20.0.3",
+                  "confidence": 0.9,
+                  "id": "host::10.20.0.3",
+                  "type": "Host"
+                },
+                {
+                  "banner": "Uvicorn",
+                  "confidence": 0.85,
+                  "host": "10.20.0.3",
+                  "id": "service::10.20.0.3:8000/tcp",
+                  "port": 8000,
+                  "product": "Uvicorn",
+                  "protocol": "tcp",
+                  "service": "http",
+                  "state": "open",
+                  "type": "Service",
+                  "version": ""
+                }
+              ],
+              "evidence": [
+                {
+                  "confidence": 0.85,
+                  "kind": "scan evidence",
+                  "summary": "111/tcp  open     rpcbind  2-4 (RPC #100000)",
+                  "target": "10.20.0.1"
+                },
+                {
+                  "confidence": 0.85,
+                  "kind": "scan evidence",
+                  "summary": "8080/tcp open  http    Jetty 9.2.11.v20150529",
+                  "target": "10.20.0.10"
+                },
+                {
+                  "confidence": 0.85,
+                  "kind": "scan evidence",
+                  "summary": "80/tcp open  http    Apache httpd 2.4.25 ((Debian))",
+                  "target": "10.20.0.11"
+                },
+                {
+                  "confidence": 0.85,
+                  "kind": "scan evidence",
+                  "summary": "2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)",
+                  "target": "10.20.0.50"
+                },
+                {
+                  "confidence": 0.85,
+                  "kind": "scan evidence",
+                  "summary": "8000/tcp open  http    Uvicorn",
+                  "target": "10.20.0.3"
+                }
+              ],
+              "findings": [],
+              "observations": [],
+              "relations": [
+                {
+                  "source_ref": {
+                    "graph": "kg",
+                    "ref_id": "host::10.20.0.1",
+                    "ref_type": "Host"
+                  },
+                  "target_ref": {
+                    "graph": "kg",
+                    "ref_id": "service::10.20.0.1:111/tcp",
+                    "ref_type": "Service"
+                  },
+                  "type": "HOSTS_SERVICE"
+                },
+                {
+                  "source_ref": {
+                    "graph": "kg",
+                    "ref_id": "host::10.20.0.10",
+                    "ref_type": "Host"
+                  },
+                  "target_ref": {
+                    "graph": "kg",
+                    "ref_id": "service::10.20.0.10:8080/tcp",
+                    "ref_type": "Service"
+                  },
+                  "type": "HOSTS_SERVICE"
+                },
+                {
+                  "source_ref": {
+                    "graph": "kg",
+                    "ref_id": "host::10.20.0.11",
+                    "ref_type": "Host"
+                  },
+                  "target_ref": {
+                    "graph": "kg",
+                    "ref_id": "service::10.20.0.11:80/tcp",
+                    "ref_type": "Service"
+                  },
+                  "type": "HOSTS_SERVICE"
+                },
+                {
+                  "source_ref": {
+                    "graph": "kg",
+                    "ref_id": "host::10.20.0.50",
+                    "ref_type": "Host"
+                  },
+                  "target_ref": {
+                    "graph": "kg",
+                    "ref_id": "service::10.20.0.50:2222/tcp",
+                    "ref_type": "Service"
+                  },
+                  "type": "HOSTS_SERVICE"
+                },
+                {
+                  "source_ref": {
+                    "graph": "kg",
+                    "ref_id": "host::10.20.0.3",
+                    "ref_type": "Host"
+                  },
+                  "target_ref": {
+                    "graph": "kg",
+                    "ref_id": "service::10.20.0.3:8000/tcp",
+                    "ref_type": "Service"
+                  },
+                  "type": "HOSTS_SERVICE"
+                }
+              ],
+              "runtime_hints": {},
+              "writeback_hints": {
+                "observation_category": "service_discovery",
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+                "target": "10.20.0.0/24"
+              }
+            },
+            "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+            "stderr": "",
+            "stdout": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSION\n111/tcp  open     rpcbind  2-4 (RPC #100000)\n8000/tcp filtered http-alt\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\n\nNmap scan report for 10.20.0.2\nHost is up (0.000011s latency).\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\nNot shown: 1000 closed tcp ports (reset)\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\n\nNmap scan report for 10.20.0.10\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8080/tcp open  http    Jetty 9.2.11.v20150529\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\n\nNmap scan report for 10.20.0.11\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT   STATE SERVICE VERSION\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\n\nNmap scan report for 10.20.0.50\nHost is up (0.000011s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\n\nNmap scan report for 10.20.0.3\nHost is up (0.000015s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8000/tcp open  http    Uvicorn\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\n",
+            "success": true
+          },
+          "cwd": null,
+          "duration_ms": 21680,
+          "env_keys": [],
+          "parsed_output": {
+            "entities": [
+              {
+                "address": "10.20.0.0/24",
+                "confidence": 0.9,
+                "id": "host::10.20.0.0/24",
+                "type": "Host"
+              },
+              {
+                "address": "10.20.0.1",
+                "confidence": 0.9,
+                "id": "host::10.20.0.1",
+                "type": "Host"
+              },
+              {
+                "banner": "2-4 (RPC #100000)",
+                "confidence": 0.85,
+                "host": "10.20.0.1",
+                "id": "service::10.20.0.1:111/tcp",
+                "port": 111,
+                "product": "2-4",
+                "protocol": "tcp",
+                "service": "rpcbind",
+                "state": "open",
+                "type": "Service",
+                "version": "(RPC"
+              },
+              {
+                "address": "10.20.0.2",
+                "confidence": 0.9,
+                "id": "host::10.20.0.2",
+                "type": "Host"
+              },
+              {
+                "address": "10.20.0.10",
+                "confidence": 0.9,
+                "id": "host::10.20.0.10",
+                "type": "Host"
+              },
+              {
+                "banner": "Jetty 9.2.11.v20150529",
+                "confidence": 0.85,
+                "host": "10.20.0.10",
+                "id": "service::10.20.0.10:8080/tcp",
+                "port": 8080,
+                "product": "Jetty",
+                "protocol": "tcp",
+                "service": "http",
+                "state": "open",
+                "type": "Service",
+                "version": "9.2.11.v20150529"
+              },
+              {
+                "address": "10.20.0.11",
+                "confidence": 0.9,
+                "id": "host::10.20.0.11",
+                "type": "Host"
+              },
+              {
+                "banner": "Apache httpd 2.4.25 ((Debian))",
+                "confidence": 0.85,
+                "host": "10.20.0.11",
+                "id": "service::10.20.0.11:80/tcp",
+                "port": 80,
+                "product": "Apache",
+                "protocol": "tcp",
+                "service": "http",
+                "state": "open",
+                "type": "Service",
+                "version": "httpd"
+              },
+              {
+                "address": "10.20.0.50",
+                "confidence": 0.9,
+                "id": "host::10.20.0.50",
+                "type": "Host"
+              },
+              {
+                "banner": "OpenSSH 10.2 (protocol 2.0)",
+                "confidence": 0.85,
+                "host": "10.20.0.50",
+                "id": "service::10.20.0.50:2222/tcp",
+                "port": 2222,
+                "product": "OpenSSH",
+                "protocol": "tcp",
+                "service": "ssh",
+                "state": "open",
+                "type": "Service",
+                "version": "10.2"
+              },
+              {
+                "address": "10.20.0.3",
+                "confidence": 0.9,
+                "id": "host::10.20.0.3",
+                "type": "Host"
+              },
+              {
+                "banner": "Uvicorn",
+                "confidence": 0.85,
+                "host": "10.20.0.3",
+                "id": "service::10.20.0.3:8000/tcp",
+                "port": 8000,
+                "product": "Uvicorn",
+                "protocol": "tcp",
+                "service": "http",
+                "state": "open",
+                "type": "Service",
+                "version": ""
+              }
+            ],
+            "evidence": [
+              {
+                "confidence": 0.85,
+                "kind": "scan evidence",
+                "summary": "111/tcp  open     rpcbind  2-4 (RPC #100000)",
+                "target": "10.20.0.1"
+              },
+              {
+                "confidence": 0.85,
+                "kind": "scan evidence",
+                "summary": "8080/tcp open  http    Jetty 9.2.11.v20150529",
+                "target": "10.20.0.10"
+              },
+              {
+                "confidence": 0.85,
+                "kind": "scan evidence",
+                "summary": "80/tcp open  http    Apache httpd 2.4.25 ((Debian))",
+                "target": "10.20.0.11"
+              },
+              {
+                "confidence": 0.85,
+                "kind": "scan evidence",
+                "summary": "2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)",
+                "target": "10.20.0.50"
+              },
+              {
+                "confidence": 0.85,
+                "kind": "scan evidence",
+                "summary": "8000/tcp open  http    Uvicorn",
+                "target": "10.20.0.3"
+              }
+            ],
+            "findings": [],
+            "observations": [],
+            "relations": [
+              {
+                "source_ref": {
+                  "graph": "kg",
+                  "ref_id": "host::10.20.0.1",
+                  "ref_type": "Host"
+                },
+                "target_ref": {
+                  "graph": "kg",
+                  "ref_id": "service::10.20.0.1:111/tcp",
+                  "ref_type": "Service"
+                },
+                "type": "HOSTS_SERVICE"
+              },
+              {
+                "source_ref": {
+                  "graph": "kg",
+                  "ref_id": "host::10.20.0.10",
+                  "ref_type": "Host"
+                },
+                "target_ref": {
+                  "graph": "kg",
+                  "ref_id": "service::10.20.0.10:8080/tcp",
+                  "ref_type": "Service"
+                },
+                "type": "HOSTS_SERVICE"
+              },
+              {
+                "source_ref": {
+                  "graph": "kg",
+                  "ref_id": "host::10.20.0.11",
+                  "ref_type": "Host"
+                },
+                "target_ref": {
+                  "graph": "kg",
+                  "ref_id": "service::10.20.0.11:80/tcp",
+                  "ref_type": "Service"
+                },
+                "type": "HOSTS_SERVICE"
+              },
+              {
+                "source_ref": {
+                  "graph": "kg",
+                  "ref_id": "host::10.20.0.50",
+                  "ref_type": "Host"
+                },
+                "target_ref": {
+                  "graph": "kg",
+                  "ref_id": "service::10.20.0.50:2222/tcp",
+                  "ref_type": "Service"
+                },
+                "type": "HOSTS_SERVICE"
+              },
+              {
+                "source_ref": {
+                  "graph": "kg",
+                  "ref_id": "host::10.20.0.3",
+                  "ref_type": "Host"
+                },
+                "target_ref": {
+                  "graph": "kg",
+                  "ref_id": "service::10.20.0.3:8000/tcp",
+                  "ref_type": "Service"
+                },
+                "type": "HOSTS_SERVICE"
+              }
+            ],
+            "runtime_hints": {},
+            "writeback_hints": {
+              "observation_category": "service_discovery",
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+              "target": "10.20.0.0/24"
+            }
+          },
+          "raw_mcp": {
+            "id": 3,
+            "jsonrpc": "2.0",
+            "result": {
+              "content": [
+                {
+                  "text": "{\"artifacts\": [], \"exit_code\": 0, \"generated_at\": \"2026-06-11T13:20:50.647259+00:00\", \"metadata\": {\"argv\": [\"nmap\", \"-n\", \"-Pn\", \"-sV\", \"10.20.0.0/24\"], \"command\": \"nmap -n -Pn -sV 10.20.0.0/24\", \"cwd\": null, \"duration_ms\": 21680, \"env_keys\": [], \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json\", \"returncode\": 0, \"shell_command_used\": false, \"stderr_excerpt\": \"\", \"stdout_excerpt\": \"Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\\nNmap scan report for 10.20.0.1\\nHost is up (0.0000090s latency).\\nNot shown: 998 closed tcp ports (reset)\\nPORT     STATE    SERVICE  VERSION\\n111/tcp  open     rpcbind  2-4 (RPC #100000)\\n8000/tcp filtered http-alt\\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\\n\\nNmap scan report for 10.20.0.2\\nHost is up (0.000011s latency).\\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\\nNot shown: 1000 closed tcp ports (reset)\\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\\n\\nNmap scan report for 10.20.0.10\\nHost is up (0.000010s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n8080/tcp open  http    Jetty 9.2.11.v20150529\\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\\n\\nNmap scan report for 10.20.0.11\\nHost is up (0.000010s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT   STATE SERVICE VERSION\\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\\n\\nNmap scan report for 10.20.0.50\\nHost is up (0.000011s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\\n\\nNmap scan report for 10.20.0.3\\nHost is up (0.000015s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n8000/tcp open  http    Uvicorn\\n\\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\\n\", \"timeout_seconds\": 120}, \"parsed\": {\"entities\": [{\"address\": \"10.20.0.0/24\", \"confidence\": 0.9, \"id\": \"host::10.20.0.0/24\", \"type\": \"Host\"}, {\"address\": \"10.20.0.1\", \"confidence\": 0.9, \"id\": \"host::10.20.0.1\", \"type\": \"Host\"}, {\"banner\": \"2-4 (RPC #100000)\", \"confidence\": 0.85, \"host\": \"10.20.0.1\", \"id\": \"service::10.20.0.1:111/tcp\", \"port\": 111, \"product\": \"2-4\", \"protocol\": \"tcp\", \"service\": \"rpcbind\", \"state\": \"open\", \"type\": \"Service\", \"version\": \"(RPC\"}, {\"address\": \"10.20.0.2\", \"confidence\": 0.9, \"id\": \"host::10.20.0.2\", \"type\": \"Host\"}, {\"address\": \"10.20.0.10\", \"confidence\": 0.9, \"id\": \"host::10.20.0.10\", \"type\": \"Host\"}, {\"banner\": \"Jetty 9.2.11.v20150529\", \"confidence\": 0.85, \"host\": \"10.20.0.10\", \"id\": \"service::10.20.0.10:8080/tcp\", \"port\": 8080, \"product\": \"Jetty\", \"protocol\": \"tcp\", \"service\": \"http\", \"state\": \"open\", \"type\": \"Service\", \"version\": \"9.2.11.v20150529\"}, {\"address\": \"10.20.0.11\", \"confidence\": 0.9, \"id\": \"host::10.20.0.11\", \"type\": \"Host\"}, {\"banner\": \"Apache httpd 2.4.25 ((Debian))\", \"confidence\": 0.85, \"host\": \"10.20.0.11\", \"id\": \"service::10.20.0.11:80/tcp\", \"port\": 80, \"product\": \"Apache\", \"protocol\": \"tcp\", \"service\": \"http\", \"state\": \"open\", \"type\": \"Service\", \"version\": \"httpd\"}, {\"address\": \"10.20.0.50\", \"confidence\": 0.9, \"id\": \"host::10.20.0.50\", \"type\": \"Host\"}, {\"banner\": \"OpenSSH 10.2 (protocol 2.0)\", \"confidence\": 0.85, \"host\": \"10.20.0.50\", \"id\": \"service::10.20.0.50:2222/tcp\", \"port\": 2222, \"product\": \"OpenSSH\", \"protocol\": \"tcp\", \"service\": \"ssh\", \"state\": \"open\", \"type\": \"Service\", \"version\": \"10.2\"}, {\"address\": \"10.20.0.3\", \"confidence\": 0.9, \"id\": \"host::10.20.0.3\", \"type\": \"Host\"}, {\"banner\": \"Uvicorn\", \"confidence\": 0.85, \"host\": \"10.20.0.3\", \"id\": \"service::10.20.0.3:8000/tcp\", \"port\": 8000, \"product\": \"Uvicorn\", \"protocol\": \"tcp\", \"service\": \"http\", \"state\": \"open\", \"type\": \"Service\", \"version\": \"\"}], \"evidence\": [{\"confidence\": 0.85, \"kind\": \"scan evidence\", \"summary\": \"111/tcp  open     rpcbind  2-4 (RPC #100000)\", \"target\": \"10.20.0.1\"}, {\"confidence\": 0.85, \"kind\": \"scan evidence\", \"summary\": \"8080/tcp open  http    Jetty 9.2.11.v20150529\", \"target\": \"10.20.0.10\"}, {\"confidence\": 0.85, \"kind\": \"scan evidence\", \"summary\": \"80/tcp open  http    Apache httpd 2.4.25 ((Debian))\", \"target\": \"10.20.0.11\"}, {\"confidence\": 0.85, \"kind\": \"scan evidence\", \"summary\": \"2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\", \"target\": \"10.20.0.50\"}, {\"confidence\": 0.85, \"kind\": \"scan evidence\", \"summary\": \"8000/tcp open  http    Uvicorn\", \"target\": \"10.20.0.3\"}], \"findings\": [], \"observations\": [], \"relations\": [{\"source_ref\": {\"graph\": \"kg\", \"ref_id\": \"host::10.20.0.1\", \"ref_type\": \"Host\"}, \"target_ref\": {\"graph\": \"kg\", \"ref_id\": \"service::10.20.0.1:111/tcp\", \"ref_type\": \"Service\"}, \"type\": \"HOSTS_SERVICE\"}, {\"source_ref\": {\"graph\": \"kg\", \"ref_id\": \"host::10.20.0.10\", \"ref_type\": \"Host\"}, \"target_ref\": {\"graph\": \"kg\", \"ref_id\": \"service::10.20.0.10:8080/tcp\", \"ref_type\": \"Service\"}, \"type\": \"HOSTS_SERVICE\"}, {\"source_ref\": {\"graph\": \"kg\", \"ref_id\": \"host::10.20.0.11\", \"ref_type\": \"Host\"}, \"target_ref\": {\"graph\": \"kg\", \"ref_id\": \"service::10.20.0.11:80/tcp\", \"ref_type\": \"Service\"}, \"type\": \"HOSTS_SERVICE\"}, {\"source_ref\": {\"graph\": \"kg\", \"ref_id\": \"host::10.20.0.50\", \"ref_type\": \"Host\"}, \"target_ref\": {\"graph\": \"kg\", \"ref_id\": \"service::10.20.0.50:2222/tcp\", \"ref_type\": \"Service\"}, \"type\": \"HOSTS_SERVICE\"}, {\"source_ref\": {\"graph\": \"kg\", \"ref_id\": \"host::10.20.0.3\", \"ref_type\": \"Host\"}, \"target_ref\": {\"graph\": \"kg\", \"ref_id\": \"service::10.20.0.3:8000/tcp\", \"ref_type\": \"Service\"}, \"type\": \"HOSTS_SERVICE\"}], \"runtime_hints\": {}, \"writeback_hints\": {\"observation_category\": \"service_discovery\", \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json\", \"target\": \"10.20.0.0/24\"}}, \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json\", \"stderr\": \"\", \"stdout\": \"Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\\nNmap scan report for 10.20.0.1\\nHost is up (0.0000090s latency).\\nNot shown: 998 closed tcp ports (reset)\\nPORT     STATE    SERVICE  VERSION\\n111/tcp  open     rpcbind  2-4 (RPC #100000)\\n8000/tcp filtered http-alt\\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\\n\\nNmap scan report for 10.20.0.2\\nHost is up (0.000011s latency).\\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\\nNot shown: 1000 closed tcp ports (reset)\\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\\n\\nNmap scan report for 10.20.0.10\\nHost is up (0.000010s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n8080/tcp open  http    Jetty 9.2.11.v20150529\\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\\n\\nNmap scan report for 10.20.0.11\\nHost is up (0.000010s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT   STATE SERVICE VERSION\\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\\n\\nNmap scan report for 10.20.0.50\\nHost is up (0.000011s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\\n\\nNmap scan report for 10.20.0.3\\nHost is up (0.000015s latency).\\nNot shown: 999 closed tcp ports (reset)\\nPORT     STATE SERVICE VERSION\\n8000/tcp open  http    Uvicorn\\n\\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\\n\", \"success\": true}",
+                  "type": "text"
+                }
+              ],
+              "isError": false,
+              "structuredContent": {
+                "artifacts": [],
+                "exit_code": 0,
+                "generated_at": "2026-06-11T13:20:50.647259+00:00",
+                "metadata": {
+                  "argv": [
+                    "nmap",
+                    "-n",
+                    "-Pn",
+                    "-sV",
+                    "10.20.0.0/24"
+                  ],
+                  "command": "nmap -n -Pn -sV 10.20.0.0/24",
+                  "cwd": null,
+                  "duration_ms": 21680,
+                  "env_keys": [],
+                  "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+                  "returncode": 0,
+                  "shell_command_used": false,
+                  "stderr_excerpt": "",
+                  "stdout_excerpt": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSION\n111/tcp  open     rpcbind  2-4 (RPC #100000)\n8000/tcp filtered http-alt\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\n\nNmap scan report for 10.20.0.2\nHost is up (0.000011s latency).\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\nNot shown: 1000 closed tcp ports (reset)\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\n\nNmap scan report for 10.20.0.10\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8080/tcp open  http    Jetty 9.2.11.v20150529\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\n\nNmap scan report for 10.20.0.11\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT   STATE SERVICE VERSION\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\n\nNmap scan report for 10.20.0.50\nHost is up (0.000011s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\n\nNmap scan report for 10.20.0.3\nHost is up (0.000015s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8000/tcp open  http    Uvicorn\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\n",
+                  "timeout_seconds": 120
+                },
+                "parsed": {
+                  "entities": [
+                    {
+                      "address": "10.20.0.0/24",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.0/24",
+                      "type": "Host"
+                    },
+                    {
+                      "address": "10.20.0.1",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.1",
+                      "type": "Host"
+                    },
+                    {
+                      "banner": "2-4 (RPC #100000)",
+                      "confidence": 0.85,
+                      "host": "10.20.0.1",
+                      "id": "service::10.20.0.1:111/tcp",
+                      "port": 111,
+                      "product": "2-4",
+                      "protocol": "tcp",
+                      "service": "rpcbind",
+                      "state": "open",
+                      "type": "Service",
+                      "version": "(RPC"
+                    },
+                    {
+                      "address": "10.20.0.2",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.2",
+                      "type": "Host"
+                    },
+                    {
+                      "address": "10.20.0.10",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.10",
+                      "type": "Host"
+                    },
+                    {
+                      "banner": "Jetty 9.2.11.v20150529",
+                      "confidence": 0.85,
+                      "host": "10.20.0.10",
+                      "id": "service::10.20.0.10:8080/tcp",
+                      "port": 8080,
+                      "product": "Jetty",
+                      "protocol": "tcp",
+                      "service": "http",
+                      "state": "open",
+                      "type": "Service",
+                      "version": "9.2.11.v20150529"
+                    },
+                    {
+                      "address": "10.20.0.11",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.11",
+                      "type": "Host"
+                    },
+                    {
+                      "banner": "Apache httpd 2.4.25 ((Debian))",
+                      "confidence": 0.85,
+                      "host": "10.20.0.11",
+                      "id": "service::10.20.0.11:80/tcp",
+                      "port": 80,
+                      "product": "Apache",
+                      "protocol": "tcp",
+                      "service": "http",
+                      "state": "open",
+                      "type": "Service",
+                      "version": "httpd"
+                    },
+                    {
+                      "address": "10.20.0.50",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.50",
+                      "type": "Host"
+                    },
+                    {
+                      "banner": "OpenSSH 10.2 (protocol 2.0)",
+                      "confidence": 0.85,
+                      "host": "10.20.0.50",
+                      "id": "service::10.20.0.50:2222/tcp",
+                      "port": 2222,
+                      "product": "OpenSSH",
+                      "protocol": "tcp",
+                      "service": "ssh",
+                      "state": "open",
+                      "type": "Service",
+                      "version": "10.2"
+                    },
+                    {
+                      "address": "10.20.0.3",
+                      "confidence": 0.9,
+                      "id": "host::10.20.0.3",
+                      "type": "Host"
+                    },
+                    {
+                      "banner": "Uvicorn",
+                      "confidence": 0.85,
+                      "host": "10.20.0.3",
+                      "id": "service::10.20.0.3:8000/tcp",
+                      "port": 8000,
+                      "product": "Uvicorn",
+                      "protocol": "tcp",
+                      "service": "http",
+                      "state": "open",
+                      "type": "Service",
+                      "version": ""
+                    }
+                  ],
+                  "evidence": [
+                    {
+                      "confidence": 0.85,
+                      "kind": "scan evidence",
+                      "summary": "111/tcp  open     rpcbind  2-4 (RPC #100000)",
+                      "target": "10.20.0.1"
+                    },
+                    {
+                      "confidence": 0.85,
+                      "kind": "scan evidence",
+                      "summary": "8080/tcp open  http    Jetty 9.2.11.v20150529",
+                      "target": "10.20.0.10"
+                    },
+                    {
+                      "confidence": 0.85,
+                      "kind": "scan evidence",
+                      "summary": "80/tcp open  http    Apache httpd 2.4.25 ((Debian))",
+                      "target": "10.20.0.11"
+                    },
+                    {
+                      "confidence": 0.85,
+                      "kind": "scan evidence",
+                      "summary": "2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)",
+                      "target": "10.20.0.50"
+                    },
+                    {
+                      "confidence": 0.85,
+                      "kind": "scan evidence",
+                      "summary": "8000/tcp open  http    Uvicorn",
+                      "target": "10.20.0.3"
+                    }
+                  ],
+                  "findings": [],
+                  "observations": [],
+                  "relations": [
+                    {
+                      "source_ref": {
+                        "graph": "kg",
+                        "ref_id": "host::10.20.0.1",
+                        "ref_type": "Host"
+                      },
+                      "target_ref": {
+                        "graph": "kg",
+                        "ref_id": "service::10.20.0.1:111/tcp",
+                        "ref_type": "Service"
+                      },
+                      "type": "HOSTS_SERVICE"
+                    },
+                    {
+                      "source_ref": {
+                        "graph": "kg",
+                        "ref_id": "host::10.20.0.10",
+                        "ref_type": "Host"
+                      },
+                      "target_ref": {
+                        "graph": "kg",
+                        "ref_id": "service::10.20.0.10:8080/tcp",
+                        "ref_type": "Service"
+                      },
+                      "type": "HOSTS_SERVICE"
+                    },
+                    {
+                      "source_ref": {
+                        "graph": "kg",
+                        "ref_id": "host::10.20.0.11",
+                        "ref_type": "Host"
+                      },
+                      "target_ref": {
+                        "graph": "kg",
+                        "ref_id": "service::10.20.0.11:80/tcp",
+                        "ref_type": "Service"
+                      },
+                      "type": "HOSTS_SERVICE"
+                    },
+                    {
+                      "source_ref": {
+                        "graph": "kg",
+                        "ref_id": "host::10.20.0.50",
+                        "ref_type": "Host"
+                      },
+                      "target_ref": {
+                        "graph": "kg",
+                        "ref_id": "service::10.20.0.50:2222/tcp",
+                        "ref_type": "Service"
+                      },
+                      "type": "HOSTS_SERVICE"
+                    },
+                    {
+                      "source_ref": {
+                        "graph": "kg",
+                        "ref_id": "host::10.20.0.3",
+                        "ref_type": "Host"
+                      },
+                      "target_ref": {
+                        "graph": "kg",
+                        "ref_id": "service::10.20.0.3:8000/tcp",
+                        "ref_type": "Service"
+                      },
+                      "type": "HOSTS_SERVICE"
+                    }
+                  ],
+                  "runtime_hints": {},
+                  "writeback_hints": {
+                    "observation_category": "service_discovery",
+                    "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+                    "target": "10.20.0.0/24"
+                  }
+                },
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+                "stderr": "",
+                "stdout": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSION\n111/tcp  open     rpcbind  2-4 (RPC #100000)\n8000/tcp filtered http-alt\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\n\nNmap scan report for 10.20.0.2\nHost is up (0.000011s latency).\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\nNot shown: 1000 closed tcp ports (reset)\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\n\nNmap scan report for 10.20.0.10\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8080/tcp open  http    Jetty 9.2.11.v20150529\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\n\nNmap scan report for 10.20.0.11\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT   STATE SERVICE VERSION\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\n\nNmap scan report for 10.20.0.50\nHost is up (0.000011s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\n\nNmap scan report for 10.20.0.3\nHost is up (0.000015s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8000/tcp open  http    Uvicorn\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\n",
+                "success": true
+              }
+            }
+          },
+          "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+          "returncode": 0,
+          "server_id": "pentest-tools",
+          "shell_command_used": false,
+          "stderr_excerpt": "",
+          "stdout_excerpt": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSION\n111/tcp  open     rpcbind  2-4 (RPC #100000)\n8000/tcp filtered http-alt\nMAC Address: 26:69:8F:C0:46:3E (Unknown)\n\nNmap scan report for 10.20.0.2\nHost is up (0.000011s latency).\nAll 1000 scanned ports on 10.20.0.2 are in ignored states.\nNot shown: 1000 closed tcp ports (reset)\nMAC Address: 9A:83:4B:9D:FD:1D (Unknown)\n\nNmap scan report for 10.20.0.10\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8080/tcp open  http    Jetty 9.2.11.v20150529\nMAC Address: 5E:06:CB:75:A5:C1 (Unknown)\n\nNmap scan report for 10.20.0.11\nHost is up (0.000010s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT   STATE SERVICE VERSION\n80/tcp open  http    Apache httpd 2.4.25 ((Debian))\nMAC Address: AE:4F:E3:62:79:EB (Unknown)\n\nNmap scan report for 10.20.0.50\nHost is up (0.000011s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n2222/tcp open  ssh     OpenSSH 10.2 (protocol 2.0)\nMAC Address: 72:B5:52:09:88:B7 (Unknown)\n\nNmap scan report for 10.20.0.3\nHost is up (0.000015s latency).\nNot shown: 999 closed tcp ports (reset)\nPORT     STATE SERVICE VERSION\n8000/tcp open  http    Uvicorn\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 256 IP addresses (6 hosts up) scanned in 21.60 seconds\n",
+          "timeout_seconds": 120
+        },
+        "output_summary": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSI",
+        "policy_check": {
+          "allowed": true,
+          "metadata": {
+            "adapter": "mcp",
+            "mcp_server_id": "pentest-tools",
+            "mcp_tool_name": "nmap_scan",
+            "original_allowed": true,
+            "original_reason": "policy allowed MCP tool call",
+            "policy_audit_only": true
+          },
+          "reason": "MCP policy is audit-only in authorized lab mode; execution continued."
+        },
+        "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/1-recon_agent-1-nmap_scan.json",
+        "server_id": "pentest-tools",
+        "started_at": "2026-06-11T13:20:50.648531+00:00",
+        "stderr_chars": 0,
+        "stdout_chars": 1527,
+        "step": 1,
+        "success": true,
+        "tool_category": "",
+        "tool_name": "nmap_scan",
+        "trace_id": "tool-trace::6dcc6cd8515caa58"
+      },
+      "refs": [],
+      "stage_type": "RECON_STAGE",
+      "status": "succeeded",
+      "summary": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSI"
+    },
+    {
+      "agent_name": "vuln_analysis_agent",
+      "created_at": "2026-06-11T13:21:48.885775Z",
+      "cycle_index": 2,
+      "evidence_refs": [],
+      "id": "tool-call::ec9adfbb0741a3be",
+      "kind": "process",
+      "label": "web_fingerprint",
+      "node_type": "TOOL_CALL",
+      "operation_id": "blackbox-e2e-20260611-212014",
+      "properties": {
+        "argument_keys": [
+          "operation_id",
+          "path",
+          "port",
+          "scheme",
+          "timeout_seconds",
+          "trace_id",
+          "url"
+        ],
+        "ended_at": "2026-06-11T13:21:25.316705+00:00",
+        "exit_code": 200,
+        "input_summary": "arguments: operation_id, path, port, scheme, timeout_seconds, trace_id, url",
+        "metadata": {
+          "content": {
+            "artifacts": [],
+            "exit_code": 200,
+            "generated_at": "2026-06-11T13:21:25.315705+00:00",
+            "metadata": {
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json"
+            },
+            "parsed": {
+              "entities": [
+                {
+                  "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                  "confidence": 0.8,
+                  "content_type": "text/html; charset=ISO-8859-1",
+                  "server_header": "Jetty(9.2.11.v20150529)",
+                  "status_code": 200,
+                  "title": "Struts2 Showcase - Fileupload sample",
+                  "type": "WebEndpoint",
+                  "url": "http://10.20.0.10:8080/"
+                },
+                {
+                  "content_type": "text/html; charset=ISO-8859-1",
+                  "server": "Jetty(9.2.11.v20150529)",
+                  "title": "Struts2 Showcase - Fileupload sample",
+                  "type": "web_fingerprint",
+                  "url": "http://10.20.0.10:8080/"
+                }
+              ],
+              "evidence": [
+                {
+                  "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                  "kind": "http_probe",
+                  "status_code": 200,
+                  "url": "http://10.20.0.10:8080/"
+                }
+              ],
+              "findings": [],
+              "observations": [],
+              "relations": [],
+              "runtime_hints": {},
+              "writeback_hints": {
+                "observation_category": "web_fingerprint",
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+                "url": "http://10.20.0.10:8080/"
+              }
+            },
+            "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+            "stderr": "",
+            "stdout": "{\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}",
+            "success": true
+          },
+          "parsed_output": {
+            "entities": [
+              {
+                "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                "confidence": 0.8,
+                "content_type": "text/html; charset=ISO-8859-1",
+                "server_header": "Jetty(9.2.11.v20150529)",
+                "status_code": 200,
+                "title": "Struts2 Showcase - Fileupload sample",
+                "type": "WebEndpoint",
+                "url": "http://10.20.0.10:8080/"
+              },
+              {
+                "content_type": "text/html; charset=ISO-8859-1",
+                "server": "Jetty(9.2.11.v20150529)",
+                "title": "Struts2 Showcase - Fileupload sample",
+                "type": "web_fingerprint",
+                "url": "http://10.20.0.10:8080/"
+              }
+            ],
+            "evidence": [
+              {
+                "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                "kind": "http_probe",
+                "status_code": 200,
+                "url": "http://10.20.0.10:8080/"
+              }
+            ],
+            "findings": [],
+            "observations": [],
+            "relations": [],
+            "runtime_hints": {},
+            "writeback_hints": {
+              "observation_category": "web_fingerprint",
+              "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+              "url": "http://10.20.0.10:8080/"
+            }
+          },
+          "raw_mcp": {
+            "id": 4,
+            "jsonrpc": "2.0",
+            "result": {
+              "content": [
+                {
+                  "text": "{\"artifacts\": [], \"exit_code\": 200, \"generated_at\": \"2026-06-11T13:21:25.315705+00:00\", \"metadata\": {\"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json\"}, \"parsed\": {\"entities\": [{\"body_excerpt_sha256\": \"79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86\", \"confidence\": 0.8, \"content_type\": \"text/html; charset=ISO-8859-1\", \"server_header\": \"Jetty(9.2.11.v20150529)\", \"status_code\": 200, \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"WebEndpoint\", \"url\": \"http://10.20.0.10:8080/\"}, {\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}], \"evidence\": [{\"body_excerpt_sha256\": \"79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86\", \"kind\": \"http_probe\", \"status_code\": 200, \"url\": \"http://10.20.0.10:8080/\"}], \"findings\": [], \"observations\": [], \"relations\": [], \"runtime_hints\": {}, \"writeback_hints\": {\"observation_category\": \"web_fingerprint\", \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json\", \"url\": \"http://10.20.0.10:8080/\"}}, \"raw_output_ref\": \"var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json\", \"stderr\": \"\", \"stdout\": \"{\\\"content_type\\\": \\\"text/html; charset=ISO-8859-1\\\", \\\"server\\\": \\\"Jetty(9.2.11.v20150529)\\\", \\\"title\\\": \\\"Struts2 Showcase - Fileupload sample\\\", \\\"type\\\": \\\"web_fingerprint\\\", \\\"url\\\": \\\"http://10.20.0.10:8080/\\\"}\", \"success\": true}",
+                  "type": "text"
+                }
+              ],
+              "isError": false,
+              "structuredContent": {
+                "artifacts": [],
+                "exit_code": 200,
+                "generated_at": "2026-06-11T13:21:25.315705+00:00",
+                "metadata": {
+                  "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json"
+                },
+                "parsed": {
+                  "entities": [
+                    {
+                      "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                      "confidence": 0.8,
+                      "content_type": "text/html; charset=ISO-8859-1",
+                      "server_header": "Jetty(9.2.11.v20150529)",
+                      "status_code": 200,
+                      "title": "Struts2 Showcase - Fileupload sample",
+                      "type": "WebEndpoint",
+                      "url": "http://10.20.0.10:8080/"
+                    },
+                    {
+                      "content_type": "text/html; charset=ISO-8859-1",
+                      "server": "Jetty(9.2.11.v20150529)",
+                      "title": "Struts2 Showcase - Fileupload sample",
+                      "type": "web_fingerprint",
+                      "url": "http://10.20.0.10:8080/"
+                    }
+                  ],
+                  "evidence": [
+                    {
+                      "body_excerpt_sha256": "79de46ae579ba9679bb52de16732510734c967a1012f29491a172451b0976a86",
+                      "kind": "http_probe",
+                      "status_code": 200,
+                      "url": "http://10.20.0.10:8080/"
+                    }
+                  ],
+                  "findings": [],
+                  "observations": [],
+                  "relations": [],
+                  "runtime_hints": {},
+                  "writeback_hints": {
+                    "observation_category": "web_fingerprint",
+                    "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+                    "url": "http://10.20.0.10:8080/"
+                  }
+                },
+                "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+                "stderr": "",
+                "stdout": "{\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}",
+                "success": true
+              }
+            }
+          },
+          "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+          "server_id": "pentest-tools"
+        },
+        "output_summary": "{\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}",
+        "policy_check": {
+          "allowed": true,
+          "metadata": {
+            "adapter": "mcp",
+            "mcp_server_id": "pentest-tools",
+            "mcp_tool_name": "web_fingerprint",
+            "original_allowed": true,
+            "original_reason": "policy allowed MCP tool call",
+            "policy_audit_only": true
+          },
+          "reason": "MCP policy is audit-only in authorized lab mode; execution continued."
+        },
+        "raw_output_ref": "var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json",
+        "server_id": "pentest-tools",
+        "started_at": "2026-06-11T13:21:25.316809+00:00",
+        "stderr_chars": 0,
+        "stdout_chars": 196,
+        "step": 1,
+        "success": true,
+        "tool_category": "",
+        "tool_name": "web_fingerprint",
+        "trace_id": "tool-trace::88574778337c5820"
+      },
+      "refs": [],
+      "stage_type": "VULN_ANALYSIS_STAGE",
+      "status": "succeeded",
+      "summary": "{\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}"
+    }
+  ]
+}

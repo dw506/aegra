@@ -2,8 +2,34 @@
 
 ## Operation Input
 
-API callers and scripts should describe the operation with target, profile,
-mode and goal only:
+API callers and scripts should submit one operation request. The API creates
+the operation, imports targets, starts the runtime and, by default, runs the
+bounded operation loop:
+
+```http
+POST /operations
+```
+
+```json
+{
+  "operation_id": "op-xxx",
+  "metadata": {
+    "operation_input": {
+      "target": "10.20.0.0/24",
+      "profile_id": "full-vulhub-multihost-pentest",
+      "mode": "authorized_blackbox_lab",
+      "goal": "perform authorized multi-host assessment under supplied policy"
+    }
+  },
+  "targets": [
+    {"address": "10.20.0.0/24", "kind": "cidr", "tags": ["lab", "authorized"]}
+  ],
+  "max_cycles": 5
+}
+```
+
+The user-facing operation input should describe target, profile, mode and goal
+only:
 
 ```json
 {
@@ -19,8 +45,10 @@ markers, fixed attack steps, exploit payloads or MCP tool arguments.
 
 ## Final Result Contract
 
-`POST /operations/{operation_id}/run` returns the stable operation result
-contract at the top level and under `result`:
+`POST /operations` returns the stable operation result contract at the top level
+and under `result` when targets are provided and `run=true`. The compatibility
+endpoint `POST /operations/{operation_id}/run` returns the same shape for
+already-created operations:
 
 ```json
 {
@@ -78,10 +106,10 @@ on the main process seeing `AEGRA_MCP_TOOLSET`, because that variable may exist
 only in the MCP server subprocess environment.
 
 The `run_autopentest` scripts are HTTP clients, so environment variables set
-inside those scripts do not reconfigure an already-running API server. After
-create/import/start, the scripts read `/operations/{operation_id}/summary` and
-require `metadata.lab_activation.full_pentest_active == true`; otherwise they
-fail with a message telling the user to start the API server with
+inside those scripts do not reconfigure an already-running API server. After the
+unified operation request, the scripts read `/operations/{operation_id}/summary`
+and require `metadata.lab_activation.full_pentest_active == true`; otherwise
+they fail with a message telling the user to start the API server with
 `AEGRA_LAB_PROFILE_PATH` and `AEGRA_MCP_CONFIG_PATH`.
 
 ## Hidden Fixture Consumption

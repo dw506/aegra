@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal, TypeAlias, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.models.ag import GraphRef, stable_node_id
 from src.core.models.events import utc_now
@@ -217,10 +217,40 @@ class StageResult(BaseModel):
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_stage_result_payload(cls, value: Any) -> Any:
+        """Accept common finish payload wrappers before strict StageResult validation."""
+
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        nested = payload.get("stage_result") or payload.get("result")
+        if isinstance(nested, dict):
+            payload = {
+                **{key: item for key, item in payload.items() if key not in {"stage_result", "result"}},
+                **nested,
+            }
+        return payload
+
     @field_validator("stage_type", mode="before")
     @classmethod
     def normalize_stage_type(cls, value: Any) -> StageName:
         return normalize_stage_name(value)
+
+    @field_validator("observations", mode="before")
+    @classmethod
+    def normalize_observations(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [
+                {"type": "note", "detail": item}
+                if isinstance(item, str)
+                else item
+                for item in value
+            ]
+        if isinstance(value, str):
+            return [{"type": "note", "detail": value}]
+        return value
 
     def model_post_init(self, __context: Any) -> None:
         if self.tool_traces and not self.tool_trace:

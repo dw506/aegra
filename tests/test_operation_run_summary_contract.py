@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.app import api as app_api
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.models.runtime import RuntimeStatus
+from src.core.models.runtime import OutcomeCacheEntry, RuntimeStatus
 from src.core.planning.models import PlannerDecision
 from src.core.stage.models import StageResult, ToolTrace
 
@@ -88,6 +88,73 @@ def test_operation_run_summary_contract_uses_success_condition_progress(tmp_path
         "graph_url": "/operations/op-contract/graph",
         "audit_url": "/operations/op-contract/audit-report",
     }
+
+
+def test_operation_run_summary_merges_stage_and_tool_evidence_when_progress_empty(tmp_path: Path) -> None:
+    orchestrator = AppOrchestrator(settings=_settings(tmp_path))
+    state = orchestrator.create_operation("op-evidence-merge")
+    state.record_outcome(
+        OutcomeCacheEntry(
+            outcome_id="outcome-stage",
+            task_id="stage-recon",
+            outcome_type="RECON_STAGE",
+            summary="stage wrote evidence",
+            payload_ref="runtime://outcome/stage-recon",
+            metadata={
+                "outcome_payload": {
+                    "stage_result": {
+                        "evidence_refs": ["ev-stage-ref"],
+                        "evidence": [{"evidence_id": "ev-stage-record", "payload_ref": "raw-stage.json"}],
+                        "tool_trace": [{"raw_output_ref": "tool-output.json", "evidence_refs": ["ev-tool-ref"]}],
+                    }
+                }
+            },
+        )
+    )
+    state.execution.metadata["evidence_artifacts"] = [{"evidence_id": "ev-kg"}]
+    orchestrator.runtime_store.save_state(state)
+
+    summary = orchestrator.get_operation_run_summary("op-evidence-merge")
+
+    assert summary.evidence_ids == [
+        "ev-kg",
+        "ev-stage-record",
+        "ev-stage-ref",
+        "ev-tool-ref",
+        "raw-stage.json",
+        "runtime://outcome/stage-recon",
+        "tool-output.json",
+    ]
+
+
+def test_planner_dead_end_constraint_overrides_repeated_exploit_validation(tmp_path: Path) -> None:
+    orchestrator = AppOrchestrator(settings=_settings(tmp_path))
+    state = orchestrator.create_operation("op-dead-end")
+    state.execution.metadata["validation_dead_ends"] = [
+        {"target": "10.20.0.10:8080", "reason": "no_supported_profile"}
+    ]
+    decision = PlannerDecision(
+        operation_id="op-dead-end",
+        cycle_index=5,
+        decision="dispatch_agent",
+        selected_agent="exploit_validation_agent",
+        selected_stage="EXPLOIT_STAGE",
+        objective="Validate candidate on 10.20.0.10:8080",
+        required_context={"target_url": "http://10.20.0.10:8080/"},
+        risk_level="medium",
+        max_steps=1,
+        confidence=0.8,
+    )
+
+    constrained = orchestrator._apply_planner_dead_end_constraints(
+        decision=decision,
+        state=state,
+        cycle_index=5,
+    )
+
+    assert constrained.selected_agent == "recon_agent"
+    assert constrained.selected_stage == "RECON_STAGE"
+    assert constrained.metadata["dead_end_override"] is True
 
 
 def test_full_pentest_activation_uses_lab_profile_not_mcp_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,3 +289,56 @@ def test_run_endpoint_returns_operation_run_summary_contract(tmp_path: Path) -> 
         assert payload["evidence_url"] == "/operations/op-api-contract/evidence"
         assert payload["graph_url"] == "/operations/op-api-contract/graph"
         assert payload["audit_url"] == "/operations/op-api-contract/audit-report"
+
+
+def test_unified_operation_endpoint_creates_imports_starts_and_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if app_api.FastAPI is None:
+        pytest.skip(app_api.FASTAPI_UNAVAILABLE_MESSAGE)
+    if TestClient is None:
+        pytest.skip(f"FastAPI TestClient unavailable: {_TESTCLIENT_IMPORT_ERROR}")
+    settings = _settings(tmp_path)
+    orchestrator = AppOrchestrator(settings=settings)
+    run_context: dict[str, Any] = {}
+
+    def fake_run_until_quiescent(operation_id: str, **kwargs: Any) -> list[Any]:
+        state = orchestrator.get_operation_state(operation_id)
+        run_context["operation_status_before_run"] = state.operation_status
+        run_context["target_count_before_run"] = state.execution.metadata.get("target_count")
+        run_context["max_cycles"] = kwargs["max_cycles"]
+        state.operation_status = RuntimeStatus.COMPLETED
+        state.execution.status = RuntimeStatus.COMPLETED
+        state.execution.metadata["success_condition_progress"] = SUCCESS_PROGRESS
+        orchestrator.runtime_store.save_state(state)
+        return []
+
+    monkeypatch.setattr(orchestrator, "run_until_quiescent", fake_run_until_quiescent)
+    client = TestClient(app_api.create_app(orchestrator=orchestrator, settings=settings))
+
+    response = client.post(
+        "/operations",
+        json={
+            "operation_id": "op-unified",
+            "metadata": {
+                "operation_input": {
+                    "target": "10.20.0.0/24",
+                    "profile_id": "full-vulhub-multihost-pentest",
+                    "mode": "authorized_blackbox_lab",
+                    "goal": "perform authorized multi-host assessment under supplied policy",
+                }
+            },
+            "targets": [{"address": "10.20.0.0/24", "kind": "cidr"}],
+            "max_cycles": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert run_context == {
+        "operation_status_before_run": RuntimeStatus.READY,
+        "target_count_before_run": 1,
+        "max_cycles": 1,
+    }
+    body = response.json()
+    assert body["result"]["operation_id"] == "op-unified"
+    assert body["result"]["status"] == "success"
+    assert body["result"]["success"] is True
+    assert body["operation"]["target_count"] == 1

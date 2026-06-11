@@ -290,11 +290,21 @@ def _normalize_stage_decision_payload(payload: dict[str, Any]) -> dict[str, Any]
     finish = normalized.get("finish")
     if isinstance(finish, dict):
         normalized["finish"] = _normalize_finish_payload(finish)
+    elif isinstance(normalized.get("result"), dict):
+        normalized["finish"] = _normalize_finish_payload(dict(normalized["result"]))
+        normalized["action"] = normalized.get("action") or "finish"
+    elif isinstance(normalized.get("stage_result"), dict):
+        normalized["finish"] = _normalize_finish_payload(dict(normalized["stage_result"]))
+        normalized["action"] = normalized.get("action") or "finish"
     return normalized
 
 
 def _normalize_finish_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
+    nested = payload.get("result") or payload.get("stage_result")
+    normalized = {
+        **{key: value for key, value in payload.items() if key not in {"result", "stage_result"}},
+        **dict(nested),
+    } if isinstance(nested, dict) else dict(payload)
     for key in (
         "observations",
         "evidence",
@@ -325,14 +335,17 @@ def _coerce_object_list(value: Any, *, default_category: str) -> list[dict[str, 
         if isinstance(item, dict):
             items.append(dict(item))
         elif item is not None:
-            items.append(
-                {
-                    "summary": str(item),
-                    "category": default_category,
-                    "confidence": 0.5,
-                    "source_index": index,
-                }
-            )
+            if default_category == "observation":
+                items.append({"type": "note", "detail": str(item)})
+            else:
+                items.append(
+                    {
+                        "summary": str(item),
+                        "category": default_category,
+                        "confidence": 0.5,
+                        "source_index": index,
+                    }
+                )
     return items
 
 

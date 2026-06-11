@@ -397,6 +397,70 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
     assert structured[0]["service_discovery"][0]["port"] == 8080
 
 
+def test_stage_agent_accepts_stage_result_alias_and_string_observations() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "finish",
+                "stage_result": {
+                    "status": "completed",
+                    "summary": "recon noted scope",
+                    "observations": ["Target remains within authorized DMZ scope."],
+                },
+            }
+        ]
+    )
+    request = StageExecutionRequest(
+        operation_id="op-stage-result-alias",
+        cycle_index=1,
+        agent_name="recon_agent",
+        stage_type="RECON_STAGE",
+        objective="Normalize finish wrapper",
+        max_steps=1,
+    )
+
+    result = ReconAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+
+    assert result.status == "succeeded"
+    assert result.observations == [{"type": "note", "detail": "Target remains within authorized DMZ scope."}]
+
+
+def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "finish",
+                "result": {
+                    "status": "completed",
+                    "summary": "bad confidence payload",
+                    "confidence": "not-a-number",
+                },
+            },
+            {
+                "status": "completed",
+                "summary": "repaired payload",
+                "observations": ["Repaired without adding facts."],
+                "confidence": 0.7,
+            },
+        ]
+    )
+    request = StageExecutionRequest(
+        operation_id="op-repair-finish",
+        cycle_index=1,
+        agent_name="vuln_analysis_agent",
+        stage_type="VULN_ANALYSIS_STAGE",
+        objective="Repair invalid finish",
+        max_steps=1,
+    )
+
+    result = VulnAnalysisAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+
+    assert len(llm.calls) == 2
+    assert result.status == "succeeded"
+    assert result.summary == "repaired payload"
+    assert result.observations == [{"type": "note", "detail": "Repaired without adding facts."}]
+
+
 def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
     llm = FakeStageLLM(
         [

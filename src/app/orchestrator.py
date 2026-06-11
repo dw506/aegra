@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 import inspect
 import importlib
+import json
+import re
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -377,7 +380,7 @@ class AppOrchestrator:
             stop_reason=stop_reason,
             success=success,
             success_condition_progress=progress,
-            evidence_ids=self._success_condition_evidence_ids(progress),
+            evidence_ids=self._operation_summary_evidence_ids(state=state, progress=progress),
             findings_url=f"/operations/{operation_id}/findings",
             evidence_url=f"/operations/{operation_id}/evidence",
             graph_url=f"/operations/{operation_id}/graph",
@@ -648,6 +651,11 @@ class AppOrchestrator:
         graph_snapshot["success_condition_progress"] = self._mapping(
             state.execution.metadata.get("success_condition_progress")
         )
+        graph_snapshot["validation_dead_ends"] = [
+            dict(item)
+            for item in state.execution.metadata.get("validation_dead_ends", [])
+            if isinstance(item, dict)
+        ]
         try:
             decision = self.mission_planner.run(
                 goal=goal,
@@ -690,6 +698,11 @@ class AppOrchestrator:
                 normalized_operation_id=operation_id,
             )
         decision.cycle_index = cycle_index
+        decision = self._apply_planner_dead_end_constraints(
+            decision=decision,
+            state=state,
+            cycle_index=cycle_index,
+        )
         txt_logger.write_block(
             "PLANNER",
             "planner decision",
@@ -819,6 +832,7 @@ class AppOrchestrator:
             stage_result_payload = stage_result.model_dump(mode="json")
             execution_success = stage_result.status not in {"failed", "blocked"}
             self._update_success_condition_progress(state=state, stage_result=stage_result)
+            self._record_validation_dead_end(state=state, stage_result=stage_result, cycle_index=cycle_index)
             if self._goal_satisfied(state):
                 state.execution.metadata["goal_satisfied"] = True
             if stage_result.status in {"failed", "blocked"}:
@@ -1485,6 +1499,187 @@ class AppOrchestrator:
             )
         return results
 
+    def _apply_planner_dead_end_constraints(
+        self,
+        *,
+        decision: PlannerDecision,
+        state: RuntimeState,
+        cycle_index: int,
+    ) -> PlannerDecision:
+        """Prevent repeat exploit validation against known dead-end targets."""
+
+        if decision.decision != "dispatch_agent" or decision.selected_agent != "exploit_validation_agent":
+            return decision
+        dead_ends = [
+            dict(item)
+            for item in state.execution.metadata.get("validation_dead_ends", [])
+            if isinstance(item, dict)
+        ]
+        if not dead_ends:
+            return decision
+        selected_text = " ".join(
+            [
+                decision.objective,
+                decision.task_brief or "",
+                str(decision.required_context),
+                str([ref.model_dump(mode="json") for ref in decision.target_refs]),
+            ]
+        )
+        matching = [item for item in dead_ends if item.get("target") and str(item["target"]) in selected_text]
+        if not matching or self._decision_has_new_validation_evidence(decision):
+            return decision
+        target = str(matching[-1]["target"])
+        decision.selected_agent = "recon_agent"
+        decision.selected_stage = "RECON_STAGE"
+        decision.objective = f"Collect new evidence before retrying validation for {target}"
+        decision.task_brief = (
+            f"Do not run exploit validation for {target}. Gather fresh fingerprint/path evidence or pivot capability evidence. "
+            "Prefer web_fingerprint/web_discover on other entry services such as 10.20.0.11:80 or control-plane service 10.20.0.3:8000 when in scope."
+        )
+        decision.allowed_tool_names = ["nmap_scan", "http_probe", "web_fingerprint", "web_discover", "tcp_connect_probe"]
+        decision.max_steps = max(int(decision.max_steps or 1), 3)
+        decision.reasoning_summary = (
+            f"Overrode repeated exploit validation for validation_dead_end target {target}; recon is required until new evidence or profile exists."
+        )
+        decision.metadata = {
+            **dict(decision.metadata),
+            "dead_end_override": True,
+            "dead_end_target": target,
+            "dead_end_reason": matching[-1].get("reason"),
+            "cycle_index": cycle_index,
+        }
+        return decision
+
+    @staticmethod
+    def _decision_has_new_validation_evidence(decision: PlannerDecision) -> bool:
+        context = decision.required_context if isinstance(decision.required_context, dict) else {}
+        for key in ("new_evidence", "new_profile", "profile_id", "matched_profile_id", "validation_profile"):
+            value = context.get(key)
+            if value not in (None, "", [], {}):
+                return True
+        return False
+
+    def _record_validation_dead_end(
+        self,
+        *,
+        state: RuntimeState,
+        stage_result: Any,
+        cycle_index: int,
+    ) -> None:
+        """Remember unsupported validation targets so Planner does not repeat them."""
+
+        traces = list(getattr(stage_result, "tool_trace", None) or [])
+        if not traces:
+            return
+        vuln_traces = [trace for trace in traces if getattr(trace, "tool_name", "") == "vuln_profile_match"]
+        web_traces = [trace for trace in traces if getattr(trace, "tool_name", "") == "web_discover"]
+        if not vuln_traces or not web_traces:
+            return
+        empty_profile_targets = {
+            target
+            for trace in vuln_traces
+            if self._vuln_profile_match_empty(trace)
+            for target in [self._target_key_from_trace(trace)]
+            if target
+        }
+        no_new_path_targets = {
+            target
+            for trace in web_traces
+            if self._web_discover_no_new_paths(trace)
+            for target in [self._target_key_from_trace(trace)]
+            if target
+        }
+        targets = sorted(empty_profile_targets & no_new_path_targets)
+        if not targets:
+            return
+        records = [
+            dict(item)
+            for item in state.execution.metadata.get("validation_dead_ends", [])
+            if isinstance(item, dict)
+        ]
+        seen = {(str(item.get("target")), str(item.get("reason"))) for item in records}
+        for target in targets:
+            key = (target, "no_supported_profile")
+            if key in seen:
+                continue
+            records.append(
+                {
+                    "target": target,
+                    "reason": "no_supported_profile",
+                    "stage_task_id": getattr(stage_result, "stage_task_id", None),
+                    "cycle_index": cycle_index,
+                    "recorded_at": utc_now().isoformat(),
+                    "required_new_evidence": ["new_path", "new_fingerprint", "new_validation_profile"],
+                    "planner_constraint": "do_not_dispatch_exploit_validation_agent_for_target_without_new_evidence",
+                }
+            )
+        state.execution.metadata["validation_dead_ends"] = records
+
+    @staticmethod
+    def _vuln_profile_match_empty(trace: Any) -> bool:
+        stdout = str(getattr(trace, "stdout", "") or "").strip()
+        if stdout:
+            try:
+                parsed_stdout = json.loads(stdout)
+                if isinstance(parsed_stdout, list):
+                    return len(parsed_stdout) == 0
+            except Exception:
+                pass
+        parsed = getattr(trace, "parsed_output", None)
+        if isinstance(parsed, dict):
+            findings = parsed.get("findings") if isinstance(parsed.get("findings"), list) else []
+            entities = parsed.get("entities") if isinstance(parsed.get("entities"), list) else []
+            return not any(
+                isinstance(item, dict) and str(item.get("type") or item.get("kind") or "").lower() == "vulnerabilitycandidate"
+                for item in [*findings, *entities]
+            )
+        return False
+
+    @staticmethod
+    def _web_discover_no_new_paths(trace: Any) -> bool:
+        stdout = str(getattr(trace, "stdout", "") or "").strip()
+        paths: list[str] = []
+        if stdout:
+            try:
+                parsed_stdout = json.loads(stdout)
+                if isinstance(parsed_stdout, list):
+                    paths.extend(str(item.get("path") or "") for item in parsed_stdout if isinstance(item, dict))
+            except Exception:
+                pass
+        parsed = getattr(trace, "parsed_output", None)
+        if isinstance(parsed, dict):
+            for item in parsed.get("entities", []) if isinstance(parsed.get("entities"), list) else []:
+                if isinstance(item, dict) and item.get("type") == "web_path":
+                    paths.append(str(item.get("path") or ""))
+        interesting = {path for path in paths if path and path != "/"}
+        return not interesting
+
+    @classmethod
+    def _target_key_from_trace(cls, trace: Any) -> str | None:
+        arguments = getattr(trace, "arguments", None)
+        arguments = arguments if isinstance(arguments, dict) else {}
+        for key in ("target_url", "base_url", "url", "target"):
+            target = cls._target_key_from_value(arguments.get(key))
+            if target:
+                return target
+        return None
+
+    @staticmethod
+    def _target_key_from_value(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        parsed = urlparse(text)
+        if parsed.hostname:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            return f"{parsed.hostname}:{port}"
+        match = re.search(r"(?P<host>(?:\d{1,3}\.){3}\d{1,3})(?::(?P<port>\d{1,5}))?", text)
+        if match:
+            return f"{match.group('host')}:{match.group('port') or 80}"
+        return None
+
     @staticmethod
     def _blackbox_policy_context(policy_context: dict[str, Any], state: RuntimeState) -> dict[str, Any]:
         targets = [
@@ -1609,6 +1804,53 @@ class AppOrchestrator:
                 if evidence_id:
                     evidence_ids.add(str(evidence_id))
         return sorted(evidence_ids)
+
+    @classmethod
+    def _operation_summary_evidence_ids(cls, *, state: RuntimeState, progress: dict[str, Any]) -> list[str]:
+        """Merge evidence refs from success progress, KG/runtime metadata and stage outputs."""
+
+        evidence_ids: set[str] = set(cls._success_condition_evidence_ids(progress))
+
+        for item in state.execution.metadata.get("evidence_artifacts", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("evidence_id", "id", "payload_ref", "tool_output_ref", "raw_output_ref"):
+                value = item.get(key)
+                if value:
+                    evidence_ids.add(str(value))
+
+        for outcome in state.recent_outcomes:
+            if outcome.payload_ref:
+                evidence_ids.add(str(outcome.payload_ref))
+            payload = outcome.metadata.get("outcome_payload")
+            if not isinstance(payload, dict):
+                continue
+            stage_result = payload.get("stage_result")
+            if isinstance(stage_result, dict):
+                for ref in stage_result.get("evidence_refs") or []:
+                    if ref:
+                        evidence_ids.add(str(ref))
+                for evidence in stage_result.get("evidence") or []:
+                    if not isinstance(evidence, dict):
+                        continue
+                    for key in ("evidence_id", "id", "payload_ref", "tool_output_ref", "raw_output_ref"):
+                        value = evidence.get(key)
+                        if value:
+                            evidence_ids.add(str(value))
+                for trace in stage_result.get("tool_trace") or stage_result.get("tool_traces") or []:
+                    if not isinstance(trace, dict):
+                        continue
+                    for ref in trace.get("evidence_refs") or []:
+                        if ref:
+                            evidence_ids.add(str(ref))
+                    raw_ref = trace.get("raw_output_ref")
+                    if raw_ref:
+                        evidence_ids.add(str(raw_ref))
+            for trace in payload.get("tool_trace") or []:
+                if isinstance(trace, dict) and trace.get("raw_output_ref"):
+                    evidence_ids.add(str(trace["raw_output_ref"]))
+
+        return sorted(ref for ref in evidence_ids if ref)
 
     @staticmethod
     def _result_status(

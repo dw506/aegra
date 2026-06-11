@@ -1,0 +1,54 @@
+[
+  {
+    "basis": "Recon identified Jetty 9.2.11.v20150529 on 10.20.0.10:8080. Subsequent web fingerprinting returned title 'Struts2 Showcase - Fileupload sample' with HTTP 200, strongly suggesting a Struts2 showcase/demo deployment. This raises bounded interest for framework-specific validation, but no vulnerability has been demonstrated.",
+    "confidence": "medium",
+    "evidence_refs": [
+      "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58"
+    ],
+    "finding_id": "finding::d180ed54efd5f946",
+    "host": "10.20.0.10",
+    "operation_id": "blackbox-e2e-20260611-212014",
+    "port": 8080,
+    "recorded_at": "2026-06-11T21:21:48.883697+08:00",
+    "service": "http",
+    "severity": "medium",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::523ec9eed3d90cb6",
+    "stage_task_id": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+    "title": "Candidate target of interest: probable Apache Struts2 Showcase application on 10.20.0.10:8080"
+  },
+  {
+    "conclusion": "可合理表征为 Jetty 承载的 Struts2 Showcase 文件上传示例页面，而不仅仅是泛化的 HTTP 服务。",
+    "confidence": "medium",
+    "evidence": [
+      "Nmap: 10.20.0.10:8080/tcp open http Jetty 9.2.11.v20150529",
+      "web_fingerprint: server=Jetty(9.2.11.v20150529), title='Struts2 Showcase - Fileupload sample'",
+      "web_discover: GET / => 200 text/html; charset=ISO-8859-1"
+    ],
+    "finding_id": "finding::795403221f9b2efc",
+    "operation_id": "blackbox-e2e-20260611-212014",
+    "recorded_at": "2026-06-11T21:23:13.507905+08:00",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::f54d50d1692ca903",
+    "stage_task_id": "stage-blackbox-e2e-20260611-212014-4-vuln_analysis_agent",
+    "target": "http://10.20.0.10:8080/",
+    "type": "service_characterization"
+  },
+  {
+    "conclusion": "目前不存在‘已被工具与证据共同支撑、可立即执行的安全验证 profile 路径’。因此不能声称存在特定漏洞，也不能在无 profile/前置条件的情况下继续进入漏洞确认。",
+    "confidence": "medium",
+    "evidence": [
+      "此前 vuln_profile_match 对该目标返回 []",
+      "exploit_validation 阶段仅确认 / 可达，未产生漏洞验证证据",
+      "当前无凭据、无 session、无 pivot、无额外路径发现"
+    ],
+    "finding_id": "finding::9b8a2d1335220f48",
+    "operation_id": "blackbox-e2e-20260611-212014",
+    "recorded_at": "2026-06-11T21:23:13.507917+08:00",
+    "source_agent": "vuln_analysis_agent",
+    "stage_result_id": "stage-result::f54d50d1692ca903",
+    "stage_task_id": "stage-blackbox-e2e-20260611-212014-4-vuln_analysis_agent",
+    "target": "http://10.20.0.10:8080/",
+    "type": "bounded_validation_assessment"
+  }
+]

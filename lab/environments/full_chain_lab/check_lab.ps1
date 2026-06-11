@@ -12,6 +12,11 @@ function Check($Name, $Condition) {
     }
 }
 
+function Test-ContainerTcp($Container, $TargetHost, $Port, $TimeoutSeconds = 3) {
+    docker exec $Container python -c "import socket, sys; s=socket.socket(); s.settimeout(float(sys.argv[3])); s.connect((sys.argv[1], int(sys.argv[2]))); s.close()" $TargetHost $Port $TimeoutSeconds 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
 # 1. aegra-api health
 try {
     $r = docker exec aegra-api curl -sf http://localhost:8000/health 2>&1
@@ -23,18 +28,14 @@ $running = docker inspect mcp-tools --format '{{.State.Running}}' 2>$null
 Check "mcp-tools running" ($running -eq "true")
 
 # 3. DMZ reachable from mcp-tools
-docker exec mcp-tools nc -z -w3 10.20.0.10 8080 2>$null
-Check "dmz_net reachable from mcp-tools" ($LASTEXITCODE -eq 0)
+Check "dmz_net reachable from mcp-tools" (Test-ContainerTcp "mcp-tools" "10.20.0.10" 8080 3)
 
 # 4. internal_net NOT reachable from mcp-tools
-docker exec mcp-tools nc -z -w2 10.30.0.11 8080 2>$null
-Check "internal_net isolated from mcp-tools" ($LASTEXITCODE -ne 0)
+Check "internal_net isolated from mcp-tools" (-not (Test-ContainerTcp "mcp-tools" "10.30.0.11" 8080 2))
 
 # 5. pivot-ssh sees both networks
-docker exec pivot-ssh nc -z -w2 10.20.0.10 8080 2>$null
-$dmzOk = $LASTEXITCODE -eq 0
-docker exec pivot-ssh nc -z -w2 10.30.0.11 8080 2>$null
-$intOk = $LASTEXITCODE -eq 0
+$dmzOk = Test-ContainerTcp "pivot-ssh" "10.20.0.10" 8080 2
+$intOk = Test-ContainerTcp "pivot-ssh" "10.30.0.11" 8080 2
 Check "pivot-ssh bridges dmz and internal" ($dmzOk -and $intOk)
 
 # 6. internal services not reachable from host

@@ -1,0 +1,129 @@
+{
+  "nodes": [
+    {
+      "id": "finding::d180ed54efd5f946",
+      "type": "Finding",
+      "label": "Candidate target of interest: probable Apache Struts2 Showcase application on 10.20.0.10:8080",
+      "severity": "medium"
+    },
+    {
+      "id": "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58",
+      "type": "Evidence",
+      "label": "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58"
+    },
+    {
+      "id": "finding::795403221f9b2efc",
+      "type": "Finding",
+      "label": "finding::795403221f9b2efc",
+      "severity": null
+    },
+    {
+      "id": "finding::9b8a2d1335220f48",
+      "type": "Finding",
+      "label": "finding::9b8a2d1335220f48",
+      "severity": null
+    },
+    {
+      "id": "evidence-335617469db04cf9b122793e5826b167",
+      "type": "Evidence",
+      "label": "Recon established initial authorized visibility in 10.20.0.0/24 from existing stage evidence. Nmap scan evidenced 6 live hosts: 10.20.0.1, 10.20.0.2, 10.20.0.3, 10.20.0.10, 10.20.0.11, 10.20.0.50. Open services discovered: 10.20.0.1:111/tcp rpcbind 2-4 (RPC #100000); 10.20.0.3:8000/tcp HTTP/Uvicorn; 10.20.0.10:8080/tcp HTTP/Jetty 9.2.11.v20150529; 10.20.0.11:80/tcp HTTP/Apache httpd 2.4.25 ((Debian)); 10.20.0.50:2222/tcp SSH/OpenSSH 10.2. Negative evidence: 10.20.0.2 was up but all 1000 scanned TCP ports were closed/reset; 10.20.0.1 had 8000/tcp filtered. This satisfies the success criteria by identifying multiple authorized live hosts and reachable services with evidenced metadata."
+    },
+    {
+      "id": "stage-blackbox-e2e-20260611-212014-1-recon_agent",
+      "type": "Task",
+      "label": "stage-blackbox-e2e-20260611-212014-1-recon_agent"
+    },
+    {
+      "id": "evidence-25ceafc3f61f4221bf749d2124aad4b6",
+      "type": "Evidence",
+      "label": "Starting Nmap 7.95 ( https://nmap.org ) at 2026-06-11 13:20 UTC\nNmap scan report for 10.20.0.1\nHost is up (0.0000090s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE    SERVICE  VERSI"
+    },
+    {
+      "id": "stage-evidence-0",
+      "type": "Evidence",
+      "label": "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58"
+    },
+    {
+      "id": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "Task",
+      "label": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent"
+    },
+    {
+      "id": "stage-evidence-1",
+      "type": "Evidence",
+      "label": "runtime:var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-1-web_fingerprint.json"
+    },
+    {
+      "id": "stage-evidence-2",
+      "type": "Evidence",
+      "label": "runtime:var/runtime/blackbox-e2e-20260611-212014/tool-outputs/2-vuln_analysis_agent-2-vuln_profile_match.json"
+    },
+    {
+      "id": "evidence-1423a4261e3e45fab945cc7a19e04be4",
+      "type": "Evidence",
+      "label": "{\"content_type\": \"text/html; charset=ISO-8859-1\", \"server\": \"Jetty(9.2.11.v20150529)\", \"title\": \"Struts2 Showcase - Fileupload sample\", \"type\": \"web_fingerprint\", \"url\": \"http://10.20.0.10:8080/\"}"
+    },
+    {
+      "id": "evidence-ab7d98df8ac442a9b37077d4ea990b1e",
+      "type": "Evidence",
+      "label": "[]"
+    },
+    {
+      "id": "evidence-f5eaacfcb4674bdcab4309c602a941c6",
+      "type": "Evidence",
+      "label": "[{\"content_type\": \"text/html; charset=ISO-8859-1\", \"path\": \"/\", \"status\": 200, \"type\": \"web_path\", \"url\": \"http://10.20.0.10:8080/\"}]"
+    },
+    {
+      "id": "stage-blackbox-e2e-20260611-212014-3-exploit_validation_agent",
+      "type": "Task",
+      "label": "stage-blackbox-e2e-20260611-212014-3-exploit_validation_agent"
+    }
+  ],
+  "edges": [
+    {
+      "source": "finding::d180ed54efd5f946",
+      "target": "kg:evidence::tool::stage-blackbox-e2e-20260611-212014-1-recon_agent::tool-trace::6dcc6cd8515caa58",
+      "type": "SUPPORTED_BY"
+    },
+    {
+      "source": "evidence-335617469db04cf9b122793e5826b167",
+      "target": "stage-blackbox-e2e-20260611-212014-1-recon_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-25ceafc3f61f4221bf749d2124aad4b6",
+      "target": "stage-blackbox-e2e-20260611-212014-1-recon_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "stage-evidence-0",
+      "target": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "stage-evidence-1",
+      "target": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "stage-evidence-2",
+      "target": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-1423a4261e3e45fab945cc7a19e04be4",
+      "target": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-ab7d98df8ac442a9b37077d4ea990b1e",
+      "target": "stage-blackbox-e2e-20260611-212014-2-vuln_analysis_agent",
+      "type": "DERIVED_FROM"
+    },
+    {
+      "source": "evidence-f5eaacfcb4674bdcab4309c602a941c6",
+      "target": "stage-blackbox-e2e-20260611-212014-3-exploit_validation_agent",
+      "type": "DERIVED_FROM"
+    }
+  ]
+}

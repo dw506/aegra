@@ -396,41 +396,114 @@ class LLMDrivenStageAgent:
             status = "needs_replan"
             payload.setdefault("replan_recommendation", "stage returned no tool results, evidence, findings, or structured output")
         try:
-            return StageResult(
-                operation_id=request.operation_id,
-                stage_task_id=self._request_id(request),
-                stage_type=request.stage_type,
-                agent_name=self.agent_name,
-                status=status,  # type: ignore[arg-type]
-                summary=str(payload.get("summary") or f"{self.agent_name} finished"),
+            return self._build_stage_result_from_finish(
+                request=request,
+                payload=payload,
                 observations=observations,
-                evidence=self._normalized_evidence(payload),
                 findings=findings,
-                discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
-                discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
-                capabilities_gained=list(payload.get("capabilities_gained") or []),
-                credentials=list(payload.get("credentials") or []),
-                sessions=list(payload.get("sessions") or []),
-                pivot_routes=list(payload.get("pivot_routes") or []),
-                next_stage_candidates=list(payload.get("next_stage_candidates") or []),
-                handoff_suggestion=payload.get("handoff_suggestion"),
-                evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
-                tool_trace=list(tool_traces),
-                tool_traces=list(tool_traces),
-                confidence=float(payload.get("confidence") or 0.5),
-                replan_recommendation=payload.get("replan_recommendation"),
-                runtime_hints={"cycle_index": request.cycle_index},
+                status=status,
+                tool_traces=tool_traces,
             )
         except (TypeError, ValueError, ValidationError) as exc:
-            return self._replan_result(request, f"invalid finish payload: {exc}", memory, tool_traces)
+            repaired = self._repair_finish_payload(request=request, payload=payload, validation_error=str(exc))
+            if repaired is not None:
+                repaired = self._normalized_finish_payload(repaired)
+                repaired_observations = list(repaired.get("observations") or observations or memory)
+                repaired_observations.extend(self._structured_finish_observations(repaired))
+                repaired_findings = self._normalized_findings(repaired)
+                try:
+                    return self._build_stage_result_from_finish(
+                        request=request,
+                        payload=repaired,
+                        observations=repaired_observations,
+                        findings=repaired_findings,
+                        status=self._normalized_status(repaired.get("status") or status),
+                        tool_traces=tool_traces,
+                    )
+                except (TypeError, ValueError, ValidationError):
+                    pass
+            return self._replan_result(request, f"invalid finish payload after structure repair: {exc}", memory, tool_traces)
+
+    def _build_stage_result_from_finish(
+        self,
+        *,
+        request: StageExecutionRequest,
+        payload: dict[str, Any],
+        observations: list[dict[str, Any]],
+        findings: list[dict[str, Any]],
+        status: str,
+        tool_traces: list[ToolTrace],
+    ) -> StageResult:
+        runtime_hints = dict(payload.get("runtime_hints") or {})
+        runtime_hints.setdefault("cycle_index", request.cycle_index)
+        return StageResult(
+            operation_id=request.operation_id,
+            stage_task_id=self._request_id(request),
+            stage_type=request.stage_type,
+            agent_name=self.agent_name,
+            status=status,  # type: ignore[arg-type]
+            summary=str(payload.get("summary") or f"{self.agent_name} finished"),
+            observations=observations,
+            evidence=self._normalized_evidence(payload),
+            findings=findings,
+            discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
+            discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
+            capabilities_gained=list(payload.get("capabilities_gained") or []),
+            credentials=list(payload.get("credentials") or []),
+            sessions=list(payload.get("sessions") or []),
+            pivot_routes=list(payload.get("pivot_routes") or []),
+            next_stage_candidates=list(payload.get("next_stage_candidates") or []),
+            failed_hypotheses=list(payload.get("failed_hypotheses") or []),
+            handoff_suggestion=payload.get("handoff_suggestion"),
+            next_stage_suggestion=payload.get("next_stage_suggestion"),
+            evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
+            tool_trace=list(tool_traces),
+            tool_traces=list(tool_traces),
+            confidence=float(payload.get("confidence") or 0.5),
+            replan_recommendation=payload.get("replan_recommendation"),
+            retry_recommendation=payload.get("retry_recommendation"),
+            runtime_hints=runtime_hints,
+            writeback_hints=dict(payload.get("writeback_hints") or {}),
+        )
+
+    def _repair_finish_payload(
+        self,
+        *,
+        request: StageExecutionRequest,
+        payload: dict[str, Any],
+        validation_error: str,
+    ) -> dict[str, Any] | None:
+        if self._llm_client is None:
+            return None
+        repair_prompt = (
+            "Repair this StageResult finish payload into strict JSON only. "
+            "Preserve facts; do not add new findings. Acceptable wrappers are result, stage_result, or direct fields. "
+            "If observations are strings, convert each to {\"type\":\"note\",\"detail\":\"...\"}.\n\n"
+            f"operation_id={request.operation_id}\n"
+            f"stage_task_id={self._request_id(request)}\n"
+            f"stage_type={request.stage_type}\n"
+            f"agent_name={self.agent_name}\n"
+            f"Validation error: {validation_error}\n\n"
+            f"Payload:\n{json.dumps(payload, ensure_ascii=False, default=str)[:6000]}"
+        )
+        try:
+            response = self._llm_client.complete_chat(
+                system_prompt="Return repaired StageResult finish JSON only.",
+                user_prompt=repair_prompt,
+                temperature=0.0,
+            )
+        except PackyLLMError:
+            return None
+        repaired = self._extract_json_object(response.text)
+        return repaired if isinstance(repaired, dict) else None
 
     @staticmethod
     def _normalized_finish_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        nested = payload.get("result") or payload.get("data") or payload.get("output")
+        nested = payload.get("result") or payload.get("stage_result") or payload.get("data") or payload.get("output")
         if not isinstance(nested, dict):
             merged = dict(payload)
         else:
-            merged = {key: value for key, value in payload.items() if key not in {"result", "data", "output"}}
+            merged = {key: value for key, value in payload.items() if key not in {"result", "stage_result", "data", "output"}}
             merged.update(nested)
         summary = merged.get("summary")
         if isinstance(summary, str):
@@ -512,8 +585,11 @@ class LLMDrivenStageAgent:
             "confidence",
             "replan_recommendation",
             "result",
+            "stage_result",
             "data",
             "output",
+            "runtime_hints",
+            "writeback_hints",
         }
         structured = {
             key: value

@@ -17,6 +17,14 @@ check() {
   fi
 }
 
+check_tcp() {
+  local container="$1"
+  local host="$2"
+  local port="$3"
+  local timeout="${4:-3}"
+  docker exec "$container" python -c 'import socket, sys; s=socket.socket(); s.settimeout(float(sys.argv[3])); s.connect((sys.argv[1], int(sys.argv[2]))); s.close()' "$host" "$port" "$timeout" >/dev/null 2>&1
+}
+
 # 1. aegra-api health
 if docker exec aegra-api curl -sf http://localhost:8000/health > /dev/null 2>&1; then
   check "aegra-api health" "ok"
@@ -32,22 +40,22 @@ else
 fi
 
 # 3. DMZ reachable from mcp-tools (nmap probe via docker exec)
-if docker exec mcp-tools nc -z -w3 10.20.0.10 8080 2>/dev/null; then
+if check_tcp mcp-tools 10.20.0.10 8080 3; then
   check "dmz_net reachable from mcp-tools" "ok"
 else
   check "dmz_net reachable from mcp-tools" "not reachable"
 fi
 
 # 4. internal_net NOT directly reachable from mcp-tools
-if docker exec mcp-tools nc -z -w2 10.30.0.11 8080 2>/dev/null; then
+if check_tcp mcp-tools 10.30.0.11 8080 2; then
   check "internal_net isolated from mcp-tools" "FAIL - internal is reachable without pivot!"
 else
   check "internal_net isolated from mcp-tools" "ok"
 fi
 
 # 5. pivot-ssh can see both networks
-if docker exec pivot-ssh nc -z -w2 10.20.0.10 8080 2>/dev/null && \
-   docker exec pivot-ssh nc -z -w2 10.30.0.11 8080 2>/dev/null; then
+if check_tcp pivot-ssh 10.20.0.10 8080 2 && \
+   check_tcp pivot-ssh 10.30.0.11 8080 2; then
   check "pivot-ssh bridges dmz and internal" "ok"
 else
   check "pivot-ssh bridges dmz and internal" "one or both networks unreachable from pivot-ssh"

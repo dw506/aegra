@@ -59,7 +59,7 @@ services:
       context: ../../../
       dockerfile: lab/Dockerfile.aegra
     container_name: mcp-tools
-    command: python -m src.integrations.mcp_lab.server
+    command: python -m src.integrations.mcp_lab.http_server --host 0.0.0.0 --port 8765
     environment:
       - AEGRA_LAB_MODE=1
       - AEGRA_LAB_PROFILE_PATH=/app/lab/environments/full_chain_lab/profile.yml

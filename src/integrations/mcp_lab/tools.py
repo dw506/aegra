@@ -30,6 +30,21 @@ MAX_COMMAND_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 20000
 DEFAULT_FFUF_WORDS = ["admin", "login", "robots.txt", "sitemap.xml", "api", "debug", "health"]
 SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
+    "struts2-s2-045": VulnerabilityProfile(
+        vulnerability_id="struts2-s2-045",
+        cve="CVE-2017-5638",
+        affected_products=["apache struts", "struts2", "struts2 showcase", "fileupload sample"],
+        required_service="http",
+        required_paths=["/"],
+        safe_validation_methods=["http_probe", "validation_precheck"],
+    ),
+    "thinkphp-5-rce": VulnerabilityProfile(
+        vulnerability_id="thinkphp-5-rce",
+        affected_products=["thinkphp", "thinkphp 5", "thinkphp 5.0.23"],
+        required_service="http",
+        required_paths=["/"],
+        safe_validation_methods=["http_probe", "validation_precheck"],
+    ),
     "lab-http-accessible": VulnerabilityProfile(
         vulnerability_id="lab-http-accessible",
         affected_products=["generic-http"],
@@ -1033,12 +1048,13 @@ def _http_basic_auth_check(arguments: dict[str, Any]) -> dict[str, Any]:
 def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
     service = _string(arguments.get("service"))
     product = (_string(arguments.get("product")) or "").lower()
+    match_text = _profile_match_text(arguments)
     parsed = _default_parsed()
     matches: list[dict[str, Any]] = []
     for profile in SAFE_VALIDATION_PROFILES.values():
         if service and profile.required_service and service.lower() != profile.required_service.lower():
             continue
-        if product and profile.affected_products and not any(product in item.lower() for item in profile.affected_products):
+        if profile.affected_products and not _profile_matches_signals(profile, service=service, product=product, match_text=match_text):
             continue
         item = profile.model_dump(mode="json")
         matches.append(item)
@@ -1065,6 +1081,64 @@ def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
         )
     parsed["writeback_hints"] = {"observation_category": "vulnerability_profile_match"}
     return _payload(success=True, stdout=json.dumps(matches, ensure_ascii=True, sort_keys=True), parsed=parsed)
+
+
+def _profile_match_text(arguments: dict[str, Any]) -> str:
+    values: list[str] = []
+
+    def add(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, dict):
+            for nested in value.values():
+                add(nested)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                add(nested)
+            return
+        text = str(value).strip()
+        if text:
+            values.append(text)
+
+    for key in (
+        "title",
+        "path",
+        "paths",
+        "url",
+        "target_url",
+        "banner",
+        "server",
+        "headers",
+        "framework",
+        "fingerprint",
+        "fingerprints",
+        "body_excerpt",
+        "content",
+        "evidence",
+        "observations",
+    ):
+        add(arguments.get(key))
+    return " ".join(values).lower()
+
+
+def _profile_matches_signals(profile: VulnerabilityProfile, *, service: str | None, product: str, match_text: str) -> bool:
+    product_tokens = [item.lower() for item in profile.affected_products if item]
+    if not product_tokens:
+        return True
+    haystack = " ".join([product, match_text]).lower()
+    for token in product_tokens:
+        if not token:
+            continue
+        if token.startswith("generic-http") and str(service or "").lower() in {"http", "https"}:
+            return True
+        if token in haystack:
+            return True
+        compact_token = re.sub(r"[^a-z0-9]+", "", token)
+        compact_haystack = re.sub(r"[^a-z0-9]+", "", haystack)
+        if compact_token and compact_token in compact_haystack:
+            return True
+    return False
 
 
 def _validation_precheck(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2140,6 +2214,15 @@ def _configured_pivot_route_candidates() -> list[dict[str, Any]]:
             }
         )
     return candidates
+
+
+def _configured_pivot_route_by_id(route_id: str | None) -> dict[str, Any] | None:
+    if not route_id:
+        return None
+    for candidate in _configured_pivot_route_candidates():
+        if candidate.get("route_id") == route_id:
+            return candidate
+    return None
 
 
 def _run_via_configured_pivot(*, remote_command: str, timeout_seconds: int) -> subprocess.CompletedProcess[str] | None:

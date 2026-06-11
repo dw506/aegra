@@ -168,6 +168,7 @@ class LLMMissionPlannerAdvisor:
                 "recent_attack_process_nodes": graph_context.get("recent_attack_process_nodes") or [],
                 "recent_handoff_suggestions": graph_context.get("recent_handoff_suggestions") or [],
                 "recent_failures": graph_context.get("recent_failures") or [],
+                "validation_dead_ends": graph_context.get("validation_dead_ends") or [],
                 "current_goal": graph_context.get("current_goal") or goal,
                 "recent_results": list(recent_stage_results or []),
                 "planner_decision_contract": decision_contract,
@@ -187,6 +188,16 @@ class LLMMissionPlannerAdvisor:
             "The execution layer is a parallel capability pool, not a pipeline. "
             "Do not use a fixed stage sequence and do not require every agent to run. "
             "Select the next agent from evidence gaps in KG, AG, Runtime, Policy and ToolCatalog. "
+            "Treat recent StageResult control hints as hard constraints: if a recent result contains "
+            "recommended_next_agent, next_stage_suggestion, next_step_guidance, or handoff_suggestion, "
+            "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
+            "supported_bounded_validation_candidate=false, do not choose ExploitValidationAgent for that target. "
+            "If Runtime validation_dead_ends contains validation_dead_end(target=T, reason=no_supported_profile), "
+            "do not choose ExploitValidationAgent for target T unless required_context includes a new_profile, "
+            "profile_id, matched_profile_id, validation_profile, or new_evidence. "
+            "When validation is blocked by no_supported_profile, prefer ReconAgent to fingerprint unexplored "
+            "services such as 10.20.0.11:80 or 10.20.0.3:8000 when in scope, or AccessPivotAgent if capability "
+            "or pivot evidence is the missing chain link. "
             "Use agent_capabilities as the only source for valid agent/stage pairs. "
             "If evidence is insufficient, select an appropriate registered agent or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "
