@@ -10,7 +10,6 @@ def test_core_perception_does_not_import_external_c2() -> None:
         path
         for path in Path("src/core/perception").glob("*.py")
     ]
-    paths.append(Path("src/core/agents/perception.py"))
 
     for path in paths:
         text = path.read_text(encoding="utf-8")

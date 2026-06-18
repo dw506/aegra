@@ -12,7 +12,7 @@ from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import RuntimeState
 
-
+#把 KG、AG、Runtime 存为 JSON 文件
 class GraphMemoryStore:
     """Persist KG / AG / Runtime snapshots under one operation directory.
 

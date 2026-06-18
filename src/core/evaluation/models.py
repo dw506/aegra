@@ -80,6 +80,8 @@ class SuccessContract(BaseModel):
     mode: str = "generic"
     require_all: list[str] = Field(default_factory=list)
     require_chain: list[list[str]] = Field(default_factory=list)
+    levels: dict[str, list[str]] = Field(default_factory=dict)
+    target_level: str | None = None
     condition_bindings: dict[str, ConditionBinding] = Field(default_factory=dict)
 
 
@@ -114,6 +116,9 @@ class SuccessConditionProgress(BaseModel):
     chain_integrity: bool = False
     goal_proof_valid: bool = False
     eligible_for_stop: bool = False
+    achieved_level: str | None = None
+    target_level: str | None = None
+    level_results: dict[str, dict[str, Any]] = Field(default_factory=dict)
     satisfied: list[str] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
     failed: list[str] = Field(default_factory=list)

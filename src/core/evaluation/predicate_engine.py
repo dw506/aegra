@@ -10,9 +10,73 @@ may appear in this module.
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Callable
 
 from src.core.evaluation.models import ConditionResult, OperationProfile
+
+
+def _parse_ip(value: Any) -> Any:
+    """Parse ``value`` as an IP address or network, tolerating a ``:port`` suffix.
+
+    Returns an ``ip_address``/``ip_network`` object, or ``None`` if the value is
+    not locatable as an IP/CIDR (e.g. a free-text evidence summary).
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    candidates = [text]
+    if ":" in text and "/" not in text:
+        candidates.append(text.rsplit(":", 1)[0])  # strip a trailing :port
+    for cand in candidates:
+        try:
+            return ipaddress.ip_network(cand, strict=False) if "/" in cand else ipaddress.ip_address(cand)
+        except ValueError:
+            continue
+    return None
+
+
+def _addr_in_cidrs(value: Any, cidrs: list[str]) -> bool:
+    """Return True if ``value`` is an IP/CIDR contained in any of ``cidrs``.
+
+    Generic CIDR containment used to resolve a node/route to a logical zone via
+    the profile's zone CIDRs. The CIDRs come from the profile, never hardcoded.
+    """
+
+    if not cidrs:
+        return False
+    candidate = _parse_ip(value)
+    if candidate is None:
+        return False
+    for raw in cidrs:
+        try:
+            network = ipaddress.ip_network(str(raw), strict=False)
+        except ValueError:
+            continue
+        if isinstance(candidate, ipaddress._BaseNetwork):
+            if candidate.subnet_of(network):
+                return True
+        elif candidate in network:
+            return True
+    return False
+
+
+def _node_addresses(node: dict[str, Any]) -> list[str]:
+    """Collect address-like strings from a node for CIDR-based zone resolution."""
+
+    props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+    values = [
+        node.get("address"),
+        node.get("host"),
+        node.get("ip"),
+        node.get("hostname"),
+        node.get("label"),
+        props.get("address"),
+        props.get("host"),
+        props.get("ip"),
+    ]
+    return [str(v) for v in values if v]
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +169,7 @@ class PredicateContext:
         zone = self.profile.resolve_zone(zone_ref)
         if zone is None:
             return []
-        target_cidrs = set(zone.cidrs)
+        target_cidrs = list(zone.cidrs)
         target_name = zone.name.lower()
         routes = []
         for route in (self.runtime_state.get("pivot_routes") or {}).values():
@@ -115,7 +179,13 @@ class PredicateContext:
                 continue
             dest_zone = str(route.get("destination_zone") or "").lower()
             dest_cidr = str(route.get("destination_cidr") or "")
-            if dest_zone == target_name or dest_cidr in target_cidrs:
+            dest_host = route.get("destination_host")
+            if (
+                dest_zone in (target_name, zone_ref.lower())
+                or dest_cidr in set(target_cidrs)
+                or _addr_in_cidrs(dest_cidr, target_cidrs)
+                or _addr_in_cidrs(dest_host, target_cidrs)
+            ):
                 routes.append(route)
         # Also check KG PivotRoute nodes
         for node in self.kg_nodes:
@@ -177,10 +247,25 @@ def _match_zone_ref(node: dict[str, Any], zone_ref: str, ctx: PredicateContext) 
     """
     node_zone = node.get("zone_ref") or (node.get("properties") or {}).get("zone_ref")
     if node_zone is not None:
-        return str(node_zone) == zone_ref
-    # Fallback: CIDR range check not implemented here (would need ipaddress)
-    # Return True to be permissive when zone_ref is not explicitly set on node
-    return True
+        if str(node_zone) == zone_ref:
+            return True
+        # Node carries a zone tag that names the zone rather than its ref.
+        zone = ctx.profile.resolve_zone(zone_ref)
+        if zone is not None and str(node_zone).lower() == zone.name.lower():
+            return True
+        # A mismatching explicit tag is only authoritative when no CIDR can
+        # confirm membership; fall through to CIDR resolution below.
+    # CIDR fallback: resolve the node's address against the zone's profile CIDRs.
+    # Only nodes that actually carry a locatable IP address are placed (or excluded)
+    # by CIDR. Address-less nodes (free-text Evidence/Observation/Finding) cannot be
+    # disproven, so they stay permissive — matching the engine's pre-CIDR behavior.
+    cidrs = ctx.resolve_zone_cidrs(zone_ref)
+    located = [addr for addr in _node_addresses(node) if _parse_ip(addr) is not None]
+    if cidrs and located:
+        return any(_addr_in_cidrs(addr, cidrs) for addr in located)
+    # No locatable address (or no CIDRs): permissive unless an explicit, mismatching
+    # zone tag was present (handled above → node_zone set means exclude).
+    return node_zone is None
 
 
 def _count_evidence(node: dict[str, Any]) -> int:
@@ -362,12 +447,18 @@ def _service_discovered_via_route(ctx: PredicateContext, args: dict[str, Any]) -
     zone = ctx.profile.resolve_zone(zone_ref)
     zone_name = zone.name.lower() if zone else zone_ref.lower()
 
+    zone_cidrs = ctx.resolve_zone_cidrs(zone_ref)
     matched_services = []
     for node in ctx.kg_nodes:
         if node.get("type") not in ("Service", "InternalService"):
             continue
         node_zone = str(node.get("zone_ref") or (node.get("properties") or {}).get("zone_ref") or "").lower()
-        if node_zone == zone_ref.lower() or node_zone == zone_name:
+        if node_zone in (zone_ref.lower(), zone_name):
+            matched_services.append(str(node.get("id") or ""))
+            continue
+        # CIDR fallback: a service at an address inside the zone's profile CIDRs
+        # belongs to the zone even when it carries no explicit zone tag.
+        if not node_zone and zone_cidrs and any(_addr_in_cidrs(addr, zone_cidrs) for addr in _node_addresses(node)):
             matched_services.append(str(node.get("id") or ""))
 
     satisfied = len(matched_services) > 0

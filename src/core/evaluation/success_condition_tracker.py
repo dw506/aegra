@@ -103,8 +103,10 @@ class SuccessConditionTracker:
         condition_results: dict[str, dict[str, Any]] = {}
         all_evidence_refs: list[str] = list(oracle_evidence_refs)
 
-        # Evaluate each required condition
-        for condition_name in contract.require_all:
+        evaluated_conditions = self._conditions_to_evaluate(contract)
+
+        # Evaluate each required or level condition
+        for condition_name in evaluated_conditions:
             binding = contract.condition_bindings.get(condition_name)
             if binding is None:
                 result_dict = {
@@ -134,7 +136,18 @@ class SuccessConditionTracker:
             else:
                 missing.append(condition_name)
 
-        all_required_satisfied = len(missing) == 0 and len(failed) == 0
+        required_set = set(contract.require_all)
+        required_missing = [name for name in contract.require_all if name in set(missing)]
+        required_failed = [name for name in contract.require_all if name in set(failed)]
+        all_required_satisfied = len(required_missing) == 0 and len(required_failed) == 0
+        level_results = self._level_results(contract=contract, satisfied_set=set(satisfied), failed_set=set(failed))
+        achieved_level = self._achieved_level(level_results)
+        target_level = contract.target_level
+        target_level_satisfied = (
+            bool(level_results.get(target_level, {}).get("satisfied"))
+            if target_level
+            else all_required_satisfied
+        )
 
         # Check chain integrity
         chain_integrity = self._check_chain_integrity(
@@ -142,28 +155,37 @@ class SuccessConditionTracker:
             satisfied_set=set(satisfied),
         )
 
-        # Determine if oracle_proof required
-        has_oracle_predicate = any(
-            b.predicate == "oracle_proof_valid"
-            for b in contract.condition_bindings.values()
-            if b.predicate
-        )
-        if has_oracle_predicate and not oracle_proof_valid:
-            pass  # oracle_proof_valid will be in missing/failed already
+        # Resolve goal-proof status from the authoritative condition results, not
+        # from a second, divergent oracle code path. Any condition bound to the
+        # oracle_proof_valid predicate is already part of require_all, so its
+        # satisfaction is reflected in all_required_satisfied. We only surface a
+        # reporting flag here (and never re-gate on the raw _run_oracle result,
+        # which would require fields the tracker does not populate).
+        oracle_condition_names = [
+            name
+            for name, binding in contract.condition_bindings.items()
+            if binding.predicate == "oracle_proof_valid"
+        ]
+        has_oracle_predicate = bool(oracle_condition_names)
+        if has_oracle_predicate:
+            goal_proof_valid = all(name in satisfied for name in oracle_condition_names)
+        else:
+            goal_proof_valid = oracle_proof_valid
 
         # Build redacted summary
         redacted_summary = (
             f"Contract '{contract.contract_id}': "
-            f"{len(satisfied)}/{len(contract.require_all)} conditions satisfied. "
-            f"Missing: {missing[:3]}{'...' if len(missing) > 3 else ''}. "
+            f"{len([name for name in satisfied if name in required_set])}/{len(contract.require_all)} required conditions satisfied. "
+            f"Achieved level: {achieved_level or 'none'}. "
+            f"Missing: {required_missing[:3]}{'...' if len(required_missing) > 3 else ''}. "
             f"Chain: {'ok' if chain_integrity else 'broken'}."
         )
 
-        # Compute eligible_for_stop
+        # Compute eligible_for_stop. The goal proof, when required, is already one
+        # of the require_all conditions, so all_required_satisfied subsumes it.
         eligible_for_stop = (
-            all_required_satisfied
+            target_level_satisfied
             and chain_integrity
-            and (oracle_proof_valid if has_oracle_predicate else True)
             and not blocking_policy_violation
             and not fatal_error
         )
@@ -174,16 +196,62 @@ class SuccessConditionTracker:
             mode=contract.mode,
             all_required_satisfied=all_required_satisfied,
             chain_integrity=chain_integrity,
-            goal_proof_valid=oracle_proof_valid,
+            goal_proof_valid=goal_proof_valid,
             eligible_for_stop=eligible_for_stop,
+            achieved_level=achieved_level,
+            target_level=target_level,
+            level_results=level_results,
             satisfied=satisfied,
-            missing=missing,
-            failed=failed,
+            missing=required_missing,
+            failed=required_failed,
             condition_results=condition_results,
             evidence_refs=all_evidence_refs,
             redacted_summary=redacted_summary,
             last_updated_cycle=cycle_index,
         )
+
+    @staticmethod
+    def _conditions_to_evaluate(contract: SuccessContract) -> list[str]:
+        ordered: list[str] = []
+        for name in contract.require_all:
+            if name not in ordered:
+                ordered.append(name)
+        for conditions in contract.levels.values():
+            for name in conditions:
+                if name not in ordered:
+                    ordered.append(name)
+        return ordered
+
+    @staticmethod
+    def _level_results(
+        *,
+        contract: SuccessContract,
+        satisfied_set: set[str],
+        failed_set: set[str],
+    ) -> dict[str, dict[str, Any]]:
+        results: dict[str, dict[str, Any]] = {}
+        for level, conditions in contract.levels.items():
+            required = [str(name) for name in conditions]
+            missing = [name for name in required if name not in satisfied_set and name not in failed_set]
+            failed = [name for name in required if name in failed_set]
+            satisfied = [name for name in required if name in satisfied_set]
+            results[str(level)] = {
+                "level": str(level),
+                "required": required,
+                "satisfied": not missing and not failed,
+                "satisfied_conditions": satisfied,
+                "missing": missing,
+                "failed": failed,
+            }
+        return results
+
+    @staticmethod
+    def _achieved_level(level_results: dict[str, dict[str, Any]]) -> str | None:
+        achieved: str | None = None
+        for level, result in level_results.items():
+            if bool(result.get("satisfied")):
+                achieved = level
+        return achieved
 
     def _run_oracle(
         self,

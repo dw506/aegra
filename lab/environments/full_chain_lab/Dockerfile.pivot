@@ -1,0 +1,18 @@
+# Minimal dual-homed SSH jump host for the full_chain_lab pivot.
+# Listens on port 22 (the framework's pivot transport uses the default SSH port),
+# enables password auth, and ships nc/nmap so authorized pivoted reconnaissance
+# can probe the internal network from this bridge host.
+FROM alpine:3.20
+
+ARG PIVOT_USER=pivot
+ARG PIVOT_PASSWORD=pivotpass123
+
+RUN apk add --no-cache openssh openssh-server nmap nmap-scripts netcat-openbsd iproute2 postgresql-client \
+    && ssh-keygen -A \
+    && adduser -D "${PIVOT_USER}" \
+    && printf '%s:%s\n' "${PIVOT_USER}" "${PIVOT_PASSWORD}" | chpasswd \
+    && sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && sed -i 's/^#\?Port .*/Port 22/' /etc/ssh/sshd_config
+
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D", "-e"]

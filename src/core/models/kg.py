@@ -110,7 +110,7 @@ class BaseEdge(BaseGraphEntity):
     source: str = Field(min_length=1)
     target: str = Field(min_length=1)
 
-
+#节点类型定义为 Pydantic 类
 class Host(BaseNode):
     type: Literal[NodeType.HOST] = NodeType.HOST
     hostname: str | None = None
@@ -286,7 +286,7 @@ class PivotRouteNode(BaseNode):
     session_ref: str | None = None
     route_type: str | None = None
 
-
+#边
 class HostsEdge(BaseEdge):
     type: Literal[EdgeType.HOSTS] = EdgeType.HOSTS
 

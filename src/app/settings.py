@@ -49,7 +49,6 @@ class AppSettings(BaseModel):
     llm_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     llm_output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     enable_planner_rank_llm_advisor: bool = False
-    enable_graph_llm_planner_advisor: bool = False
     enable_planner_llm_advisor: bool = False
     enable_critic_llm_advisor: bool = False
     enable_supervisor_llm_advisor: bool = False
@@ -96,7 +95,7 @@ class AppSettings(BaseModel):
     def load_runtime_policy(self) -> RuntimePolicy:
         """Load the effective runtime policy from settings and optional external file."""
 
-        # 中文注释：
+
         # settings 是 runtime policy 的唯一装载入口，统一在这里做默认值合并、
         # 文件读取、schema 校验和来源元数据填充。
         return load_runtime_policy_payload(
@@ -227,19 +226,9 @@ class AppSettings(BaseModel):
             }
             values["enable_planner_llm_advisor"] = legacy_planner_enabled
             values.setdefault("enable_planner_rank_llm_advisor", legacy_planner_enabled)
-            values.setdefault("enable_graph_llm_planner_advisor", legacy_planner_enabled)
         if "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR" in environ:
             values["enable_planner_rank_llm_advisor"] = environ[
                 "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR"
-            ].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR" in environ:
-            values["enable_graph_llm_planner_advisor"] = environ[
-                "AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR"
             ].strip().lower() in {
                 "1",
                 "true",

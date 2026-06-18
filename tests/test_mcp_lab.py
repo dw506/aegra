@@ -429,6 +429,71 @@ def test_lab_pivot_route_probe_returns_route_hints(monkeypatch) -> None:
     assert payload["parsed"]["runtime_hints"]["route_id"] == "route-1"
 
 
+def test_lab_authorized_exploit_returns_post_access_observable_capability(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(
+        mcp_tools,
+        "_open_url",
+        lambda *args, **kwargs: {"status": 200, "headers": {}, "body_excerpt": "uid=1000(pivot-lab)\n"},
+    )
+
+    payload = call_lab_tool(
+        "lab_authorized_exploit_execute",
+        {
+            "exploit_profile_id": "struts2-s2-045-lab-exploit",
+            "target_url": "http://10.20.0.10:8080/",
+            "extra_params": {"safe_command": "id", "success_contains": "uid="},
+        },
+    )
+
+    assert payload["success"] is True
+    hints = payload["parsed"]["runtime_hints"]
+    assert hints["exploit_executed"] is True
+    assert hints["capability_kind"] == "post_access_observable"
+    assert hints["post_access_observable"] is True
+    assert hints["observable_zones"] == ["hints", "loot"]
+    assert "post_access_observe" in hints["next_tools"]
+
+    capability = payload["parsed"]["entities"][0]
+    assert capability["type"] == "ExploitCapability"
+    assert capability["post_access_observable"] is True
+    assert capability["safe_paths"] == ["/opt/aegra/hints/", "/opt/aegra/loot/"]
+
+
+def test_thinkphp_lab_exploit_can_read_dmz_loot_file(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    captured: dict[str, str] = {}
+
+    def fake_open_url(url: str, **kwargs: Any) -> dict[str, Any]:
+        captured["url"] = url
+        return {
+            "status": 200,
+            "headers": {},
+            "body_excerpt": "PIVOT_HOST=10.20.0.50\nPIVOT_USER=pivot\nPIVOT_PASSWORD=pivotpass123\n",
+        }
+
+    monkeypatch.setattr(mcp_tools, "_open_url", fake_open_url)
+
+    payload = call_lab_tool(
+        "lab_authorized_exploit_execute",
+        {
+            "exploit_profile_id": "thinkphp-5-0-23-lab-exploit",
+            "target_url": "http://10.20.0.11",
+            "extra_params": {
+                "safe_func": "system",
+                "safe_arg": "cat /opt/aegra/loot/pivot_access.env",
+                "success_contains": "PIVOT_HOST=",
+            },
+        },
+    )
+
+    assert payload["success"] is True
+    assert captured["url"] == "http://10.20.0.11/?s=captcha"
+    stdout = json.loads(payload["stdout"])
+    assert "PIVOT_HOST=10.20.0.50" in stdout["body_excerpt"]
+    assert payload["parsed"]["runtime_hints"]["post_access_observable"] is True
+
+
 def test_internal_service_discover_uses_configured_pivot_for_restricted_data_service(monkeypatch) -> None:
     monkeypatch.setenv("AEGRA_LAB_MODE", "1")
     monkeypatch.setenv("AEGRA_LAB_PIVOT_HOST", "pivot.example")
@@ -517,10 +582,10 @@ def test_pivoted_nmap_scan_emits_restricted_data_service_condition(monkeypatch) 
 
 def test_controlled_data_read_proof_returns_redacted_hash(monkeypatch) -> None:
     monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    monkeypatch.setenv("AEGRA_LAB_DB_USER", "lab")
-    monkeypatch.setenv("AEGRA_LAB_DB_PASSWORD", "labpass")
-    monkeypatch.setenv("AEGRA_LAB_DB_NAME", "labdb")
-    monkeypatch.setattr(mcp_tools, "_pivot_transport_available", lambda: True)
+    monkeypatch.delenv("AEGRA_LAB_DB_USER", raising=False)
+    monkeypatch.delenv("AEGRA_LAB_DB_PASSWORD", raising=False)
+    monkeypatch.delenv("AEGRA_LAB_DB_NAME", raising=False)
+    monkeypatch.setattr(mcp_tools, "_pivot_transport_available", lambda arguments=None: True)
     monkeypatch.setattr(
         mcp_tools,
         "_run_psql_query_via_configured_pivot",
@@ -529,7 +594,18 @@ def test_controlled_data_read_proof_returns_redacted_hash(monkeypatch) -> None:
 
     payload = call_lab_tool(
         "controlled_data_read_proof",
-        {"host": "10.0.2.50", "port": 5432, "route_id": "route-1", "timeout_seconds": 1},
+        {
+            "host": "10.0.2.50",
+            "port": 5432,
+            "route_id": "route-1",
+            "database": "labdb",
+            "username": "lab",
+            "password": "labpass",
+            "pivot_host": "10.0.1.50",
+            "pivot_username": "pivot",
+            "pivot_password": "pivotpass",
+            "timeout_seconds": 1,
+        },
     )
 
     assert payload["success"] is True
@@ -550,33 +626,6 @@ def test_optional_external_tool_returns_structured_unavailable(monkeypatch) -> N
     assert payload["success"] is False
     assert payload["exit_code"] == "tool_unavailable"
     assert payload["parsed"]["runtime_hints"]["missing_binary"] == "nuclei"
-
-
-def test_vuln_profile_match_uses_title_path_framework_and_banner_signals(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-
-    struts = call_lab_tool(
-        "vuln_profile_match",
-        {
-            "service": "http",
-            "target_url": "http://10.20.0.10:8080/",
-            "title": "Struts2 Showcase - Fileupload sample",
-            "path": "/struts2-showcase/fileupload/doUpload.action",
-            "banner": "Apache-Coyote",
-        },
-    )
-    thinkphp = call_lab_tool(
-        "vuln_profile_match",
-        {
-            "service": "http",
-            "target_url": "http://10.20.0.11/",
-            "framework": "ThinkPHP",
-            "body_excerpt": "ThinkPHP V5.0.23 application",
-        },
-    )
-
-    assert any(item["vulnerability_id"] == "struts2-s2-045" for item in json.loads(struts["stdout"]))
-    assert any(item["vulnerability_id"] == "thinkphp-5-rce" for item in json.loads(thinkphp["stdout"]))
 
 
 def _tool_names(catalog: dict[str, Any]) -> set[str]:

@@ -1,0 +1,17 @@
+{
+  "policy_version": "v1",
+  "adapter_policy": {
+    "pivot": {
+      "internal-bridge": {
+        "route_id": "route::pivot-ssh::internal",
+        "source_host": "10.20.0.0/24",
+        "via_host": "10.20.0.50",
+        "destination_cidr": "10.30.0.0/24",
+        "protocol": "tcp",
+        "transport": {
+          "adapter": "ssh"
+        }
+      }
+    }
+  }
+}

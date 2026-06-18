@@ -360,7 +360,7 @@ def _tool_trace(
     traces: dict[str, dict[str, Any]] = {}
     stage_by_round = _stage_context_by_round(ag_nodes)
     for node in ag_nodes:
-        if node["raw_type"] != "TOOL_CALL" and not _string(node["metadata"].get("tool_name")):
+        if not _string(node["metadata"].get("tool_name")):
             continue
         trace = _tool_trace_from_ag_node(node, stage_by_round.get(node["round"], {}))
         traces[trace["id"]] = trace
@@ -446,8 +446,8 @@ def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any], too
     result: list[dict[str, Any]] = []
     for round_no in rounds:
         nodes = [node for node in ag_nodes if node["round"] == round_no]
-        planner = next((node for node in nodes if node["type"] == "ReplanStep" or node["raw_type"] == "PLANNER_DECISION"), None)
-        stage_result = next((node for node in nodes if node["raw_type"] == "STAGE_RESULT"), None)
+        planner = next((node for node in nodes if node["type"] == "ReplanStep"), None)
+        stage_result = next((node for node in nodes if node["raw_type"] == "ATTACK_STEP"), None)
         selected_agents = sorted({node["agent"] for node in nodes if node["agent"] != "Other" and node["type"] != "ReplanStep"})
         round_traces = [trace for trace in tool_trace if trace["round"] == round_no]
         evidence_ids = sorted({evidence_id for node in nodes for evidence_id in node["evidence_ids"]} | {evidence_id for trace in round_traces for evidence_id in trace["evidence_ids"]})
@@ -559,7 +559,7 @@ def _tool_trace_from_audit_event(event: dict[str, Any], stage_context: dict[str,
 def _stage_context_by_round(ag_nodes: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     result: dict[int, dict[str, Any]] = {}
     for node in ag_nodes:
-        if node["raw_type"] != "STAGE_RESULT":
+        if node["raw_type"] != "ATTACK_STEP":
             continue
         result[node["round"]] = {
             "round": node["round"],
@@ -588,12 +588,11 @@ def _agent_trace_status(nodes: list[dict[str, Any]]) -> str:
 
 
 def _handoff_suggestion(nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
-    node = next((item for item in nodes if item["raw_type"] == "HANDOFF_SUGGESTION"), None)
-    return node
+    return None
 
 
 def _replan_recommendation(nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
-    node = next((item for item in nodes if item["type"] == "ReplanStep" or item["raw_type"] in {"PLANNER_DECISION", "STOP_DECISION"}), None)
+    node = next((item for item in nodes if item["type"] == "ReplanStep"), None)
     return node
 
 
@@ -945,23 +944,25 @@ def _ag_status(value: str | None) -> str:
 
 def _ag_type(raw_type: str | None, agent: str, props: dict[str, Any]) -> str:
     raw = raw_type or ""
-    if raw == "PLANNER_DECISION" or raw == "HANDOFF_SUGGESTION" or _string(props.get("decision")):
-        return "ReplanStep"
-    if raw == "BLOCKED_REASON":
-        return "FailureStep"
-    if raw == "GOAL_CHECK" or agent == "GoalAgent":
+    if raw == "GOAL_OUTCOME":
         return "GoalCheckStep"
-    if raw == "TOOL_CALL":
-        return _stage_to_ag_type(_string(props.get("stage_type")))
-    if agent == "ReconAgent":
-        return "ReconStep"
-    if agent == "VulnAnalysisAgent":
-        return "AnalysisStep"
-    if agent == "ExploitValidationAgent":
-        return "ValidationStep"
-    if agent == "AccessPivotAgent":
-        stage = _string(props.get("stage_type")) or ""
-        return "PivotStep" if "PIVOT" in stage else "AccessStep"
+    if raw == "ATTACK_STEP":
+        capability = _string(props.get("capability")).lower()
+        if capability == "recon":
+            return "ReconStep"
+        if capability == "analysis":
+            return "AnalysisStep"
+        if capability == "exploit":
+            return "ValidationStep"
+        if capability == "pivot":
+            return "PivotStep"
+        if capability == "lateral":
+            return "AccessStep"
+        if capability in {"goal", "evidence"}:
+            return "GoalCheckStep"
+        return _stage_to_ag_type(_string(props.get("stage_type"))) or "UnknownStep"
+    if _string(props.get("decision")):
+        return "ReplanStep"
     return _stage_to_ag_type(_string(props.get("stage_type"))) or "UnknownStep"
 
 
@@ -1115,16 +1116,10 @@ def _evidence_stub(evidence_id: str) -> dict[str, Any]:
 
 def _phase_for_ag(node: dict[str, Any]) -> str:
     raw = node["raw_type"]
-    if raw == "PLANNER_DECISION":
-        return "planner_decision"
-    if raw == "TOOL_CALL":
-        return "tool_call"
-    if raw == "STAGE_RESULT":
+    if raw == "ATTACK_STEP":
         return "result_apply"
-    if raw == "GOAL_CHECK":
+    if raw == "GOAL_OUTCOME":
         return "goal_check"
-    if raw == "BLOCKED_REASON":
-        return "error"
     if node["type"] == "ReplanStep":
         return "planner_decision"
     return "agent_execution"

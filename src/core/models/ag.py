@@ -7,19 +7,12 @@ from enum import Enum
 from typing import Any, Literal, TypeAlias
 
 from src.core.models.attack_process import (
-    AgentExecutionNode,
     AttackProcessEdge,
     AttackProcessEdgeType,
-    AttackCycleNode,
     AttackProcessNode,
     AttackProcessNodeType,
-    BlockedReasonNode,
-    GoalCheckNode,
-    HandoffSuggestionNode,
-    PlannerDecisionNode,
-    StageResultNode,
-    StopDecisionNode,
-    ToolCallNode,
+    AttackStepNode,
+    GoalOutcomeNode,
 )
 from src.core.models.graph_common import GraphRef, stable_node_id
 
@@ -343,17 +336,12 @@ def parse_ag_node(data: dict[str, Any]) -> AGNode:
         node_data = dict(data)
         node_data.pop("kind", None)
         process_node_map = {
-            AttackProcessNodeType.ATTACK_CYCLE.value: AttackCycleNode,
-            AttackProcessNodeType.PLANNER_DECISION.value: PlannerDecisionNode,
-            AttackProcessNodeType.AGENT_EXECUTION.value: AgentExecutionNode,
-            AttackProcessNodeType.TOOL_CALL.value: ToolCallNode,
-            AttackProcessNodeType.STAGE_RESULT.value: StageResultNode,
-            AttackProcessNodeType.HANDOFF_SUGGESTION.value: HandoffSuggestionNode,
-            AttackProcessNodeType.BLOCKED_REASON.value: BlockedReasonNode,
-            AttackProcessNodeType.GOAL_CHECK.value: GoalCheckNode,
-            AttackProcessNodeType.STOP_DECISION.value: StopDecisionNode,
+            AttackProcessNodeType.ATTACK_STEP.value: AttackStepNode,
+            AttackProcessNodeType.GOAL_OUTCOME.value: GoalOutcomeNode,
         }
-        model = process_node_map.get(node_type_key, AttackProcessNode)
+        model = process_node_map.get(node_type_key)
+        if model is None:
+            raise ValueError(f"retired AG process node_type: {node_type_key}")
         return model.model_validate(node_data)
 
     raise ValueError(f"unknown AG node kind or node_type: {kind or node_type_key}")

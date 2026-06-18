@@ -233,6 +233,7 @@ def _extract_exploit_execute(trace: dict[str, Any]) -> list[ExtractedFact]:
     target = str(args.get("target") or "")
     vuln_id = str(args.get("exploit_profile_id") or args.get("vuln_profile_id") or "")
     zone_ref = str(args.get("zone_ref") or "")
+    runtime_hints = parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}
     exploit_success = parsed.get("exploit_success") or parsed.get("success") or trace.get("success")
     if exploit_success:
         facts.append(
@@ -246,6 +247,10 @@ def _extract_exploit_execute(trace: dict[str, Any]) -> list[ExtractedFact]:
                     "status": "active",
                     "zone_ref": zone_ref,
                     "exploit_profile_id": vuln_id,
+                    "capability_kind": runtime_hints.get("capability_kind"),
+                    "post_access_observable": bool(runtime_hints.get("post_access_observable")),
+                    "observable_zones": list(runtime_hints.get("observable_zones") or []),
+                    "next_tools": list(runtime_hints.get("next_tools") or []),
                 },
                 confidence=0.9,
                 source_tool="lab_authorized_exploit_execute",

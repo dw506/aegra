@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 AssetKind = Literal["host", "domain", "cidr", "url", "service"]
 ScopeAction = Literal["allow", "deny"]
 
-
+#“授权目标资产”的数据结构
 class Asset(BaseModel):
     """One scoped target asset."""
 
@@ -81,18 +81,24 @@ class RateLimitPolicy(BaseModel):
 
 
 class RiskPolicy(BaseModel):
-    """Default operation risk policy."""
+    """Default operation risk policy.
+
+    Real-penetration posture (design §4.3): in the authorized scope the framework
+    blocks no attack action by hardcoded default. Every ``block_*`` flag is False
+    and no action requires approval; the blocking mechanism stays available for a
+    profile that explicitly opts back in (e.g. ``block_active_exploit=True``).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    max_risk_level: Literal["low", "medium", "high"] = "low"
-    block_active_exploit: bool = True
-    block_destructive: bool = True
-    block_command_execution: bool = True
-    block_file_write: bool = True
-    block_reverse_callback: bool = True
-    require_approval_for_active_exploit: bool = True
-    approval_required_tags: list[str] = Field(default_factory=lambda: ["active_exploit"])
+    max_risk_level: Literal["low", "medium", "high"] = "high"
+    block_active_exploit: bool = False
+    block_destructive: bool = False
+    block_command_execution: bool = False
+    block_file_write: bool = False
+    block_reverse_callback: bool = False
+    require_approval_for_active_exploit: bool = False
+    approval_required_tags: list[str] = Field(default_factory=list)
 
 
 class Engagement(BaseModel):

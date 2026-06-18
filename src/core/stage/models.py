@@ -8,7 +8,7 @@ from typing import Any, Literal, TypeAlias, get_args
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.models.ag import GraphRef, stable_node_id
-from src.core.models.events import utc_now
+from src.core.models.events import new_protocol_id, utc_now
 
 
 StageName: TypeAlias = Literal[
@@ -124,6 +124,68 @@ class ToolTrace(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+CapabilityName: TypeAlias = Literal["recon", "analysis", "exploit", "pivot", "lateral", "goal", "evidence"]
+
+CAPABILITY_NAMES: tuple[str, ...] = get_args(CapabilityName)
+
+
+class ExtractedFact(BaseModel):
+    """Deterministic fact extracted from a tool trace for KG writeback."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    fact_id: str = Field(min_length=1)
+    entity_type: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    properties: dict[str, Any] = Field(default_factory=dict)
+    source_tool: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class RoundDirective(BaseModel):
+    """Planner-to-executor contract for one capability-scoped execution round."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    operation_id: str = Field(min_length=1)
+    cycle_index: int = Field(ge=0)
+    capability: CapabilityName
+    objective: str = Field(min_length=1)
+    target_refs: list[GraphRef] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    tool_hints: list[dict[str, Any]] = Field(default_factory=list)
+    max_tools: int = Field(default=8, ge=1)
+    success_hint: str | None = None
+    required_context: dict[str, Any] = Field(default_factory=dict)
+    risk_level: str = "medium"
+    legacy_agent_name: str | None = None
+    legacy_stage_type: StageName | None = None
+
+    @field_validator("legacy_stage_type", mode="before")
+    @classmethod
+    def normalize_legacy_stage_type(cls, value: Any) -> StageName | None:
+        if value is None:
+            return None
+        return normalize_stage_name(value)
+
+
+class RoundResult(BaseModel):
+    """Executor-to-planner result for one bounded execution round."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    operation_id: str = Field(min_length=1)
+    cycle_index: int = Field(ge=0)
+    capability: str = Field(min_length=1)
+    tool_traces: list[ToolTrace] = Field(default_factory=list)
+    extracted_facts: list[ExtractedFact] = Field(default_factory=list)
+    raw_summary: str = Field(min_length=1)
+    log_ref: str | None = None
+    objective_met: bool = False
+    stage_result: "StageResult | None" = None
+
+
 class StageExecutionRequest(BaseModel):
     """PlannerDecision-derived request consumed by a StageAgent."""
 
@@ -144,6 +206,10 @@ class StageExecutionRequest(BaseModel):
     runtime_context: dict[str, Any] = Field(default_factory=dict)
     policy_context: dict[str, Any] = Field(default_factory=dict)
     mcp_tool_catalog: dict[str, Any] = Field(default_factory=dict)
+    # Execution-plane transport state (not surfaced to the LLM): active pivot
+    # routes/sessions so the tool boundary can resolve transport behind the call.
+    pivot_routes: list[dict[str, Any]] = Field(default_factory=list)
+    sessions: list[dict[str, Any]] = Field(default_factory=list)
     task_brief: str | None = None
     autonomy_level: str | None = None
     allowed_tool_names: list[str] | str | None = None
@@ -178,7 +244,7 @@ class StageResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    result_id: str = Field(default_factory=lambda: stable_node_id("stage-result", {"ts": utc_now().isoformat()}))
+    result_id: str = Field(default_factory=lambda: new_protocol_id("stage-result"))
     operation_id: str = Field(default="operation", min_length=1)
     stage_task_id: str = Field(min_length=1)
     stage_type: StageName
@@ -261,8 +327,13 @@ class StageResult(BaseModel):
 
 __all__ = [
     "CANONICAL_STAGE_BY_ALIAS",
+    "CAPABILITY_NAMES",
+    "CapabilityName",
+    "ExtractedFact",
     "GraphStateSnapshot",
     "GraphUpdateIntent",
+    "RoundDirective",
+    "RoundResult",
     "STAGE_NAMES",
     "StageExecutionRequest",
     "StageHandoffSuggestion",

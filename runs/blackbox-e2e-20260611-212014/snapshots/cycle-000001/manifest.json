@@ -1,9 +1,0 @@
-{
-  "cycle_index": 1,
-  "files": [
-    "kg.json",
-    "ag.json",
-    "runtime.json"
-  ],
-  "operation_id": "blackbox-e2e-20260611-212014"
-}

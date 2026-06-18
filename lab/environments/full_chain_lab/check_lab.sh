@@ -53,15 +53,24 @@ else
   check "internal_net isolated from mcp-tools" "ok"
 fi
 
-# 5. pivot-ssh can see both networks
+# 5. pivot-ssh can see both networks, including the internal database
 if check_tcp pivot-ssh 10.20.0.10 8080 2 && \
-   check_tcp pivot-ssh 10.30.0.11 8080 2; then
+   check_tcp pivot-ssh 10.30.0.11 8080 2 && \
+   check_tcp pivot-ssh 10.30.0.12 5432 2; then
   check "pivot-ssh bridges dmz and internal" "ok"
 else
   check "pivot-ssh bridges dmz and internal" "one or both networks unreachable from pivot-ssh"
 fi
 
-# 6. internal services not directly reachable from host
+# 6. internal postgres is initialized with the loot table
+if docker exec internal-db-mock pg_isready -U dbadmin -d corp >/dev/null 2>&1 && \
+   docker exec internal-db-mock psql -U dbadmin -d corp -Atc "select count(*) from loot_records" 2>/dev/null | grep -qx "1"; then
+  check "internal-db-mock loot table initialized" "ok"
+else
+  check "internal-db-mock loot table initialized" "not ready or loot row missing"
+fi
+
+# 7. internal services not directly reachable from host
 if curl -sf --max-time 2 http://10.30.0.11:8080 > /dev/null 2>&1; then
   check "internal services not host-accessible" "FAIL - accessible from host!"
 else

@@ -70,8 +70,8 @@ class GraphInitializer:
             goal_description=goal_description,
             goal_category=goal_category,
         )
-        # AG 起始为空：主链路只通过 AttackLogExtractor/ResultApplier 写入
-        # attack-process 节点，不再用 KG→AG 投影预置 State/Action 节点。
+        # AG 起始为空：主链路只通过 ResultApplier 写入结果层 ATTACK_STEP 节点
+        # （每轮一个），不再用 KG→AG 投影预置 State/Action 节点。
         ag = AttackGraph()
         ag.set_projection_metadata(source_kg_version=kg.version, projection_batch_id=None)
 

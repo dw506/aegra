@@ -11,13 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
+from src.core.execution.tool_gateway import ToolGateway
 from src.core.models.events import utc_now
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
 
 
 class LLMDrivenToolCall(BaseModel):
-    """One MCP tool call selected by an LLM-driven StageAgent."""
+    """One MCP tool call selected by the execution loop."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -28,32 +29,47 @@ class LLMDrivenToolCall(BaseModel):
 
 
 class LLMDrivenStageAgent:
-    """Autonomous bounded stage loop shared by the five execution agents."""
+    """Autonomous bounded execution loop used by the single ExecutionAgent."""
 
     stage_type: StageName
     agent_name: str
     role_prompt: str = ""
-    context_builder_name: str = "llm_driven_stage_context_builder"
+    context_builder_name: str = "execution_agent_context"
+    # The single ExecutionStageAgent serves every capability round, so it accepts
+    # any stage_type / agent_name on the request instead of binding to one stage.
+    accepts_any_request: bool = False
 
     def __init__(
         self,
         *,
+        stage_type: StageName | str | None = None,
+        agent_name: str | None = None,
+        role_prompt: str | None = None,
         llm_client: PackyLLMClient | None = None,
         mcp_client: MCPClient | None = None,
         operation_logger: TxtTraceLogger | None = None,
         default_timeout_seconds: int = 120,
         **_: Any,
     ) -> None:
+        resolved_stage = stage_type or getattr(self, "stage_type", None)
+        resolved_name = agent_name or getattr(self, "agent_name", None)
+        if resolved_stage is None or resolved_name is None:
+            raise ValueError("LLMDrivenStageAgent requires stage_type and agent_name")
+        self.stage_type = normalize_stage_name(resolved_stage)
+        self.agent_name = str(resolved_name)
+        if role_prompt is not None:
+            self.role_prompt = role_prompt
         self._llm_client = llm_client
         self._mcp_client = mcp_client or UnavailableMCPClient()
         self._operation_logger = operation_logger
         self._default_timeout_seconds = default_timeout_seconds
 
     def run(self, request: StageExecutionRequest) -> StageResult:
-        if normalize_stage_name(request.stage_type) != normalize_stage_name(self.stage_type):
-            raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type}")
-        if request.agent_name != self.agent_name:
-            raise ValueError(f"{self.agent_name} cannot execute request for {request.agent_name}")
+        if not self.accepts_any_request:
+            if normalize_stage_name(request.stage_type) != normalize_stage_name(self.stage_type):
+                raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type}")
+            if request.agent_name != self.agent_name:
+                raise ValueError(f"{self.agent_name} cannot execute request for {request.agent_name}")
 
         logger = self._logger(request.operation_id)
         logger.write_header(
@@ -267,12 +283,22 @@ class LLMDrivenStageAgent:
             self._log_tool_result(logger, trace)
             return trace
 
-        raw = self._mcp_client.call_tool(
-            server_id=call.server_id,
-            tool_name=call.tool_name,
-            arguments=dict(call.arguments),
-            timeout_seconds=call.timeout_seconds,
-        )
+        if isinstance(self._mcp_client, ToolGateway):
+            raw = self._mcp_client.call_tool(
+                server_id=call.server_id,
+                tool_name=call.tool_name,
+                arguments=dict(call.arguments),
+                timeout_seconds=call.timeout_seconds,
+                pivot_routes=list(request.pivot_routes),
+                sessions=list(request.sessions),
+            )
+        else:
+            raw = self._mcp_client.call_tool(
+                server_id=call.server_id,
+                tool_name=call.tool_name,
+                arguments=dict(call.arguments),
+                timeout_seconds=call.timeout_seconds,
+            )
         result = raw if isinstance(raw, MCPToolCallResult) else MCPToolCallResult.model_validate(raw)
         original_policy = self._original_policy_decision(call=call, policy_context=request.policy_context)
         parsed_output = dict(result.metadata.get("parsed_output") or {})
@@ -317,9 +343,12 @@ class LLMDrivenStageAgent:
 
     def _build_messages(self, request: StageExecutionRequest, memory: list[dict[str, Any]]) -> list[dict[str, str]]:
         system_prompt = (
-            "You are an LLM-driven StageAgent for Aegra, an authorized local lab automation framework. "
+            "You are Aegra's bounded ExecutionAgent for an authorized assessment. "
             "Return strict JSON only. Allowed actions are call_mcp_tool, finish, need_replan. "
-            "Call only tools present in mcp_tool_catalog. Prefer argv for run_command. "
+            "Call only tools present in mcp_tool_catalog (every tool listed there is in-scope and callable). "
+            "Prefer the tools in recommended_tool_names for this round's capability, but you MAY call any "
+            "other catalog tool when it advances the objective — the authorization boundary is scope policy, "
+            "not the tool menu. Prefer argv for run_command. "
             "Do not invent facts; base findings on KG/Runtime/evidence/tool results."
         )
         context = {

@@ -6,17 +6,17 @@ from enum import Enum
 
 
 class EntityStatus(str, Enum):
-    """Lifecycle status for nodes and edges."""
+    #表示节点或边的生命周期状态
 
-    OBSERVED = "observed"
-    INFERRED = "inferred"
-    VALIDATED = "validated"
-    STALE = "stale"
-    REVOKED = "revoked"
+    OBSERVED = "observed"                    #已观察到
+    INFERRED = "inferred"                    #推断中
+    VALIDATED = "validated"                    #已验证
+    STALE = "stale"                            #过时
+    REVOKED = "revoked"                        #已撤销
 
 
 class NodeType(str, Enum):
-    """Supported node types in the knowledge graph."""
+    # 定义节点类型
 
     HOST = "Host"
     SERVICE = "Service"
@@ -43,7 +43,7 @@ class NodeType(str, Enum):
 
 
 class EdgeType(str, Enum):
-    """Supported relationship types in the knowledge graph."""
+    #定义边类型
 
     HOSTS = "HOSTS"
     BELONGS_TO_ZONE = "BELONGS_TO_ZONE"
@@ -70,7 +70,7 @@ class EdgeType(str, Enum):
 
 
 class ChangeOperation(str, Enum):
-    """Mutation type recorded in graph change events."""
+    #表示图数据发生变化时的操作类型
 
     CREATE = "create"
     UPDATE = "update"

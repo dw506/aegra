@@ -5,7 +5,7 @@ The models here intentionally describe only the current execution context for
 one operation. They do not replace KG facts, AG planning structure or runtime
 topology.
 """
-
+#定义 operation 的生命周期状态
 from __future__ import annotations
 
 from datetime import datetime, timezone

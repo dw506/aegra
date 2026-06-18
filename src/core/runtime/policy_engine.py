@@ -135,7 +135,13 @@ class PolicyEngine:
             return PolicyDecision(decision="deny", gate="tool", reason="fingerprint tools disabled by policy")
         if "safe_probe" in lowered or "fingerprint" in lowered:
             return PolicyDecision(decision="allow", gate="tool", reason="safe probe tool allowed")
-        forbidden = {
+        # Real-penetration default: active exploit / command execution / file write /
+        # reverse callback / destructive actions are NOT blocked by hardcoded fiat.
+        # We translate the action markers into risk tags and delegate to the
+        # policy-driven risk gate, which defaults to allow (RiskPolicy.block_* are
+        # all False by default). A profile that explicitly re-enables a block_* flag
+        # still gets enforcement through the same path.
+        action_markers = {
             "command execution": "command_execution",
             "command_execution": "command_execution",
             "file write": "file_write",
@@ -145,10 +151,18 @@ class PolicyEngine:
             "active_exploit": "active_exploit",
             "destructive": "destructive",
         }
-        for marker, reason in forbidden.items():
-            if marker in lowered or bool(tool.get(reason)):
-                return PolicyDecision(decision="deny", gate="tool", reason=f"{reason} blocked by default")
-        return PolicyDecision(decision="allow", gate="tool", reason="tool policy allowed")
+        tags: set[str] = set()
+        for marker, tag in action_markers.items():
+            if marker in lowered or bool(tool.get(tag)):
+                tags.add(tag)
+        if not tags:
+            return PolicyDecision(decision="allow", gate="tool", reason="tool policy allowed")
+        return self._risk_decision(
+            policy=policy,
+            tags=tags,
+            metadata={},
+            risk_level=str(tool.get("risk_level") or "low"),
+        )
 
     def audit(self, runtime_state: RuntimeState, decision: PolicyDecision) -> None:
         append_audit_log(

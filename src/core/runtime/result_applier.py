@@ -30,14 +30,10 @@ from src.core.agents.state_writer import KGEntityPatch, KGRelationPatch, StateWr
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import (
-    AgentExecutionNode,
     AttackProcessEdge,
     AttackProcessEdgeType,
-    AttackProcessNode,
     AttackProcessNodeType,
-    PlannerDecisionNode,
-    StageResultNode,
-    ToolCallNode,
+    AttackStepNode,
     stable_node_id,
 )
 from src.core.models.events import (
@@ -53,7 +49,6 @@ from src.core.models.kg_enums import EdgeType, NodeType
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
 from src.core.planning.models import PlannerDecision
-from src.core.runtime.attack_log_models import AttackLogExtraction
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -76,7 +71,7 @@ from src.core.runtime.reachability import ReachabilityPropagator
 from src.core.runtime.risk_scoring import RiskScorer
 from src.core.runtime.session_manager import RuntimeSessionManager
 from src.core.stage.adapters import StageResultAdapter
-from src.core.stage.models import StageResult, ToolTrace
+from src.core.stage.models import StageResult
 from src.core.visualization.graph_event import VisualGraphDelta
 from src.core.visualization.graph_serializer import graph_payload_to_delta, runtime_to_delta
 
@@ -188,104 +183,8 @@ class PhaseTwoResultApplier:
 
         del kg_store
         apply_result = PhaseTwoApplyResult()
-        cycle_id = self._attack_cycle_id(decision.operation_id, decision.cycle_index)
-        decision_id = self._planner_decision_id(decision)
-        self._add_ag_node(
-            attack_graph,
-            AttackProcessNode(
-                id=cycle_id,
-                node_type=AttackProcessNodeType.ATTACK_CYCLE,
-                label=f"Attack cycle {decision.cycle_index}",
-                operation_id=decision.operation_id,
-                cycle_index=decision.cycle_index,
-                status="running",
-                summary=f"cycle {decision.cycle_index}",
-                properties={
-                    "operation_id": decision.operation_id,
-                    "node_role": "ATTACK_CYCLE",
-                    "display_name": f"Cycle {decision.cycle_index}",
-                    "cycle_index": decision.cycle_index,
-                    "step_order": 1,
-                    "status": "running",
-                },
-            ),
-        )
-        self._add_ag_node(
-            attack_graph,
-            PlannerDecisionNode(
-                id=decision_id,
-                label=f"Planner decision: {decision.decision}",
-                operation_id=decision.operation_id,
-                cycle_index=decision.cycle_index,
-                agent_name="planner_agent",
-                stage_type=decision.selected_stage,
-                status=decision.decision,
-                summary=decision.reasoning_summary or decision.objective,
-                refs=list(decision.target_refs),
-                properties={
-                    **decision.model_dump(mode="json"),
-                    "node_role": "PLANNER_DECISION",
-                    "display_name": f"规划决策：{decision.selected_stage or decision.decision}",
-                    "cycle_index": decision.cycle_index,
-                    "step_order": 2,
-                    "selected_stage": decision.selected_stage,
-                    "selected_agent": decision.selected_agent,
-                    "objective": decision.objective,
-                    "reasoning_summary": decision.reasoning_summary,
-                    "confidence": decision.confidence,
-                },
-            ),
-        )
-        self._add_ag_edge(
-            attack_graph,
-            AttackProcessEdge(
-                id=stable_node_id("edge", {"type": "planned", "source": cycle_id, "target": decision_id}),
-                edge_type=AttackProcessEdgeType.PLANNED,
-                source=cycle_id,
-                target=decision_id,
-                label="planned",
-            ),
-        )
-        if decision.decision == "dispatch_agent" and decision.selected_agent:
-            execution_id = self._agent_execution_id(
-                decision.operation_id,
-                decision.cycle_index,
-                decision.selected_agent,
-            )
-            self._add_ag_node(
-                attack_graph,
-                AgentExecutionNode(
-                    id=execution_id,
-                    label=f"{decision.selected_agent} execution",
-                    operation_id=decision.operation_id,
-                    cycle_index=decision.cycle_index,
-                    agent_name=decision.selected_agent,
-                    stage_type=decision.selected_stage,
-                    status="planned",
-                    summary=decision.objective,
-                    refs=list(decision.target_refs),
-                    properties={
-                        "planner_decision_id": decision_id,
-                        "node_role": "AGENT_EXECUTION",
-                        "display_name": f"执行 Agent：{decision.selected_agent}",
-                        "cycle_index": decision.cycle_index,
-                        "step_order": 3,
-                        "selected_stage": decision.selected_stage,
-                        "selected_agent": decision.selected_agent,
-                    },
-                ),
-            )
-            self._add_ag_edge(
-                attack_graph,
-                AttackProcessEdge(
-                    id=stable_node_id("edge", {"type": "dispatch", "source": decision_id, "target": execution_id}),
-                    edge_type=AttackProcessEdgeType.DISPATCHED_TO,
-                    source=decision_id,
-                    target=execution_id,
-                    label="dispatched to",
-                ),
-            )
-
+        # AG only records execution results. Planner decisions are runtime/audit
+        # metadata; the round's ATTACK_STEP is written from StageResult.
         state.execution.metadata["last_planner_decision"] = decision.model_dump(mode="json")
         self._append_audit_log(
             state,
@@ -317,6 +216,7 @@ class PhaseTwoResultApplier:
     ) -> PhaseTwoApplyResult:
         """Apply StageResult effects to KG, AG and Runtime."""
 
+        self._harvest_tool_runtime_facts(stage_result)
         canonical_result = StageResultAdapter.to_task_result(stage_result)
         if canonical_result.operation_id != state.operation_id:
             raise ValueError("stage_result.operation_id must match RuntimeState.operation_id")
@@ -337,19 +237,12 @@ class PhaseTwoResultApplier:
         self._record_direct_stage_findings(state=state, stage_result=stage_result)
 
         kg_ref = self._resolve_kg_ref(canonical_result)
-        state_writer_result, state_writer_input = self._run_state_writer(
-            result=canonical_result,
-            state=state,
-            kg_ref=kg_ref,
-        )
-        if state_writer_result is not None:
-            apply_result.state_writer_result = state_writer_result
-            apply_result.kg_state_deltas.extend(state_writer_result.output.state_deltas)
-            apply_result.logs.extend(state_writer_result.output.logs)
-
-        apply_result.kg_state_deltas.extend(
-            self._structured_stage_state_deltas(stage_result=stage_result, result=canonical_result)
-        )
+        state_writer_input = None
+        # v3: KG writes for stage execution converge on one machine-fact path:
+        # StageResultAdapter -> ToolTraceFactExtractor/explicit fact requests ->
+        # FactWriteRequest -> structural KG deltas. Observations, evidence and
+        # LLM-shaped structured payloads remain runtime/audit material and no
+        # longer mirror into KG through parallel writers.
         apply_result.kg_state_deltas.extend(self._fact_state_deltas(result=canonical_result))
         if apply_result.kg_state_deltas:
             apply_result.kg_state_deltas = self._order_kg_state_deltas(apply_result.kg_state_deltas)
@@ -386,7 +279,11 @@ class PhaseTwoResultApplier:
                 f"KG write produced 0 deltas: {apply_result.kg_write_diagnostics['reason']}"
             )
 
-        self._record_stage_result_in_ag(stage_result=stage_result, attack_graph=attack_graph)
+        self._record_stage_result_in_ag(
+            stage_result=stage_result,
+            attack_graph=attack_graph,
+            kg_node_refs=self._kg_refs_from_state_deltas(apply_result.kg_state_deltas),
+        )
         apply_result.ag_graph = attack_graph.to_dict()
         apply_result.visual_graph_deltas.extend(
             self._visual_graph_deltas(
@@ -399,44 +296,6 @@ class PhaseTwoResultApplier:
             )
         )
         apply_result.logs.append(f"applied StageResult {stage_result.result_id}")
-        return apply_result
-
-    def apply_log_extraction(
-        self,
-        extraction: AttackLogExtraction,
-        state: RuntimeState,
-        attack_graph: AttackGraph,
-    ) -> PhaseTwoApplyResult:
-        """Apply AttackLogExtractor AG node/edge output."""
-
-        apply_result = PhaseTwoApplyResult()
-        for payload in extraction.ag_nodes:
-            self._add_ag_node(attack_graph, payload)
-        for payload in extraction.ag_edges:
-            self._add_ag_edge(attack_graph, payload)
-        self._append_audit_log(
-            state,
-            {
-                "event_type": "attack_log_extraction_applied",
-                "operation_id": extraction.operation_id,
-                "cycle_index": extraction.cycle_index,
-                "ag_node_count": len(extraction.ag_nodes),
-                "ag_edge_count": len(extraction.ag_edges),
-                "summary": extraction.summary,
-                "evidence_refs": list(extraction.evidence_refs),
-            },
-        )
-        apply_result.ag_graph = attack_graph.to_dict()
-        apply_result.visual_graph_deltas.extend(
-            self._visual_graph_deltas(
-                operation_id=state.operation_id,
-                state=state,
-                kg_store=None,
-                ag_graph=apply_result.ag_graph,
-                include_kg=False,
-                include_runtime=True,
-            )
-        )
         return apply_result
 
     @staticmethod
@@ -459,27 +318,6 @@ class PhaseTwoResultApplier:
         return deltas
 
     @staticmethod
-    def _attack_cycle_id(operation_id: str, cycle_index: int) -> str:
-        return f"attack-cycle::{operation_id}::{cycle_index}"
-
-    @staticmethod
-    def _planner_decision_id(decision: PlannerDecision) -> str:
-        return stable_node_id(
-            "planner-decision",
-            {
-                "operation_id": decision.operation_id,
-                "cycle_index": decision.cycle_index,
-                "decision": decision.decision,
-                "selected_agent": decision.selected_agent,
-                "selected_stage": decision.selected_stage,
-            },
-        )
-
-    @staticmethod
-    def _agent_execution_id(operation_id: str, cycle_index: int | None, agent_name: str) -> str:
-        return f"agent-execution::{operation_id}::{cycle_index if cycle_index is not None else 'unknown'}::{agent_name}"
-
-    @staticmethod
     def _add_ag_node(attack_graph: AttackGraph, node: Any) -> None:
         from src.core.models.ag import parse_ag_node
 
@@ -499,127 +337,162 @@ class PhaseTwoResultApplier:
             return
         attack_graph.add_edge(parsed)
 
-    def _record_stage_result_in_ag(self, *, stage_result: StageResult, attack_graph: AttackGraph) -> None:
+    # v3 capability tag derived from the legacy stage_type. The 5-agent merge
+    # turns these into a single ExecutionAgent + capability tag; until then we
+    # map stage_type -> capability so the result tier already speaks capability.
+    _STAGE_TO_CAPABILITY = {
+        "RECON_STAGE": "recon",
+        "VULN_ANALYSIS_STAGE": "analysis",
+        "EXPLOIT_STAGE": "exploit",
+        "ACCESS_PIVOT_STAGE": "pivot",
+        "GOAL_STAGE": "goal",
+    }
+
+    def _record_stage_result_in_ag(
+        self,
+        *,
+        stage_result: StageResult,
+        attack_graph: AttackGraph,
+        kg_node_refs: list[str] | None = None,
+    ) -> None:
+        """Record one execution round as a single ATTACK_STEP result node.
+
+        v3 result-tier AG: one node per round (capability/target/status/summary +
+        kg_node_refs + log_ref pointer), linked to the previous round's step via
+        a NEXT edge (the timeline spine). Per-tool detail lives in the round log;
+        discovered facts live in KG. AG no longer stores AgentExecution /
+        StageResult / ToolCall / Handoff process nodes.
+        """
+
         cycle_index = self._stage_result_cycle_index(stage_result)
-        result_node_id = f"stage-result::{stage_result.result_id}"
-        execution_id = self._agent_execution_id(
-            stage_result.operation_id,
-            cycle_index,
-            stage_result.agent_name,
+        step_id = self._attack_step_id(stage_result.operation_id, cycle_index)
+        capability = self._STAGE_TO_CAPABILITY.get(str(stage_result.stage_type), "evidence")
+        resolved_kg_node_refs = self._merge_refs(
+            list(kg_node_refs or []),
+            self._stage_result_kg_node_refs(stage_result),
         )
+        summary = stage_result.summary or f"{capability} step"
+        log_ref = stage_result.runtime_hints.get("round_log_ref") or stage_result.writeback_hints.get("round_log_ref")
         self._add_ag_node(
             attack_graph,
-            AgentExecutionNode(
-                id=execution_id,
-                label=f"{stage_result.agent_name} execution",
+            AttackStepNode(
+                id=step_id,
+                label=f"{capability}: {summary[:80]}",
                 operation_id=stage_result.operation_id,
                 cycle_index=cycle_index,
                 agent_name=stage_result.agent_name,
                 stage_type=stage_result.stage_type,
                 status=stage_result.status,
-                summary=stage_result.summary,
-                properties={"stage_task_id": stage_result.stage_task_id},
-            ),
-        )
-        self._add_ag_node(
-            attack_graph,
-            StageResultNode(
-                id=result_node_id,
-                label=f"{stage_result.stage_type} result",
-                operation_id=stage_result.operation_id,
-                cycle_index=cycle_index,
-                agent_name=stage_result.agent_name,
-                stage_type=stage_result.stage_type,
-                status=stage_result.status,
-                summary=stage_result.summary,
+                summary=summary,
                 evidence_refs=list(stage_result.evidence_refs),
-                properties=self._stage_result_process_properties(stage_result),
-            ),
-        )
-        self._add_ag_edge(
-            attack_graph,
-            AttackProcessEdge(
-                id=stable_node_id("edge", {"type": "produced-result", "source": execution_id, "target": result_node_id}),
-                edge_type=AttackProcessEdgeType.PRODUCED_RESULT,
-                source=execution_id,
-                target=result_node_id,
-                label="produced result",
-            ),
-        )
-        for trace in stage_result.tool_trace:
-            node_id = stable_node_id(
-                "tool-call",
-                {
-                    "operation_id": stage_result.operation_id,
+                capability=capability,
+                kg_node_refs=resolved_kg_node_refs,
+                properties={
+                    "node_role": "ATTACK_STEP",
+                    "display_name": f"{capability} · cycle {cycle_index}",
+                    "capability": capability,
                     "cycle_index": cycle_index,
-                    "stage_result_id": stage_result.result_id,
+                    "status": stage_result.status,
+                    "result_id": stage_result.result_id,
                     "stage_task_id": stage_result.stage_task_id,
-                    "step": trace.step,
-                    "server_id": trace.server_id,
-                    "tool_name": trace.tool_name,
-                    "raw_output_ref": trace.raw_output_ref,
+                    "tool_trace_count": len(stage_result.tool_trace),
+                    "finding_count": len(stage_result.findings),
+                    "evidence_count": len(stage_result.evidence),
+                    "confidence": stage_result.confidence,
+                    "risk_level": stage_result.risk_level,
+                    "kg_node_refs": resolved_kg_node_refs,
+                    "log_ref": log_ref,
                 },
-            )
-            self._add_ag_node(
-                attack_graph,
-                ToolCallNode(
-                    id=node_id,
-                    label=trace.tool_name,
-                    operation_id=stage_result.operation_id,
-                    cycle_index=cycle_index,
-                    agent_name=stage_result.agent_name,
-                    stage_type=stage_result.stage_type,
-                    status="succeeded" if trace.success else "failed",
-                    summary=trace.summary or trace.input_summary or trace.tool_name,
-                    evidence_refs=list(trace.evidence_refs),
-                    properties=self._tool_trace_process_properties(trace),
-                ),
-            )
+            ),
+        )
+        previous_id = self._previous_attack_step_id(attack_graph, cycle_index=cycle_index, current_id=step_id)
+        if previous_id is not None:
             self._add_ag_edge(
                 attack_graph,
                 AttackProcessEdge(
-                    id=stable_node_id("edge", {"type": "called-tool", "source": execution_id, "target": node_id}),
-                    edge_type=AttackProcessEdgeType.CALLED_TOOL,
-                    source=execution_id,
-                    target=node_id,
-                    label="called tool",
+                    id=stable_node_id("edge", {"type": "next", "source": previous_id, "target": step_id}),
+                    edge_type=AttackProcessEdgeType.NEXT,
+                    source=previous_id,
+                    target=step_id,
+                    label="next",
                 ),
             )
-        if stage_result.handoff_suggestion is not None:
-            handoff_payload = stage_result.handoff_suggestion.model_dump(mode="json")
-            handoff_id = stable_node_id(
-                "handoff",
-                {
-                    "stage_result_id": stage_result.result_id,
-                    "suggested_agent": stage_result.handoff_suggestion.suggested_agent,
-                    "suggested_stage": stage_result.handoff_suggestion.suggested_stage,
-                },
-            )
-            self._add_ag_node(
-                attack_graph,
-                AttackProcessNode(
-                    id=handoff_id,
-                    node_type=AttackProcessNodeType.HANDOFF_SUGGESTION,
-                    label=f"Handoff to {stage_result.handoff_suggestion.suggested_agent}",
-                    operation_id=stage_result.operation_id,
-                    cycle_index=cycle_index,
-                    agent_name=stage_result.agent_name,
-                    stage_type=stage_result.stage_type,
-                    status="suggested",
-                    summary=stage_result.handoff_suggestion.reason,
-                    properties=handoff_payload,
-                ),
-            )
-            self._add_ag_edge(
-                attack_graph,
-                AttackProcessEdge(
-                    id=stable_node_id("edge", {"type": "suggested-handoff", "source": result_node_id, "target": handoff_id}),
-                    edge_type=AttackProcessEdgeType.SUGGESTED_HANDOFF,
-                    source=result_node_id,
-                    target=handoff_id,
-                    label="suggested handoff",
-                ),
-            )
+
+    @staticmethod
+    def _attack_step_id(operation_id: str, cycle_index: int) -> str:
+        return f"attack-step::{operation_id}::{cycle_index}"
+
+    @staticmethod
+    def _stage_result_kg_node_refs(stage_result: StageResult) -> list[str]:
+        """Best-effort KG node ids this round produced/used (for ATTACK_STEP links)."""
+
+        refs: list[str] = []
+        for entity in stage_result.discovered_entities:
+            if not isinstance(entity, dict):
+                continue
+            ref = entity.get("entity_id") or entity.get("id") or entity.get("ref_id")
+            if isinstance(ref, str) and ref.strip():
+                refs.append(ref.strip())
+        for ref in stage_result.evidence_refs:
+            if isinstance(ref, str) and ref.strip():
+                refs.append(ref.strip())
+        # stable order, de-duplicated
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for ref in refs:
+            if ref not in seen:
+                seen.add(ref)
+                ordered.append(ref)
+        return ordered
+
+    @staticmethod
+    def _kg_refs_from_state_deltas(state_deltas: list[dict[str, Any]]) -> list[str]:
+        refs: list[str] = []
+        for delta in state_deltas:
+            if not isinstance(delta, dict):
+                continue
+            target_ref = delta.get("target_ref")
+            if isinstance(target_ref, dict):
+                ref_id = target_ref.get("ref_id")
+                graph = str(target_ref.get("graph") or target_ref.get("graph_scope") or "").lower()
+                if ref_id and (not graph or graph == "kg"):
+                    refs.append(str(ref_id))
+                    continue
+            patch = delta.get("patch")
+            if isinstance(patch, dict):
+                ref_id = patch.get("entity_id") or patch.get("relation_id")
+                if ref_id:
+                    refs.append(str(ref_id))
+        return PhaseTwoResultApplier._merge_refs(refs)
+
+    @staticmethod
+    def _merge_refs(*groups: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for group in groups:
+            for ref in group:
+                text = str(ref).strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    ordered.append(text)
+        return ordered
+
+    @staticmethod
+    def _previous_attack_step_id(attack_graph: AttackGraph, *, cycle_index: int, current_id: str) -> str | None:
+        """Return the most recent prior ATTACK_STEP id to chain the timeline."""
+
+        best_cycle = -1
+        best_id: str | None = None
+        for node in attack_graph._nodes.values():
+            if getattr(node, "node_type", None) != AttackProcessNodeType.ATTACK_STEP:
+                continue
+            if node.id == current_id:
+                continue
+            node_cycle = node.cycle_index if node.cycle_index is not None else -1
+            if node_cycle < cycle_index and node_cycle > best_cycle:
+                best_cycle = node_cycle
+                best_id = node.id
+        return best_id
 
     @staticmethod
     def _stage_result_cycle_index(stage_result: StageResult) -> int:
@@ -628,48 +501,6 @@ class PhaseTwoResultApplier:
             return int(raw)
         except (TypeError, ValueError):
             return 0
-
-    @staticmethod
-    def _stage_result_process_properties(stage_result: StageResult) -> dict[str, Any]:
-        return {
-            "result_id": stage_result.result_id,
-            "stage_task_id": stage_result.stage_task_id,
-            "status": stage_result.status,
-            "observation_count": len(stage_result.observations),
-            "evidence_count": len(stage_result.evidence),
-            "finding_count": len(stage_result.findings),
-            "discovered_entity_count": len(stage_result.discovered_entities),
-            "discovered_relation_count": len(stage_result.discovered_relations),
-            "tool_trace_count": len(stage_result.tool_trace),
-            "confidence": stage_result.confidence,
-            "risk_level": stage_result.risk_level,
-            "policy_notes": list(stage_result.policy_notes),
-            "retry_recommendation": stage_result.retry_recommendation,
-            "replan_recommendation": stage_result.replan_recommendation,
-            "created_at": stage_result.created_at,
-        }
-
-    @staticmethod
-    def _tool_trace_process_properties(trace: ToolTrace) -> dict[str, Any]:
-        return {
-            "trace_id": trace.trace_id,
-            "step": trace.step,
-            "server_id": trace.server_id,
-            "tool_name": trace.tool_name,
-            "tool_category": trace.tool_category,
-            "input_summary": trace.input_summary[:240],
-            "raw_output_ref": trace.raw_output_ref,
-            "output_summary": (trace.summary or f"stdout {len(trace.stdout or '')} chars; stderr {len(trace.stderr or '')} chars")[:240],
-            "stdout_chars": len(trace.stdout or ""),
-            "stderr_chars": len(trace.stderr or ""),
-            "argument_keys": sorted(str(key) for key in trace.arguments.keys()),
-            "success": trace.success,
-            "exit_code": trace.exit_code,
-            "started_at": trace.started_at,
-            "ended_at": trace.ended_at,
-            "policy_check": dict(trace.policy_check),
-            "metadata": dict(trace.metadata),
-        }
 
     def _record_direct_stage_findings(self, *, state: RuntimeState, stage_result: StageResult) -> None:
         if not stage_result.findings:
@@ -686,6 +517,7 @@ class PhaseTwoResultApplier:
             payload = {
                 **dict(finding),
                 "finding_id": finding_id,
+                "evidence_refs": list(finding.get("evidence_refs") or stage_result.evidence_refs),
                 "operation_id": stage_result.operation_id,
                 "stage_result_id": stage_result.result_id,
                 "stage_task_id": stage_result.stage_task_id,
@@ -1339,8 +1171,120 @@ class PhaseTwoResultApplier:
             else:
                 bucket[index] = payload
 
+    @staticmethod
+    def _harvest_tool_runtime_facts(stage_result: StageResult) -> None:
+        """Lift runtime-affecting facts the lab tools already reported into the
+        StageResult's structured lists, so the StageResultAdapter materializes
+        real Session / PivotRoute / Credential runtime requests even when the LLM
+        finish payload omitted them.
+
+        The deterministic MCP tools emit these as ``parsed_output.runtime_hints``
+        on each tool call (``register_pivot_route`` / ``open_session`` /
+        ``credential_status`` …). The LLM is not relied upon to faithfully copy
+        them back into its finish arrays. Environment-agnostic: every value comes
+        from the tool's own output (route_id, destination, session_id …); no host,
+        IP, port or zone is hardcoded here. Idempotent: existing entries (keyed by
+        their id) are never duplicated.
+        """
+
+        traces = list(getattr(stage_result, "tool_trace", None) or [])
+        if not traces:
+            return
+
+        def _ids(items: list[Any], key: str) -> set[str]:
+            return {
+                str(item.get(key))
+                for item in items
+                if isinstance(item, dict) and item.get(key)
+            }
+
+        seen_routes = _ids(stage_result.pivot_routes, "route_id")
+        seen_sessions = _ids(stage_result.sessions, "session_id")
+        seen_creds = _ids(stage_result.credentials, "credential_id")
+
+        def _clean(mapping: dict[str, Any]) -> dict[str, Any]:
+            return {key: value for key, value in mapping.items() if value is not None}
+
+        for trace in traces:
+            if not getattr(trace, "success", False):
+                continue
+            parsed = getattr(trace, "parsed_output", None)
+            if not isinstance(parsed, dict):
+                continue
+            hints = parsed.get("runtime_hints")
+            if not isinstance(hints, dict) or hints.get("blocked_by"):
+                continue
+
+            # Pivot route — a tool reported it established/registered an authorized
+            # route. Auto-activate when the tool also reports it reachable so the
+            # success contract's runtime PivotRoute predicate can resolve it.
+            if hints.get("register_pivot_route"):
+                route_id = str(hints.get("route_id") or "").strip()
+                destination = hints.get("destination_host") or hints.get("destination_cidr")
+                if route_id and destination and route_id not in seen_routes:
+                    allowed_ports = hints.get("allowed_ports")
+                    stage_result.pivot_routes.append(
+                        _clean(
+                            {
+                                "route_id": route_id,
+                                "destination_host": hints.get("destination_host"),
+                                "destination_cidr": hints.get("destination_cidr"),
+                                "destination_zone": hints.get("destination_zone") or hints.get("zone_ref"),
+                                "zone_ref": hints.get("zone_ref"),
+                                "source_host": hints.get("source_host"),
+                                "via_host": hints.get("via_host"),
+                                "session_id": hints.get("session_id"),
+                                "protocol": hints.get("protocol"),
+                                "allowed_ports": allowed_ports if isinstance(allowed_ports, list) else None,
+                                "status": hints.get("status") or "registered",
+                                "active": bool(hints.get("reachable", True)),
+                            }
+                        )
+                    )
+                    seen_routes.add(route_id)
+
+            # Session — opened or probed reusable session handle.
+            session_id = str(hints.get("session_id") or "").strip()
+            if session_id and (hints.get("open_session") or hints.get("session_id")) and session_id not in seen_sessions:
+                stage_result.sessions.append(
+                    _clean(
+                        {
+                            "session_id": session_id,
+                            "bound_identity": hints.get("bound_identity"),
+                            "bound_target": hints.get("bound_target"),
+                            "lease_seconds": hints.get("lease_seconds"),
+                            "reuse_policy": hints.get("reuse_policy"),
+                        }
+                    )
+                )
+                seen_sessions.add(session_id)
+
+            # Credential — only lift validated/valid credentials.
+            cred_id = str(hints.get("credential_id") or "").strip()
+            if cred_id and hints.get("credential_status") == "valid" and cred_id not in seen_creds:
+                stage_result.credentials.append(
+                    _clean(
+                        {
+                            "credential_id": cred_id,
+                            "principal": hints.get("principal"),
+                            "status": "valid",
+                            "target_id": hints.get("bind_target") or hints.get("target_service_id"),
+                        }
+                    )
+                )
+                seen_creds.add(cred_id)
+
     def _apply_stage_runtime_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         for hints in self._runtime_hints(result):
+            hint_bucket = state.execution.metadata.setdefault("stage_runtime_hints", [])
+            if isinstance(hint_bucket, list):
+                hint_bucket.append(
+                    {
+                        **dict(hints),
+                        "source_task_id": result.task_id,
+                        "recorded_at": utc_now().isoformat(),
+                    }
+                )
             if "goal_satisfied" in hints:
                 goal_state = state.execution.metadata.setdefault("goal_state", {})
                 goal_satisfied = bool(hints.get("goal_satisfied"))
@@ -1928,288 +1872,142 @@ class PhaseTwoResultApplier:
             return []
         return [dict(item) for item in value if isinstance(item, dict)]
 
-    def _structured_stage_state_deltas(
-        self,
-        *,
+    @classmethod
+    def _goal_proof_patch(
+        cls,
         stage_result: StageResult,
-        result: AgentTaskResult,
-    ) -> list[dict[str, Any]]:
-        """Extract common black-box discovery shapes into KG state deltas.
+        *,
+        source_refs: list[dict[str, Any]],
+        provenance: dict[str, Any],
+    ) -> KGEntityPatch | None:
+        """Build a GoalProof entity patch from a stage's goal runtime hints.
 
-        This accepts schema-level facts only: hosts, services, findings and
-        evidence records that the stage/tool output already contains. It does
-        not infer target-specific topology, ports, credentials or vulnerabilities.
+        Returns ``None`` unless the stage explicitly asserts ``goal_satisfied`` and
+        supplies a non-empty ``goal_id``. A bare goal/reachability check (no goal_id)
+        deliberately does not mint a proof node.
         """
 
-        entities: dict[str, KGEntityPatch] = {}
-        relations: dict[str, KGRelationPatch] = {}
-        source_refs = self._structured_stage_source_refs(stage_result)
-        provenance = {
-            "worker_result_id": result.result_id,
+        hints = stage_result.runtime_hints if isinstance(stage_result.runtime_hints, dict) else {}
+        if not bool(hints.get("goal_satisfied")):
+            return None
+        goal_id = cls._coalesce_optional_string(hints.get("goal_id"))
+        if not goal_id:
+            return None
+        evidence_source = hints.get("goal_evidence_refs")
+        if not isinstance(evidence_source, list):
+            evidence_source = hints.get("evidence_refs")
+        evidence_refs = [str(ref) for ref in (evidence_source or []) if str(ref).strip()]
+        attributes: dict[str, Any] = {
+            "goal_id": goal_id,
+            "evidence_refs": evidence_refs,
+            "redacted_summary": cls._coalesce_optional_string(hints.get("goal_summary"))
+            or f"goal {goal_id} proof recorded",
             "source_task_id": stage_result.stage_task_id,
-            "source_agent": stage_result.agent_name,
-            "stage_result_id": stage_result.result_id,
         }
-
-        def add_entity(patch: KGEntityPatch) -> None:
-            entities[patch.entity_id] = patch
-
-        def add_relation(patch: KGRelationPatch) -> None:
-            relations[patch.relation_id] = patch
-
-        for payload in self._iter_stage_structured_payloads(stage_result):
-            for host in self._extract_host_records(payload):
-                host_id = self._host_entity_id(host)
-                if not host_id:
-                    continue
-                label = self._coalesce_string(host.get("label"), host.get("hostname"), host.get("address"), host_id)
-                add_entity(
-                    KGEntityPatch(
-                        entity_id=host_id,
-                        entity_type=NodeType.HOST.value,
-                        label=label,
-                        attributes={
-                            **self._whitelist_attributes(host, self._HOST_ATTR_KEYS),
-                            "address": self._coalesce_optional_string(host.get("address"), host.get("host"), host.get("ip")),
-                            "confidence": self._bounded_confidence(host.get("confidence"), stage_result.confidence),
-                            "source_task_id": stage_result.stage_task_id,
-                        },
-                        source_refs=source_refs,
-                        provenance=provenance,
-                    )
-                )
-
-            for service in self._extract_service_records(payload):
-                host_id = self._host_entity_id(service)
-                service_id = self._service_entity_id(service)
-                if not host_id or not service_id:
-                    continue
-                # 只在 host 尚未被建过时补一个骨架节点；若 host 循环已写入富属性，
-                # 不能用这个精简 patch 覆盖它（否则 host 的 hostname/属性会被抹掉）。
-                if host_id not in entities:
-                    add_entity(
-                        KGEntityPatch(
-                            entity_id=host_id,
-                            entity_type=NodeType.HOST.value,
-                            label=self._coalesce_string(service.get("host"), service.get("address"), service.get("ip"), host_id),
-                            attributes={
-                                "address": self._coalesce_optional_string(service.get("host"), service.get("address"), service.get("ip")),
-                                "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
-                                "source_task_id": stage_result.stage_task_id,
-                            },
-                            source_refs=source_refs,
-                            provenance=provenance,
-                        )
-                    )
-                protocol = self._coalesce_string(service.get("protocol"), "tcp").lower()
-                port = self._coerce_port(service.get("port"))
-                label = self._service_label(service, service_id)
-                add_entity(
-                    KGEntityPatch(
-                        entity_id=service_id,
-                        entity_type=NodeType.SERVICE.value,
-                        label=label,
-                        attributes={
-                            **self._whitelist_attributes(service, self._SERVICE_ATTR_KEYS),
-                            "service_name": self._coalesce_optional_string(
-                                service.get("service_name"),
-                                service.get("service"),
-                                service.get("name"),
-                                service.get("product"),
-                            ),
-                            "port": port,
-                            "protocol": protocol,
-                            "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
-                            "source_task_id": stage_result.stage_task_id,
-                        },
-                        source_refs=source_refs,
-                        provenance=provenance,
-                    )
-                )
-                add_relation(
-                    KGRelationPatch(
-                        relation_id=f"{EdgeType.HOSTS.value.lower()}::{host_id}::{service_id}",
-                        relation_type=EdgeType.HOSTS.value,
-                        source=host_id,
-                        target=service_id,
-                        label="hosts",
-                        attributes={
-                            "confidence": self._bounded_confidence(service.get("confidence"), stage_result.confidence),
-                            "source_task_id": stage_result.stage_task_id,
-                        },
-                        source_refs=source_refs,
-                        provenance=provenance,
-                    )
-                )
-
-            for evidence in self._extract_negative_evidence_records(payload, stage_result):
-                add_entity(
-                    KGEntityPatch(
-                        entity_id=str(evidence["id"]),
-                        entity_type=NodeType.EVIDENCE.value,
-                        label=str(evidence["summary"]),
-                        attributes={
-                            "summary": evidence["summary"],
-                            "evidence_kind": evidence["kind"],
-                            "content_ref": evidence.get("payload_ref"),
-                            "confidence": self._bounded_confidence(evidence.get("confidence"), stage_result.confidence),
-                            "source_task_id": stage_result.stage_task_id,
-                            "properties": dict(evidence.get("metadata") or {}),
-                        },
-                        source_refs=source_refs,
-                        provenance=provenance,
-                    )
-                )
-
-        for finding in stage_result.findings:
-            if not isinstance(finding, dict):
-                continue
-            finding_id = self._coalesce_string(
-                finding.get("finding_id"),
-                finding.get("id"),
-                f"finding::{stage_result.stage_task_id}::{len(entities)}",
-            )
-            summary = self._coalesce_string(finding.get("title"), finding.get("summary"), finding.get("description"), finding_id)
-            add_entity(
-                KGEntityPatch(
-                    entity_id=finding_id,
-                    entity_type=NodeType.FINDING.value,
-                    label=summary,
-                    attributes={
-                        **self._whitelist_attributes(finding, self._FINDING_ATTR_KEYS),
-                        "summary": summary,
-                        "finding_kind": self._coalesce_optional_string(finding.get("kind"), finding.get("type")),
-                        "severity": self._coalesce_optional_string(finding.get("severity")),
-                        "confidence": self._bounded_confidence(finding.get("confidence"), stage_result.confidence),
-                        "evidence_refs": list(finding.get("evidence_refs") or stage_result.evidence_refs),
-                        "source_task_id": stage_result.stage_task_id,
-                    },
-                    source_refs=source_refs,
-                    provenance=provenance,
-                )
-            )
-
-        # 降级保障：若整段 stage 没抽出任何结构化实体，但确有成功的工具调用，
-        # 至少把每次工具结果落成一个 Evidence 节点，避免「工具结果完全写不进图」。
-        if not entities:
-            for trace in stage_result.tool_trace:
-                if not getattr(trace, "success", False):
-                    continue
-                evidence_id = f"evidence::tool::{stage_result.stage_task_id}::{trace.trace_id}"
-                summary = self._coalesce_string(
-                    trace.summary, trace.input_summary, f"tool {trace.tool_name} result"
-                )
-                add_entity(
-                    KGEntityPatch(
-                        entity_id=evidence_id,
-                        entity_type=NodeType.EVIDENCE.value,
-                        label=summary,
-                        attributes={
-                            "summary": summary,
-                            "evidence_kind": "tool_result",
-                            "content_ref": trace.raw_output_ref,
-                            "confidence": self._bounded_confidence(None, stage_result.confidence),
-                            "source_task_id": stage_result.stage_task_id,
-                            "properties": {
-                                "tool_name": trace.tool_name,
-                                "tool_category": trace.tool_category,
-                                "step": trace.step,
-                            },
-                        },
-                        source_refs=source_refs,
-                        provenance=provenance,
-                    )
-                )
-
-        return self._state_writer.build_state_deltas(
-            entity_patches=list(entities.values()),
-            relation_patches=list(relations.values()),
-            require_known_endpoints=True,
+        proof_token = cls._coalesce_optional_string(hints.get("proof_token"))
+        if proof_token:
+            attributes["proof_token"] = proof_token
+        return KGEntityPatch(
+            entity_id=f"goal-proof::{goal_id}",
+            entity_type=NodeType.GOAL_PROOF.value,
+            label=f"goal proof: {goal_id}",
+            attributes=attributes,
+            source_refs=source_refs,
+            provenance=provenance,
         )
 
     # 白名单：只把这些 schema 级字段写进节点属性，不再把原始工具输出整包 spread 进图。
-    _HOST_ATTR_KEYS = frozenset(
-        {"address", "hostname", "label", "os", "os_family", "mac", "status", "network_zone", "state"}
-    )
     _SERVICE_ATTR_KEYS = frozenset(
         {"service_name", "service", "name", "product", "version", "port", "protocol", "banner", "cpe", "state", "tls"}
     )
     _FINDING_ATTR_KEYS = frozenset(
         {"title", "summary", "description", "kind", "type", "severity", "category", "cwe", "cve", "reference"}
     )
+    _TYPED_ENTITY_ATTR_KEYS = frozenset(
+        {
+            "summary", "description", "title", "name", "label", "kind", "category", "severity",
+            "cve", "cwe", "reference", "vulnerability_id", "candidate_id", "matched_profile_id",
+            "affected_products", "target_url", "exploit_profile_id", "capability",
+            "status", "principal", "username", "credential_id", "secret_ref", "target_id",
+            "target_service_id", "host", "address", "session_id", "route_id", "zone_ref", "marker_id",
+        }
+    )
+    # Typed KG node kinds the applier will mint from tool/agent-reported entities.
+    # Host/Service are handled by their dedicated extractors above; runtime-only
+    # objects (sessions/pivot routes) are materialized via runtime requests, though
+    # a mirror KG node here is harmless and aids contract predicates. The mapping is
+    # keyed by the entity's self-declared ``type`` — never by environment specifics.
+    _TYPED_ENTITY_NODE_TYPES = {
+        "vulnerabilitycandidate": NodeType.VULNERABILITY_CANDIDATE.value,
+        "vulnerability_candidate": NodeType.VULNERABILITY_CANDIDATE.value,
+        "vulnerability": NodeType.VULNERABILITY.value,
+        "vuln": NodeType.VULNERABILITY.value,
+        "exploitcapability": NodeType.EXPLOIT_CAPABILITY.value,
+        "exploit_capability": NodeType.EXPLOIT_CAPABILITY.value,
+        "capability": NodeType.EXPLOIT_CAPABILITY.value,
+        "credential": NodeType.CREDENTIAL.value,
+        "postaccessobservation": NodeType.POST_ACCESS_OBSERVATION.value,
+        "post_access_observation": NodeType.POST_ACCESS_OBSERVATION.value,
+        "labhint": NodeType.LAB_HINT.value,
+        "lab_hint": NodeType.LAB_HINT.value,
+        "labflag": NodeType.LAB_FLAG.value,
+        "lab_flag": NodeType.LAB_FLAG.value,
+        "pivotroute": NodeType.PIVOT_ROUTE.value,
+        "pivot_route": NodeType.PIVOT_ROUTE.value,
+    }
+
+    @classmethod
+    def _extract_typed_entity_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Map tool/agent-reported typed entities to KG node patches.
+
+        Reads ``entities`` / ``discovered_entities`` lists from a structured
+        payload and, for any entity whose self-declared ``type`` matches a known
+        typed KG node kind, returns a normalized record. This lets vulnerability,
+        exploit-capability and post-access shapes (which the tools already emit)
+        become first-class typed nodes instead of being flattened into generic
+        Findings. Environment-agnostic: the node kind comes from the entity's own
+        ``type``; no host/IP/vuln name is hardcoded.
+        """
+
+        records: list[dict[str, Any]] = []
+        for key in ("entities", "discovered_entities"):
+            for item in cls._as_list(payload.get(key)):
+                if not isinstance(item, dict):
+                    continue
+                raw_type = str(item.get("type") or item.get("entity_type") or item.get("kind") or "").strip().lower()
+                node_type = cls._TYPED_ENTITY_NODE_TYPES.get(raw_type.replace(" ", ""))
+                if node_type is None:
+                    continue
+                entity_id = cls._coalesce_optional_string(
+                    item.get("id"),
+                    item.get("entity_id"),
+                    item.get("candidate_id"),
+                    item.get("vulnerability_id"),
+                    item.get("credential_id"),
+                    item.get("route_id"),
+                    item.get("session_id"),
+                )
+                if not entity_id:
+                    entity_id = f"{node_type.lower()}::{cls._stable_hash(item)}"
+                label = cls._coalesce_string(
+                    item.get("label"), item.get("name"), item.get("title"), item.get("summary"), entity_id
+                )
+                records.append({"id": entity_id, "entity_type": node_type, "label": label, "record": item})
+        return cls._dedupe_dicts(records)
+
+    @staticmethod
+    def _stable_hash(record: dict[str, Any]) -> str:
+        import hashlib
+        import json as _json
+
+        payload = _json.dumps(record, sort_keys=True, default=str)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
     @staticmethod
     def _whitelist_attributes(record: dict[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
         """Keep only whitelisted schema-level keys from a raw tool/finding record."""
 
         return {key: value for key, value in record.items() if key in allowed and value is not None}
-
-    @staticmethod
-    def _structured_stage_source_refs(stage_result: StageResult) -> list[dict[str, Any]]:
-        return [
-            GraphRef(graph=GraphScope.RUNTIME, ref_id=stage_result.stage_task_id, ref_type="stage_task").model_dump(mode="json"),
-            GraphRef(graph=GraphScope.RUNTIME, ref_id=stage_result.result_id, ref_type="stage_result").model_dump(mode="json"),
-        ]
-
-    @classmethod
-    def _iter_stage_structured_payloads(cls, stage_result: StageResult) -> list[dict[str, Any]]:
-        payloads: list[dict[str, Any]] = []
-        for collection in (stage_result.observations, stage_result.evidence, stage_result.findings):
-            for item in collection:
-                if not isinstance(item, dict):
-                    continue
-                payloads.append(dict(item))
-                for key in ("payload", "metadata", "properties", "parsed_output", "parsed"):
-                    nested = item.get(key)
-                    if isinstance(nested, dict):
-                        payloads.append(dict(nested))
-        for trace in stage_result.tool_trace:
-            if trace.parsed_output:
-                payloads.append(dict(trace.parsed_output))
-            if isinstance(trace.metadata, dict):
-                # parsed_output 为空时的降级路径：从 metadata 里回退读结构化载荷，
-                # 覆盖 parsed/parsed_output/result/content/output 几种常见落点。
-                for key in ("parsed", "parsed_output", "result", "content", "output"):
-                    nested = trace.metadata.get(key)
-                    if isinstance(nested, dict):
-                        payloads.append(dict(nested))
-                if any(k in trace.metadata for k in ("host", "address", "ip", "hostname", "port", "ports", "service", "service_name", "hosts", "services")):
-                    payloads.append(dict(trace.metadata))
-        return cls._dedupe_dicts(payloads)
-
-    @classmethod
-    def _extract_host_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
-        for key in ("hosts_up", "live_hosts", "reachable_hosts", "discovered_hosts", "hosts"):
-            for item in cls._as_list(payload.get(key)):
-                record = cls._host_record(item)
-                if record:
-                    records.append(record)
-        record = cls._host_record(payload)
-        if record and any(key in payload for key in ("host", "address", "ip", "hostname")):
-            records.append(record)
-        return cls._dedupe_dicts(records)
-
-    @classmethod
-    def _extract_service_records(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
-        for key in (
-            "service_discovery",
-            "open_services",
-            "services",
-            "discovered_services",
-            "known_services",
-            "service_fingerprints",
-        ):
-            for item in cls._as_list(payload.get(key)):
-                records.extend(cls._service_records(item))
-        analysis = payload.get("analysis")
-        if isinstance(analysis, dict):
-            for item in cls._as_list(analysis.get("service_fingerprints")):
-                records.extend(cls._service_records(item))
-        if any(key in payload for key in ("port", "ports", "service", "service_name")):
-            records.extend(cls._service_records(payload))
-        return cls._dedupe_dicts(records)
 
     @classmethod
     def _extract_negative_evidence_records(cls, payload: dict[str, Any], stage_result: StageResult) -> list[dict[str, Any]]:
@@ -2320,28 +2118,6 @@ class PhaseTwoResultApplier:
         if isinstance(value, list):
             return list(value)
         return [value]
-
-    @classmethod
-    def _host_entity_id(cls, record: dict[str, Any]) -> str | None:
-        explicit = cls._coalesce_optional_string(record.get("host_id"), record.get("entity_id"), record.get("id"))
-        if explicit and str(record.get("type") or record.get("entity_type") or "Host").lower() == "host":
-            return explicit
-        value = cls._coalesce_optional_string(record.get("host"), record.get("address"), record.get("ip"), record.get("hostname"))
-        if not value:
-            return None
-        return value if value.startswith("host::") else f"host::{value}"
-
-    @classmethod
-    def _service_entity_id(cls, record: dict[str, Any]) -> str | None:
-        explicit = cls._coalesce_optional_string(record.get("service_id"), record.get("entity_id"), record.get("id"))
-        if explicit and str(record.get("type") or record.get("entity_type") or "Service").lower() == "service":
-            return explicit
-        host = cls._coalesce_optional_string(record.get("host"), record.get("address"), record.get("ip"), record.get("hostname"))
-        port = cls._coerce_port(record.get("port"))
-        if not host or not port:
-            return None
-        protocol = cls._coalesce_string(record.get("protocol"), "tcp").lower()
-        return f"service::{host}:{port}/{protocol}"
 
     @classmethod
     def _service_label(cls, record: dict[str, Any], fallback: str) -> str:

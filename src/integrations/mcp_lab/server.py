@@ -8,7 +8,7 @@ from typing import Any, TextIO
 
 from src.integrations.mcp_lab.tools import call_lab_tool, lab_tool_specs
 
-
+#基于 stdin / stdout 的 JSON-RPC MCP server
 SERVER_INFO = {"name": "aegra-mcp-lab", "version": "0.1.0"}
 SERVER_CAPABILITIES = {"tools": {"listChanged": False}}
 

@@ -50,14 +50,60 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         "ag",
         "runtime",
     }
+    # v3 result-tier AG: one ATTACK_STEP per round; legacy process nodes are gone.
     process_types = {node.node_type for node in ag.find_process_nodes()}
-    assert AttackProcessNodeType.PLANNER_DECISION in process_types
-    assert AttackProcessNodeType.STAGE_RESULT in process_types
-    assert AttackProcessNodeType.TOOL_CALL in process_types
+    assert process_types == {AttackProcessNodeType.ATTACK_STEP}
     assert kg.get_node("host-1") is not None
     assert kg.get_node("svc-1") is not None
     assert kg.get_node("evidence-1") is not None
     assert "task_graph" not in state.execution.metadata
+
+
+def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None:
+    """A stage asserting goal_satisfied with an explicit goal_id mints a typed
+    GoalProof KG node (so success-contract oracle predicates can resolve it).
+    A bare goal_satisfied without goal_id must NOT mint a proof node."""
+
+    state = RuntimeState(operation_id="op-proof", execution=OperationRuntime(operation_id="op-proof"))
+    kg = KnowledgeGraph()
+    ag = AttackGraph()
+    applier = PhaseTwoResultApplier()
+
+    # No goal_id -> no GoalProof node.
+    bare = StageResult(
+        operation_id="op-proof",
+        stage_task_id="stage-op-proof-1-goal_agent",
+        stage_type=StageType.GOAL_STAGE,
+        agent_name="goal_agent",
+        status="succeeded",
+        summary="reachability goal check passed",
+        runtime_hints={"goal_satisfied": True, "goal_evidence_refs": ["evidence::reach"]},
+    )
+    applier.apply_stage_result(bare, state, kg, ag)
+    assert "goal-proof::final_internal_goal" not in {node.id for node in kg.list_nodes()}
+
+    # goal_satisfied + explicit goal_id -> typed GoalProof node carrying goal_id.
+    proof = StageResult(
+        operation_id="op-proof",
+        stage_task_id="stage-op-proof-2-access_pivot_agent",
+        stage_type=StageType.ACCESS_PIVOT_STAGE,
+        agent_name="access_pivot_agent",
+        status="succeeded",
+        summary="controlled internal DB read proof recorded",
+        runtime_hints={
+            "goal_satisfied": True,
+            "goal_id": "final_internal_goal",
+            "goal_evidence_refs": ["evidence::db-proof"],
+            "proof_token": "proof:final_internal_goal:abcdef0123456789",
+        },
+    )
+    applier.apply_stage_result(proof, state, kg, ag)
+    node = kg.get_node("goal-proof::final_internal_goal")
+    assert node is not None
+    payload = node.model_dump(mode="json")
+    assert payload["type"] == "GoalProof"
+    assert payload["goal_id"] == "final_internal_goal"
+    assert "evidence::db-proof" in payload["evidence_refs"]
 
 
 def test_result_applier_extracts_generic_stage_recon_shapes_to_kg() -> None:

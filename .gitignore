@@ -16,6 +16,20 @@ tmp-orchestrator-*/
 !.env.example
 *.log
 
+# Ad-hoc / manual run artifacts under runs/ (committed test fixtures — op-*.run.txt,
+# blackbox-success-contract-e2e, blackbox-writegraph-e2e, blackbox-e2e-20260609-* —
+# are tracked explicitly and unaffected by these prefixes).
+runs/fullchain-*
+runs/claude-start/
+runs/real-chain-*
+runs/real-db-chain-*
+runs/full-lab-e2e-*
+runs/full-lab-run-*
+runs/lab-pentest-*
+runs/full-chain-blackbox-*
+runs/blackbox-e2e-fix*
+runs/latest-*.txt
+
 # Lab private secrets (never commit real secrets)
 lab/environments/*/private/.env
 lab/environments/*/private/*.env

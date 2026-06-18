@@ -14,6 +14,7 @@ RUN apt-get update \
         iputils-ping \
         nmap \
         openssh-client \
+        postgresql-client \
         proxychains4 \
         sshpass \
     && rm -rf /var/lib/apt/lists/*

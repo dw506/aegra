@@ -33,12 +33,22 @@ Check "dmz_net reachable from mcp-tools" (Test-ContainerTcp "mcp-tools" "10.20.0
 # 4. internal_net NOT reachable from mcp-tools
 Check "internal_net isolated from mcp-tools" (-not (Test-ContainerTcp "mcp-tools" "10.30.0.11" 8080 2))
 
-# 5. pivot-ssh sees both networks
+# 5. pivot-ssh sees both networks, including the internal database
 $dmzOk = Test-ContainerTcp "pivot-ssh" "10.20.0.10" 8080 2
 $intOk = Test-ContainerTcp "pivot-ssh" "10.30.0.11" 8080 2
-Check "pivot-ssh bridges dmz and internal" ($dmzOk -and $intOk)
+$dbReachableFromPivot = Test-ContainerTcp "pivot-ssh" "10.30.0.12" 5432 2
+Check "pivot-ssh bridges dmz and internal" ($dmzOk -and $intOk -and $dbReachableFromPivot)
 
-# 6. internal services not reachable from host
+# 6. internal postgres is initialized with the loot table
+$pgReady = $false
+docker exec internal-db-mock pg_isready -U dbadmin -d corp >$null 2>$null
+if ($LASTEXITCODE -eq 0) {
+    $lootCount = docker exec internal-db-mock psql -U dbadmin -d corp -Atc "select count(*) from loot_records" 2>$null
+    $pgReady = ($LASTEXITCODE -eq 0 -and (($lootCount | Select-Object -First 1) -eq "1"))
+}
+Check "internal-db-mock loot table initialized" $pgReady
+
+# 7. internal services not reachable from host
 try {
     $r = Invoke-WebRequest -Uri "http://10.30.0.11:8080" -TimeoutSec 2 -ErrorAction Stop
     Check "internal services not host-accessible" $false

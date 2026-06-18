@@ -9,22 +9,20 @@ from src.core.execution.adapters.proxy_shell_adapter import ProxyShellAdapter
 from src.core.execution.adapters.tunnel_adapter import TunnelAdapter
 from src.core.execution.adapter_resolver import AdapterPolicyConfig, AdapterResolution, ToolAdapterResolver, ToolBinding
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient, MCPRuntimeConfig, MCPServerConfig
-from src.core.execution.executor import ExecutionExecutor, LegacyToolAdapter, ToolExecutor
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.execution.pivot_context import PivotExecutionContext, PivotExecutionContextResolver
+from src.core.execution.tool_gateway import ToolGateway
 from src.core.execution.tool_plan import ToolPlan, build_tool_plan
 from src.core.execution.tool_policy import ToolPolicy, ToolPolicyDecision
 from src.core.execution.tool_result import ToolExecutionResult
 
 __all__ = [
-    "ExecutionExecutor",
     "AdapterPolicyConfig",
     "AdapterResolution",
     "ConfiguredMCPClient",
     "ExecutionAdapter",
     "HttpRequestExecutionAdapter",
     "LocalShellAdapter",
-    "LegacyToolAdapter",
     "MCPClient",
     "MCPExecutionAdapter",
     "MCPRuntimeConfig",
@@ -35,8 +33,8 @@ __all__ = [
     "PivotExecutionContextResolver",
     "ProxyShellAdapter",
     "TunnelAdapter",
-    "ToolExecutor",
     "ToolExecutionResult",
+    "ToolGateway",
     "ToolAdapterResolver",
     "ToolBinding",
     "ToolPlan",

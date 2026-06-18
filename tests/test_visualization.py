@@ -7,7 +7,7 @@ from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
-from src.core.models.attack_process import AgentExecutionNode
+from src.core.models.attack_process import AttackStepNode
 from src.core.models.kg import Host
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.visualization.graph_event import GraphOperation, VisualGraphChange, VisualGraphDelta
@@ -38,10 +38,11 @@ def test_visual_snapshot_serializes_kg_ag_and_runtime_by_default() -> None:
 
     ag = AttackGraph()
     ag.add_node(
-        AgentExecutionNode(
+        AttackStepNode(
             id="state-1",
             label="Host known",
             operation_id="op-vis",
+            capability="recon",
         )
     )
 
@@ -55,7 +56,7 @@ def test_visual_snapshot_serializes_kg_ag_and_runtime_by_default() -> None:
 
     assert snapshot.type == "graph_snapshot"
     assert snapshot.graphs["kg"].nodes[0].id == "host-1"
-    assert snapshot.graphs["ag"].nodes[0].type == "AGENT_EXECUTION"
+    assert snapshot.graphs["ag"].nodes[0].type == "ATTACK_STEP"
     assert snapshot.graphs["runtime"].nodes[0].type == "OperationRuntime"
     assert "tg" not in snapshot.graphs
 
@@ -82,14 +83,15 @@ def test_unified_visualization_adapts_generic_fields_without_environment_assumpt
     runtime = RuntimeState(operation_id="op-unified", execution=OperationRuntime(operation_id="op-unified"))
     ag = AttackGraph()
     ag.add_node(
-        AgentExecutionNode(
+        AttackStepNode(
             id="state-alpha",
             label="Recon completed",
             operation_id="op-unified",
-            agent_name="ReconAgent",
+            agent_name="execution_agent",
             cycle_index=1,
             status="success",
             summary="Host was discovered",
+            capability="recon",
             properties={"target": "host-alpha"},
         )
     )
@@ -145,27 +147,17 @@ def test_unified_visualization_contract_includes_current_dashboard_interfaces() 
     ag_payload = {
         "nodes": [
             {
-                "id": "planner-1",
-                "type": "PLANNER_DECISION",
+                "id": "step-1",
+                "type": "ATTACK_STEP",
                 "properties": {
                     "cycle_index": 1,
-                    "selected_agent": "ReconAgent",
-                    "selected_stage": "RECON_STAGE",
-                    "reasoning_summary": "No service facts existed yet.",
+                    "agent_name": "execution_agent",
+                    "stage_type": "RECON_STAGE",
+                    "capability": "recon",
                     "objective": "Discover exposed services.",
                     "status": "success",
-                },
-            },
-            {
-                "id": "tool-1",
-                "type": "TOOL_CALL",
-                "properties": {
-                    "cycle_index": 1,
-                    "agent_name": "ReconAgent",
-                    "stage_type": "RECON_STAGE",
                     "tool_name": "safe_probe",
                     "target": "host-alpha",
-                    "status": "success",
                     "result_summary": "HTTP service discovered.",
                     "evidence_ids": ["evidence-1"],
                     "finding_ids": ["finding-1"],
@@ -197,8 +189,6 @@ def test_unified_visualization_contract_includes_current_dashboard_interfaces() 
     assert payload["overview"]["last_cycle_summary"]["cycle_index"] == 1
     assert payload["risk_tags"] == ["http_service_detected", "weak_config_candidate"]
     assert payload["kg_groups"]["assets"][0]["id"] == "host-alpha"
-    planner_cycle = next(item for item in payload["planner_reasoning"] if item["cycle_index"] == 1)
-    assert planner_cycle["selected_agent"] == "ReconAgent"
     assert payload["timeline"][0]["result_summary"]
 
 

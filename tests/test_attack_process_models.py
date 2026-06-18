@@ -12,59 +12,61 @@ from src.core.models.attack_process import (
     AttackProcessEdgeType,
     AttackProcessNode,
     AttackProcessNodeType,
+    AttackStepNode,
     GraphRef,
     stable_node_id,
 )
 
 
-def test_attack_process_node_records_process_event() -> None:
+def test_attack_process_node_records_attack_step_result() -> None:
     node_id = stable_node_id(
         "ap-node",
         {
             "operation_id": "op-1",
             "cycle_index": 1,
-            "node_type": AttackProcessNodeType.PLANNER_DECISION.value,
+            "node_type": AttackProcessNodeType.ATTACK_STEP.value,
         },
     )
 
-    node = AttackProcessNode(
+    node = AttackStepNode(
         id=node_id,
-        node_type=AttackProcessNodeType.PLANNER_DECISION,
-        label="Planner selected recon agent",
+        label="Recon completed",
         operation_id="op-1",
         cycle_index=1,
-        agent_name="PlannerAgent",
-        stage_type="recon",
-        status="selected",
-        summary="Planner selected the next authorized stage.",
+        agent_name="execution_agent",
+        stage_type="RECON_STAGE",
+        status="succeeded",
+        summary="Recon found an exposed service.",
         refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
         evidence_refs=["evidence-1"],
-        properties={"selected_agent": "ReconAgent"},
+        capability="recon",
+        kg_node_refs=["host-1"],
+        properties={"log_ref": "round-1.log"},
     )
 
     assert node.id.startswith("ap-node::")
-    assert node.node_type == AttackProcessNodeType.PLANNER_DECISION
+    assert node.node_type == AttackProcessNodeType.ATTACK_STEP
+    assert node.capability == "recon"
     assert node.refs[0].key() == "kg:host-1"
     assert node.evidence_refs == ["evidence-1"]
-    assert node.properties["selected_agent"] == "ReconAgent"
+    assert node.properties["log_ref"] == "round-1.log"
     assert node.created_at.tzinfo is not None
 
 
-def test_attack_process_edge_connects_process_nodes() -> None:
+def test_attack_process_edge_connects_attack_steps() -> None:
     edge = AttackProcessEdge(
         id="ap-edge-1",
-        edge_type=AttackProcessEdgeType.DISPATCHED_TO,
-        source="planner-decision-1",
-        target="agent-execution-1",
-        label="dispatched to",
-        properties={"selected_agent": "ReconAgent"},
+        edge_type=AttackProcessEdgeType.NEXT,
+        source="attack-step-1",
+        target="attack-step-2",
+        label="next",
     )
 
     serialized = edge.model_dump(mode="json")
 
-    assert edge.edge_type == AttackProcessEdgeType.DISPATCHED_TO
-    assert serialized["edge_type"] == "DISPATCHED_TO"
-    assert serialized["source"] == "planner-decision-1"
+    assert edge.edge_type == AttackProcessEdgeType.NEXT
+    assert serialized["edge_type"] == "NEXT"
+    assert serialized["source"] == "attack-step-1"
     assert edge.created_at.tzinfo is not None
 
 
@@ -72,8 +74,8 @@ def test_attack_process_models_forbid_extra_fields() -> None:
     try:
         AttackProcessNode(
             id="node-1",
-            node_type=AttackProcessNodeType.BLOCKED_REASON,
-            label="Blocked by policy",
+            node_type=AttackProcessNodeType.GOAL_OUTCOME,
+            label="Goal outcome",
             operation_id="op-1",
             unexpected=True,
         )

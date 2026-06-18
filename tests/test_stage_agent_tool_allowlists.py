@@ -5,7 +5,7 @@ from typing import Any
 
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.execution.mcp_client import MCPToolCallResult
-from src.core.stage.agents import GoalAgent, ReconAgent
+from src.core.stage.agents import ExecutionStageAgent
 from src.core.stage.models import StageExecutionRequest
 
 
@@ -65,7 +65,7 @@ class StructuredMCP:
 
 
 def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> None:
-    result = ReconAgent(llm_client=StaticLLM("safe_vuln_validate"), mcp_client=MCP()).run(
+    result = ExecutionStageAgent(llm_client=StaticLLM("safe_vuln_validate"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=1,
@@ -85,7 +85,7 @@ def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> 
 
 
 def test_policy_denylist_is_audit_only_without_blocking() -> None:
-    result = GoalAgent(llm_client=StaticLLM("pivot_route_probe"), mcp_client=MCP()).run(
+    result = ExecutionStageAgent(llm_client=StaticLLM("pivot_route_probe"), mcp_client=MCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=1,
@@ -105,7 +105,7 @@ def test_policy_denylist_is_audit_only_without_blocking() -> None:
 
 
 def test_max_steps_partial_preserves_successful_tool_evidence_and_parsed_output() -> None:
-    result = ReconAgent(llm_client=StaticLLM("web_fingerprint"), mcp_client=StructuredMCP()).run(
+    result = ExecutionStageAgent(llm_client=StaticLLM("web_fingerprint"), mcp_client=StructuredMCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=2,
@@ -142,7 +142,7 @@ def test_need_replan_preserves_successful_tool_evidence_and_parsed_output() -> N
         ]
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=StructuredMCP()).run(
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=StructuredMCP()).run(
         StageExecutionRequest(
             operation_id="op-tools",
             cycle_index=2,

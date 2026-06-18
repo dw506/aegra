@@ -5,28 +5,30 @@ from __future__ import annotations
 from typing import Any
 import inspect
 import importlib
-import json
-import re
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
 from src.app.llm_decision_observer import LLMDecisionObserver
-from src.core.agents.pipeline_results import PipelineCycleResult
-from src.core.agents.agent_protocol import GraphRef as AgentGraphRef
-from src.core.agents.graph_context import TwoGraphContextBuilder
+from src.core.agents.pipeline_results import PipelineCycleResult, PipelineStepResult
+from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
+from src.core.execution.execution_agent import ExecutionAgent
+from src.core.execution.tool_gateway import ToolGateway
 from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
+from src.core.evaluation.profile_loader import profile_from_dict
+from src.core.evaluation.success_condition_tracker import SuccessConditionTracker
+from src.core.evaluation.success_contract_loader import contract_from_dict, load_contract
 from src.core.models.ag import AttackGraph
-from src.core.models.runtime import OperationRuntime, RuntimeState, RuntimeStatus, utc_now
+from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, WorkerRuntime, WorkerStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
-from src.core.planning.mission_planner_agent import MissionPlannerAgent
-from src.core.planning.models import PlannerDecision
+from src.core.planning.mission_planner_agent import MissionPlannerAgent, decision_from_outcome, outcome_from_decision
+from src.core.planning.graph_tools import PlannerGraphTools
+from src.core.planning.models import PlannerDecision, PlannerOutcome
 from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import (
     append_operation_log,
@@ -43,9 +45,7 @@ from src.core.runtime.llm_history import (
     recent_llm_decision_history,
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
-from src.core.runtime.attack_log_extractor import AttackLogExtractor
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
-from src.core.stage.dispatcher import StageDispatcher
 from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
 from src.core.visualization.graph_publisher import graph_delta_publisher
@@ -125,10 +125,9 @@ class OperationCycleResult(BaseModel):
 
     operation_id: str
     cycle_index: int = Field(ge=1)
-    planner_decision: PlannerDecision | None = None
-    planning_success: bool = False
-    stage_result: dict[str, Any] | None = None
-    execution_success: bool = False
+    planning: PipelineCycleResult | None = None
+    execution: PipelineCycleResult | None = None
+    feedback: PipelineCycleResult | None = None
     apply_results: list[PhaseTwoApplyResult] = Field(default_factory=list)
     selected_task_ids: list[str] = Field(default_factory=list)
     applied_task_ids: list[str] = Field(default_factory=list)
@@ -182,11 +181,15 @@ class AppOrchestrator:
             if llm_client_config is not None
             else None
         )
+        # Single execution boundary: agents call the gateway, which resolves
+        # pivot transport behind one `call_tool` and otherwise delegates to MCP.
+        self.tool_gateway = ToolGateway(self.mcp_client) if self.mcp_client is not None else None
         self.stage_registry = StageAgentRegistry.default(
             llm_client=stage_llm_client,
-            mcp_client=self.mcp_client,
+            mcp_client=self.tool_gateway,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
+        self.execution_agent = ExecutionAgent(self.stage_registry)
         mission_advisor = (
             LLMMissionPlannerAdvisor(client=stage_llm_client)
             if stage_llm_client is not None
@@ -357,7 +360,7 @@ class AppOrchestrator:
         """Return the fixed final result contract for `/run` and automation scripts.
 
         Operation success is owned by the orchestrator summary layer. MCP tools
-        and GoalAgent may contribute evidence and hints, but they do not emit
+        and execution rounds may contribute evidence and hints, but they do not emit
         the operation-level success contract directly.
         """
 
@@ -380,7 +383,7 @@ class AppOrchestrator:
             stop_reason=stop_reason,
             success=success,
             success_condition_progress=progress,
-            evidence_ids=self._operation_summary_evidence_ids(state=state, progress=progress),
+            evidence_ids=self._success_condition_evidence_ids(progress),
             findings_url=f"/operations/{operation_id}/findings",
             evidence_url=f"/operations/{operation_id}/evidence",
             graph_url=f"/operations/{operation_id}/graph",
@@ -589,7 +592,7 @@ class AppOrchestrator:
                 "txt_trace": True,
                 "graph_write": True,
                 "result_applier": "enabled",
-                "attack_log_extractor": "enabled",
+                "ag_write": "result_tier_single_step",
             },
         )
         operation_trace_logger.write_block(
@@ -644,36 +647,44 @@ class AppOrchestrator:
             runtime_state=state,
             extra=planner_payload_for_snapshot,
         )
-        graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
-        graph_snapshot["mcp_tool_catalog"] = tool_catalog
-        # Surface the authoritative success-condition gate so PlannerAgent can read
-        # eligible_for_stop before deciding whether to emit stop_success.
+        self._update_success_condition_progress(
+            state=state,
+            kg=kg,
+            ag=ag,
+            cycle_index=cycle_index,
+        )
+        planner_tools = PlannerGraphTools(
+            operation_id=operation_id,
+            cycle_index=cycle_index,
+            kg=kg,
+            ag=ag,
+            runtime_state=state,
+            runtime_root=self.settings.runtime_store_dir,
+        )
+        graph_snapshot["min_summary"] = planner_tools.build_min_summary()
         graph_snapshot["success_condition_progress"] = self._mapping(
             state.execution.metadata.get("success_condition_progress")
         )
-        graph_snapshot["validation_dead_ends"] = [
-            dict(item)
-            for item in state.execution.metadata.get("validation_dead_ends", [])
-            if isinstance(item, dict)
-        ]
+        graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
+        graph_snapshot["mcp_tool_catalog"] = tool_catalog
         try:
-            decision = self.mission_planner.run(
+            outcome = self._planner_decide(
                 goal=goal,
                 graph_context=graph_snapshot,
                 policy_context=blackbox_policy_context,
                 recent_stage_results=self._planner_recent_stage_results(state),
+                graph_tools=planner_tools,
             )
+            decision = self._planner_outcome_to_legacy_decision(outcome, goal=goal)
             operation_trace_logger.write_block(
-                "PLANNER_DECISION",
-                "planner decision",
+                "PLANNER_OUTCOME",
+                "planner outcome",
                 {
                     "cycle_index": cycle_index,
-                    "decision": decision.decision,
-                    "selected_agent": decision.selected_agent,
-                    "selected_stage": decision.selected_stage,
-                    "objective": decision.objective,
-                    "task_brief": decision.task_brief,
-                    "max_steps": decision.max_steps,
+                    "action": outcome.action,
+                    "capability": outcome.directive.capability if outcome.directive else None,
+                    "objective": outcome.directive.objective if outcome.directive else decision.objective,
+                    "max_tools": outcome.directive.max_tools if outcome.directive else None,
                 },
             )
         except Exception as exc:
@@ -687,59 +698,102 @@ class AppOrchestrator:
                 exc=exc,
                 txt_logger=txt_logger,
             )
-        if decision.operation_id != operation_id:
-            original_operation_id = decision.operation_id
+        if outcome.operation_id != operation_id:
+            original_operation_id = outcome.operation_id
+            outcome.operation_id = operation_id
             decision.operation_id = operation_id
             self._log_operation_event(
                 state,
-                event_type="planner_decision_operation_id_normalized",
+                event_type="planner_outcome_operation_id_normalized",
                 cycle_index=cycle_index,
                 original_operation_id=original_operation_id,
                 normalized_operation_id=operation_id,
             )
+            if outcome.directive is not None:
+                outcome.directive.operation_id = operation_id
+        outcome.cycle_index = cycle_index
+        if outcome.directive is not None:
+            outcome.directive.cycle_index = cycle_index
         decision.cycle_index = cycle_index
-        decision = self._apply_planner_dead_end_constraints(
-            decision=decision,
-            state=state,
-            cycle_index=cycle_index,
-        )
         txt_logger.write_block(
             "PLANNER",
-            "planner decision",
+            "planner outcome",
             {
                 "cycle": cycle_index,
-                "selected_agent": decision.selected_agent,
-                "selected_stage": decision.selected_stage,
-                "objective": decision.objective,
-                "risk_level": decision.risk_level,
-                "confidence": decision.confidence,
-                "reasoning_summary": decision.reasoning_summary,
-                "success_criteria": list(decision.success_criteria),
-                "target_refs": list(decision.target_refs),
+                "action": outcome.action,
+                "capability": outcome.directive.capability if outcome.directive else None,
+                "objective": outcome.directive.objective if outcome.directive else decision.objective,
+                "risk_level": outcome.directive.risk_level if outcome.directive else decision.risk_level,
+                "confidence": outcome.confidence,
+                "reason": outcome.reason,
+                "target_refs": list(outcome.directive.target_refs if outcome.directive else []),
             },
         )
         planning_apply = self.result_applier.apply_planner_decision(decision, state, kg, ag)
         for delta in planning_apply.visual_graph_deltas:
             graph_delta_publisher.publish_nowait(delta)
 
-        planning_success = decision.decision not in {"stop_failed"}
+        planning_output = AgentOutput(
+            decisions=[
+                {
+                    "planner_outcome": outcome.model_dump(mode="json"),
+                    "planner_decision": decision.model_dump(mode="json"),
+                }
+            ],
+            logs=[outcome.reason or f"planner action={outcome.action}"],
+        )
+        now = utc_now()
+        planning = PipelineCycleResult(
+            cycle_name="planner_outcome",
+            operation_id=operation_id,
+            success=outcome.action not in {"stop_failed"},
+            steps=[
+                PipelineStepResult(
+                    step_name="planner_agent",
+                    agent_name="planner_agent",
+                    agent_kind=AgentKind.PLANNER,
+                    success=outcome.action not in {"stop_failed"},
+                    agent_input=AgentInput(
+                        graph_refs=graph_refs,
+                        context=AgentContext(operation_id=operation_id),
+                        raw_payload=planner_payload,
+                    ),
+                    agent_output=planning_output,
+                    started_at=now,
+                    finished_at=now,
+                    duration_ms=0,
+                )
+            ],
+            final_output=planning_output,
+            logs=list(planning_output.logs),
+        )
         apply_results: list[PhaseTwoApplyResult] = [planning_apply]
-        stage_result_payload: dict[str, Any] | None = None
-        execution_success = True
+        execution = PipelineCycleResult(
+            cycle_name="execution_round",
+            operation_id=operation_id,
+            success=True,
+            final_output=AgentOutput(logs=["no execution round requested"]),
+        )
         applied_ids: list[str] = []
-        stopped = decision.decision in {"stop_success", "stop_failed", "pause_for_review"}
-        stop_reason = decision.stop_condition or (decision.decision if stopped else None)
+        stopped = outcome.action in {"stop_success", "stop_failed", "pause_for_review"}
+        stop_reason = outcome.stop_condition or (outcome.action if stopped else None)
 
-        if decision.decision == "dispatch_agent":
+        if outcome.action == "execute" and outcome.directive is not None:
+            started_at = utc_now()
             try:
-                stage_result = StageDispatcher(self.stage_registry).dispatch(
-                    decision,
+                round_result = ExecutionAgent(self.stage_registry).run(
+                    outcome.directive,
                     kg_snapshot=graph_snapshot,
                     ag_process_history={},
                     runtime_context=self._blackbox_runtime_context(state),
                     policy_context=blackbox_policy_context,
                     mcp_tool_catalog=tool_catalog,
+                    pivot_routes=[route.model_dump(mode="json") for route in state.pivot_routes.values()],
+                    sessions=[session.model_dump(mode="json") for session in state.sessions.values()],
                 )
+                stage_result = round_result.stage_result
+                if stage_result is None:
+                    raise ValueError("ExecutionAgent returned no StageResult")
                 if stage_result.operation_id != operation_id:
                     original_operation_id = stage_result.operation_id
                     stage_result.operation_id = operation_id
@@ -755,7 +809,14 @@ class AppOrchestrator:
                         original_operation_id=original_operation_id,
                         normalized_operation_id=operation_id,
                     )
+                finished_at = utc_now()
                 stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+                self._update_success_condition_progress(
+                    state=state,
+                    kg=kg,
+                    ag=ag,
+                    cycle_index=cycle_index,
+                )
             except Exception as exc:
                 return self._fail_operation_cycle(
                     operation_id=operation_id,
@@ -763,22 +824,20 @@ class AppOrchestrator:
                     state=state,
                     kg=kg,
                     ag=ag,
-                    phase="stage_dispatch",
+                    phase="execution_round",
                     exc=exc,
                     txt_logger=txt_logger,
-                    planner_decision=decision,
-                    planning_success=planning_success,
+                    planning=planning,
                     apply_results=apply_results,
                 )
             stage_graph_write_payload = {
                 "cycle": cycle_index,
+                "capability": outcome.directive.capability,
                 "stage": stage_result.stage_type,
                 "agent": stage_result.agent_name,
                 "stage_status": stage_result.status,
                 "kg_delta_count": len(stage_apply.kg_state_deltas or []),
-                "kg_write_diagnostics": dict(stage_apply.kg_write_diagnostics or {}),
                 "ag_delta_count": len(stage_apply.ag_state_deltas or []),
-                "tg_delta_count": 0,
                 "runtime_event_count": len(stage_apply.runtime_event_refs or []),
                 "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
                 "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
@@ -786,53 +845,41 @@ class AppOrchestrator:
             }
             txt_logger.write_block("GRAPH_WRITE", "graph write completed", stage_graph_write_payload)
             operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
-            extraction = AttackLogExtractor().extract(
-                decision,
-                stage_result,
-                stage_result.tool_trace,
-                [event.model_dump(mode="json") for event in state.pending_events[-20:]],
-                [],
-            )
-            log_apply = self.result_applier.apply_log_extraction(extraction, state, ag)
-            attack_log_payload = {
-                "cycle": cycle_index,
-                "stage": stage_result.stage_type,
-                "agent": stage_result.agent_name,
-                "status": stage_result.status,
-                "ag_node_count": len(extraction.ag_nodes),
-                "ag_edge_count": len(extraction.ag_edges),
-                "node_roles": [
-                    getattr(node, "node_type", None).value if hasattr(getattr(node, "node_type", None), "value") else str(getattr(node, "node_type", ""))
-                    for node in extraction.ag_nodes
-                ],
-                "evidence_refs": list(extraction.evidence_refs),
-            }
-            txt_logger.write_block("ATTACK_LOG_EXTRACT", "attack graph extraction completed", attack_log_payload)
-            operation_trace_logger.write_block("ATTACK_LOG_EXTRACT", "attack graph extraction completed", attack_log_payload)
-            attack_log_graph_payload = {
-                "cycle": cycle_index,
-                "stage": stage_result.stage_type,
-                "agent": stage_result.agent_name,
-                "stage_status": stage_result.status,
-                "kg_delta_count": 0,
-                "ag_delta_count": len(extraction.ag_nodes) + len(extraction.ag_edges),
-                "tg_delta_count": 0,
-                "runtime_event_count": len(log_apply.runtime_event_refs or []),
-                "created_ag_nodes": len(extraction.ag_nodes),
-                "created_ag_edges": len(extraction.ag_edges),
-                "evidence_refs": list(extraction.evidence_refs),
-            }
-            txt_logger.write_block("GRAPH_WRITE", "attack log graph write completed", attack_log_graph_payload)
-            operation_trace_logger.write_block("GRAPH_WRITE", "attack log graph write completed", attack_log_graph_payload)
-            for applied in (stage_apply, log_apply):
-                for delta in applied.visual_graph_deltas:
-                    graph_delta_publisher.publish_nowait(delta)
-            apply_results.extend([stage_apply, log_apply])
+            for delta in stage_apply.visual_graph_deltas:
+                graph_delta_publisher.publish_nowait(delta)
+            apply_results.append(stage_apply)
             applied_ids.append(stage_result.stage_task_id)
-            stage_result_payload = stage_result.model_dump(mode="json")
-            execution_success = stage_result.status not in {"failed", "blocked"}
-            self._update_success_condition_progress(state=state, stage_result=stage_result)
-            self._record_validation_dead_end(state=state, stage_result=stage_result, cycle_index=cycle_index)
+            stage_output = AgentOutput(
+                outcomes=[stage_result.model_dump(mode="json")],
+                logs=[stage_result.summary],
+            )
+            execution = PipelineCycleResult(
+                cycle_name="execution_round",
+                operation_id=operation_id,
+                success=stage_result.status not in {"failed", "blocked"},
+                steps=[
+                    PipelineStepResult(
+                        step_name=stage_result.agent_name,
+                        agent_name=stage_result.agent_name,
+                        agent_kind=AgentKind.WORKER,
+                        success=stage_result.status not in {"failed", "blocked"},
+                        agent_input=AgentInput(
+                            graph_refs=graph_refs,
+                            context=AgentContext(operation_id=operation_id),
+                            raw_payload={
+                                "planner_outcome": outcome.model_dump(mode="json"),
+                                "round_directive": outcome.directive.model_dump(mode="json"),
+                            },
+                        ),
+                        agent_output=stage_output,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
+                    )
+                ],
+                final_output=stage_output,
+                logs=[stage_result.summary],
+            )
             if self._goal_satisfied(state):
                 state.execution.metadata["goal_satisfied"] = True
             if stage_result.status in {"failed", "blocked"}:
@@ -848,14 +895,21 @@ class AppOrchestrator:
                 stop_reason = None
             stopped = False
 
+        feedback = PipelineCycleResult(
+            cycle_name="feedback_disabled",
+            operation_id=operation_id,
+            success=True,
+            logs=["feedback critic phase disabled for stage-agent main path"],
+        )
         summary = {
             "cycle_index": cycle_index,
             "started_at": utc_now().isoformat(),
             "architecture": "planner_stage_agent_graph_main_path",
-            "planning_success": planning_success,
-            "execution_success": execution_success,
-            "selected_agent": decision.selected_agent,
-            "selected_stage": decision.selected_stage,
+            "planning_success": planning.success,
+            "execution_success": execution.success,
+            "feedback_success": feedback.success,
+            "planner_action": outcome.action,
+            "capability": outcome.directive.capability if outcome.directive else None,
             "applied_results": len(apply_results),
             "stopped": stopped,
             "stop_reason": stop_reason,
@@ -864,11 +918,11 @@ class AppOrchestrator:
         history.append(summary)
         state.execution.metadata["last_control_cycle"] = summary
         state.execution.summary = f"control cycle {cycle_index} completed"
-        if decision.decision == "stop_success":
+        if outcome.action == "stop_success":
             state.operation_status = RuntimeStatus.COMPLETED
-        elif decision.decision == "stop_failed":
+        elif outcome.action == "stop_failed":
             state.operation_status = RuntimeStatus.FAILED
-        elif decision.decision == "pause_for_review":
+        elif outcome.action == "pause_for_review":
             state.operation_status = RuntimeStatus.PAUSED
         else:
             state.operation_status = RuntimeStatus.READY
@@ -886,8 +940,8 @@ class AppOrchestrator:
             "cycle completed",
             {
                 "cycle": cycle_index,
-                "selected_agent": decision.selected_agent,
-                "selected_stage": decision.selected_stage,
+                "planner_action": outcome.action,
+                "capability": outcome.directive.capability if outcome.directive else None,
                 "status": state.operation_status.value,
                 "stop_reason": stop_reason,
             },
@@ -897,8 +951,8 @@ class AppOrchestrator:
             "cycle completed",
             {
                 "cycle": cycle_index,
-                "selected_agent": decision.selected_agent,
-                "selected_stage": decision.selected_stage,
+                "planner_action": outcome.action,
+                "capability": outcome.directive.capability if outcome.directive else None,
                 "status": state.operation_status.value,
                 "stop_reason": stop_reason,
                 "applied_results": len(apply_results),
@@ -924,10 +978,9 @@ class AppOrchestrator:
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planner_decision=decision,
-            planning_success=planning_success,
-            stage_result=stage_result_payload,
-            execution_success=execution_success,
+            planning=planning,
+            execution=execution,
+            feedback=feedback,
             apply_results=apply_results,
             selected_task_ids=applied_ids,
             applied_task_ids=list(applied_ids),
@@ -959,7 +1012,8 @@ class AppOrchestrator:
         state.execution.metadata["runtime_lock"] = "released"
         state.execution.metadata["unclean_shutdown"] = False
         state.execution.metadata.pop("last_error", None)
-
+    
+    #多轮运行
     def run_until_quiescent(
         self,
         operation_id: str,
@@ -976,10 +1030,9 @@ class AppOrchestrator:
         """持续运行主循环，直到静止或达到上限。"""
 
         results: list[OperationCycleResult] = []
+        llm_rejection_count = 0
+        supervisor_replan_count = 0
         planner_replan_count = 0
-        # consecutive_llm_rejections is retained for API request compatibility; the
-        # supervisor-driven rejection/replan path is not part of the stage-agent main loop.
-        del consecutive_llm_rejections
         for _ in range(max_cycles):
             state_before = self.runtime_store.snapshot(operation_id)
             if self._budget_guard_triggered(state_before):
@@ -1024,6 +1077,33 @@ class AppOrchestrator:
                     break
             elif planner_decision in {"dispatch_agent"}:
                 planner_replan_count = 0
+            supervisor_control = self._apply_supervisor_control_strategy(
+                operation_id=operation_id,
+                graph_refs=graph_refs,
+                cycle_result=cycle_result,
+                context=context,
+                max_replans=max_replans,
+                supervisor_replan_count=supervisor_replan_count,
+            )
+            if supervisor_control.get("llm_rejected"):
+                llm_rejection_count += 1
+            elif supervisor_control.get("llm_accepted"):
+                llm_rejection_count = 0
+            if supervisor_control.get("replan_requested"):
+                supervisor_replan_count += 1
+            if llm_rejection_count >= consecutive_llm_rejections:
+                state = self.runtime_store.snapshot(operation_id)
+                self._record_control_strategy(
+                    state,
+                    cycle_index=cycle_result.cycle_index,
+                    strategy="deterministic_fallback",
+                    accepted=False,
+                    reason="consecutive llm rejections threshold reached",
+                )
+                self.runtime_store.save_state(state)
+                llm_rejection_count = 0
+            if supervisor_control.get("stop"):
+                break
             if stop_when_quiescent and cycle_result.stopped:
                 break
         return results
@@ -1049,6 +1129,21 @@ class AppOrchestrator:
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
 
+    def _apply_supervisor_control_strategy(
+        self,
+        *,
+        operation_id: str,
+        graph_refs: list[AgentGraphRef],
+        cycle_result: OperationCycleResult,
+        context: dict[str, Any] | None,
+        max_replans: int,
+        supervisor_replan_count: int,
+    ) -> dict[str, Any]:
+        """Supervisor control is temporarily disabled in the main loop."""
+
+        del operation_id, graph_refs, cycle_result, context, max_replans, supervisor_replan_count
+        return {}
+
     def resume_operation(self, operation_id: str, *, reason: str = "manual_resume") -> RuntimeState:
         """Normalize in-flight runtime state so the operation can resume safely."""
 
@@ -1059,6 +1154,52 @@ class AppOrchestrator:
         self._log_operation_event(state, event_type="operation_resumed", **summary)
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
+
+    def _supervisor_payload_from_cycle(
+        self,
+        state: RuntimeState,
+        cycle_result: OperationCycleResult,
+    ) -> dict[str, Any]:
+        last_control_cycle = self._mapping(state.execution.metadata.get("last_control_cycle"))
+        return {
+            "runtime_summary": self._runtime_summary(state),
+            "last_control_cycle": last_control_cycle,
+            "planner_summary": {
+                "success": cycle_result.planning.success if cycle_result.planning is not None else False,
+                "step_count": len(cycle_result.planning.steps) if cycle_result.planning is not None else 0,
+            },
+            "critic_summary": {
+                "success": cycle_result.feedback.success if cycle_result.feedback is not None else False,
+                "finding_count": self._critic_finding_count(cycle_result.feedback),
+                "replan_request_count": len(state.replan_requests),
+            },
+            "budget_summary": self._budget_summary(state),
+        }
+
+    def _validated_supervisor_strategy(self, cycle: PipelineCycleResult) -> dict[str, Any] | None:
+        for decision in cycle.final_output.decisions:
+            payload = self._mapping(decision.get("payload"))
+            validation = self._mapping(payload.get("llm_decision_validation"))
+            if not bool(payload.get("control_only")):
+                continue
+            if not bool(payload.get("llm_adopted")) or not bool(validation.get("accepted")):
+                continue
+            supervisor_decision = self._mapping(payload.get("supervisor_decision"))
+            strategy = supervisor_decision.get("strategy")
+            if strategy not in {
+                "continue_planning",
+                "continue_execution",
+                "request_replan",
+                "pause_for_review",
+                "stop_when_quiescent",
+            }:
+                continue
+            return {
+                "strategy": str(strategy),
+                "rationale": supervisor_decision.get("rationale"),
+                "requires_human_review": bool(supervisor_decision.get("requires_human_review", False)),
+            }
+        return None
 
     def _record_control_strategy(
         self,
@@ -1112,6 +1253,25 @@ class AppOrchestrator:
             reason=reason,
         )
 
+    def _request_supervisor_replan(self, state: RuntimeState, *, cycle_index: int, rationale: str) -> None:
+        request = ReplanRequest(
+            request_id=f"supervisor-replan-{cycle_index}-{len(state.replan_requests) + 1}",
+            reason="supervisor requested existing replan flow",
+            scope="local",
+            metadata={
+                "source": "supervisor",
+                "cycle_index": cycle_index,
+                "rationale": rationale,
+            },
+        )
+        state.request_replan(request)
+        self._log_operation_event(
+            state,
+            event_type="supervisor_replan_requested",
+            cycle_index=cycle_index,
+            request_id=request.request_id,
+        )
+
     @staticmethod
     def _budget_summary(state: RuntimeState) -> dict[str, Any]:
         budgets = state.budgets
@@ -1144,6 +1304,17 @@ class AppOrchestrator:
     @staticmethod
     def _budget_exhausted(used: float | int, maximum: float | int | None) -> bool:
         return maximum is not None and used >= maximum
+
+    @staticmethod
+    def _critic_finding_count(feedback: PipelineCycleResult | None) -> int:
+        if feedback is None:
+            return 0
+        count = 0
+        for decision in feedback.final_output.decisions:
+            payload = decision.get("payload") if isinstance(decision, dict) else None
+            if isinstance(payload, dict) and "recommendation" in payload:
+                count += 1
+        return count
 
     def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, RuntimeState | None]:
         """Load KG / AG / Runtime snapshots for operation bootstrap."""
@@ -1195,227 +1366,23 @@ class AppOrchestrator:
                     return value.strip()
         return None
 
-    def _update_success_condition_progress(
-        self,
-        *,
-        state: RuntimeState,
-        stage_result: Any | None = None,
-    ) -> dict[str, Any]:
-        """Evaluate configured success conditions against the latest stage signals.
-
-        Generic, environment-agnostic producer for
-        ``metadata["success_condition_progress"]``. Condition names come from the
-        active profile's ``success_conditions.require_all`` list; their meaning is
-        resolved by deterministic stage-signal detectors (never by an LLM, never
-        using raw secrets). The result accumulates across cycles: once a condition
-        is satisfied it stays satisfied, and evidence ids are unioned in.
-
-        ``eligible_for_stop`` is computed here and is the only authoritative gate
-        that lets PlannerAgent emit ``stop_success``.
-        """
-
-        success_conditions = self._mapping(self.settings.load_lab_profile().get("success_conditions"))
-        require_all = [str(name) for name in success_conditions.get("require_all", []) if str(name).strip()]
-        if not require_all:
-            return self._mapping(state.execution.metadata.get("success_condition_progress"))
-
-        progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
-        conditions = {k: dict(v) for k, v in self._mapping(progress.get("conditions")).items() if isinstance(v, dict)}
-        signals = self._stage_condition_signals(state=state, stage_result=stage_result)
-
-        for name in require_all:
-            existing = self._mapping(conditions.get(name))
-            satisfied = bool(existing.get("satisfied"))
-            evidence_ids = [str(e) for e in existing.get("evidence_ids", []) if str(e).strip()]
-            newly = signals.get(name)
-            if newly is not None:
-                satisfied = True
-                for evidence_id in newly:
-                    if evidence_id and evidence_id not in evidence_ids:
-                        evidence_ids.append(evidence_id)
-            conditions[name] = {"satisfied": satisfied, "evidence_ids": evidence_ids}
-
-        missing = [name for name in require_all if not conditions.get(name, {}).get("satisfied")]
-        all_required_satisfied = not missing
-        new_progress = {
-            "conditions": conditions,
-            "missing": missing,
-            "all_required_satisfied": all_required_satisfied,
-            "eligible_for_stop": all_required_satisfied,
-            "recommended_planner_action": "stop_success" if all_required_satisfied else "continue",
-        }
-        state.execution.metadata["success_condition_progress"] = new_progress
-        return new_progress
-
-    def _stage_condition_signals(
-        self,
-        *,
-        state: RuntimeState,
-        stage_result: Any | None,
-    ) -> dict[str, list[str]]:
-        """Map one stage result to the success-condition names it newly satisfies."""
-
-        if stage_result is None:
-            return {}
-
-        stage_type = str(getattr(stage_result, "stage_type", "") or "").upper()
-        status = str(getattr(stage_result, "status", "") or "").lower()
-        findings = getattr(stage_result, "findings", None) or []
-        observations = getattr(stage_result, "observations", None) or []
-        discovered_entities = getattr(stage_result, "discovered_entities", None) or []
-        runtime_hints = self._mapping(getattr(stage_result, "runtime_hints", None))
-        evidence_ids = self._stage_evidence_ids(stage_result)
-        signal_text = " ".join(
-            [
-                str(getattr(stage_result, "summary", "") or ""),
-                *[
-                    str(item.get("type") or item.get("kind") or item.get("category") or item.get("summary") or "")
-                    for item in findings
-                    if isinstance(item, dict)
-                ],
-                *[
-                    str(item.get("type") or item.get("kind") or item.get("category") or item.get("summary") or "")
-                    for item in observations
-                    if isinstance(item, dict)
-                ],
-                *[
-                    str(item.get("type") or item.get("kind") or item.get("entity_type") or item.get("summary") or "")
-                    for item in discovered_entities
-                    if isinstance(item, dict)
-                ],
-                " ".join(str(key) for key, value in runtime_hints.items() if value),
-            ]
-        ).lower()
-        finding_text = " ".join(
-            str(item.get("type") or item.get("kind") or item.get("summary") or "")
-            for item in findings
-            if isinstance(item, dict)
-        ).lower()
-        zone = self._stage_zone(stage_result=stage_result, finding_text=signal_text)
-        has_pivot_route = self._has_pivot_route(state) or bool(runtime_hints.get("register_pivot_route"))
-
-        is_service_discovery = "recon" in stage_type or "service" in signal_text or "discover" in signal_text
-        is_vuln_candidate = "vuln" in stage_type or "candidate" in signal_text or "vulnerab" in signal_text
-        is_exploit = "exploit" in stage_type or "exploit" in signal_text
-        is_session = bool(runtime_hints.get("session_id") or runtime_hints.get("capability")) or "pivot" in stage_type or "access" in stage_type
-        is_controlled_proof = (
-            bool(runtime_hints.get("exploit_executed") or runtime_hints.get("validated") or runtime_hints.get("marker_found"))
-            or "controlled_proof" in signal_text
-            or "validated access" in signal_text
-            or "validated_access" in signal_text
-        )
-        is_post_access = (
-            "post_access" in signal_text
-            or "post-access" in signal_text
-            or "postaccess" in signal_text
-            or "artifact observed" in signal_text
-            or bool(runtime_hints.get("post_access_observed"))
-        )
-        is_goal_check = (
-            "goal" in stage_type
-            or bool(runtime_hints.get("goal_satisfied"))
-            or "goalcheck" in signal_text.replace(" ", "")
-        )
-
-        signals: dict[str, list[str]] = {}
-
-        def emit(name: str) -> None:
-            signals[name] = list(evidence_ids)
-
-        def emit_with_evidence(name: str, ids: list[str] | None = None) -> None:
-            clean_name = str(name or "").strip()
-            if not clean_name:
-                return
-            clean_ids = [str(ref) for ref in (ids or evidence_ids) if str(ref).strip()]
-            existing = signals.setdefault(clean_name, [])
-            for ref in clean_ids:
-                if ref not in existing:
-                    existing.append(ref)
-
-        generic_conditions = runtime_hints.get("satisfied_conditions") or runtime_hints.get("condition_signals")
-        if isinstance(generic_conditions, list):
-            for item in generic_conditions:
-                if isinstance(item, dict):
-                    refs = item.get("evidence_ids") or item.get("evidence_refs")
-                    emit_with_evidence(
-                        str(item.get("condition") or item.get("name") or ""),
-                        [str(ref) for ref in refs] if isinstance(refs, list) else None,
-                    )
-                else:
-                    emit_with_evidence(str(item))
-        elif isinstance(generic_conditions, dict):
-            for name, refs in generic_conditions.items():
-                emit_with_evidence(
-                    str(name),
-                    [str(ref) for ref in refs] if isinstance(refs, list) else None,
-                )
-
-        if is_service_discovery and zone != "restricted":
-            emit("dmz_service_discovered")
-            emit("entry_zone_service_discovered")
-        if is_service_discovery and zone == "restricted" and has_pivot_route:
-            emit("internal_service_discovered_after_authorized_route")
-            emit("restricted_zone_service_discovered")
-        if "recon" in stage_type and ("host" in finding_text or "host" in status):
-            emit("entry_zone_host_discovered")
-        if "fingerprint" in stage_type or "fingerprint" in finding_text:
-            emit("service_fingerprint_recorded")
-        if is_vuln_candidate:
-            emit("vulnerability_candidate_recorded")
-        if is_exploit:
-            emit("exploit_attempt_recorded")
-            if status in {"succeeded", "success"} or "success" in finding_text:
-                emit("exploit_success_recorded")
-        if is_controlled_proof:
-            emit("at_least_one_controlled_proof_or_validated_access")
-        if is_session:
-            emit("capability_or_session_recorded")
-        if is_post_access:
-            emit("post_access_observation_recorded")
-        if has_pivot_route:
-            emit("pivot_route_recorded")
-        if is_goal_check:
-            emit("goal_check_recorded")
-            if bool(runtime_hints.get("goal_satisfied")):
-                emit("final_goal_proof_valid")
-        return signals
-
     @staticmethod
-    def _stage_evidence_ids(stage_result: Any) -> list[str]:
-        """Resolve evidence ids for a stage: evidence_refs first, then tool raw refs."""
-
-        evidence_ids = [str(ref) for ref in (getattr(stage_result, "evidence_refs", None) or []) if str(ref).strip()]
-        if not evidence_ids:
-            for trace in getattr(stage_result, "tool_trace", None) or []:
-                ref = getattr(trace, "raw_output_ref", None)
-                if ref and str(ref).strip():
-                    evidence_ids.append(str(ref))
-        return evidence_ids
-
-    @staticmethod
-    def _stage_zone(*, stage_result: Any, finding_text: str) -> str:
-        """Classify the stage's target zone as 'restricted' or 'entry' (generic)."""
-
-        stage_type = str(getattr(stage_result, "stage_type", "") or "").lower()
-        runtime_hints = getattr(stage_result, "runtime_hints", None) or {}
-        zone_ref = str(
-            (runtime_hints.get("zone_ref") if isinstance(runtime_hints, dict) else None) or ""
-        ).lower()
-        if zone_ref in {"restricted", "internal"}:
-            return "restricted"
-        if "internal" in stage_type or "restricted" in finding_text or "internal" in finding_text:
-            return "restricted"
-        return "entry"
-
-    @staticmethod
-    def _has_pivot_route(state: RuntimeState) -> bool:
-        """Return whether the runtime already recorded at least one pivot route."""
-
-        routes = getattr(state, "pivot_routes", None)
-        if routes:
+    def _goal_satisfied(state: RuntimeState) -> bool:
+        if bool(state.execution.metadata.get("goal_satisfied")):
             return True
-        metadata_routes = state.execution.metadata.get("pivot_routes")
-        return bool(metadata_routes)
+        for outcome in state.recent_outcomes:
+            payload = outcome.metadata.get("outcome_payload")
+            if not isinstance(payload, dict):
+                continue
+            stage_result = payload.get("stage_result")
+            if not isinstance(stage_result, dict):
+                continue
+            if stage_result.get("stage_type") == "GOAL_STAGE" and stage_result.get("status") == "succeeded":
+                hints = stage_result.get("runtime_hints")
+                if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
+                    state.execution.metadata["goal_satisfied"] = True
+                    return True
+        return False
 
     @staticmethod
     def _mission_goal(*, planner_payload: dict[str, Any], context: dict[str, Any] | None) -> str:
@@ -1451,16 +1418,87 @@ class AppOrchestrator:
             or runtime_state.execution.summary
             or ""
         )
-        snapshot = TwoGraphContextBuilder().build(
-            knowledge_graph=kg,
-            attack_graph=ag,
-            runtime_state=runtime_state,
+        recent_steps = [
+            node.model_dump(mode="json")
+            for node in ag.find_process_nodes()
+            if getattr(getattr(node, "node_type", None), "value", None) == "ATTACK_STEP"
+        ]
+        recent_steps = sorted(recent_steps, key=lambda item: int(item.get("cycle_index") or 0))[-3:]
+        return {
+            "operation_id": operation_id,
+            "cycle_index": cycle_index,
+            "current_goal": current_goal,
+            "kg_summary": {
+                "node_count": len(kg.list_nodes()),
+                "edge_count": len(kg.list_edges()),
+                "version": kg.version,
+            },
+            "ag_summary": {
+                "step_count": len(recent_steps),
+                "version": ag.version,
+                "recent_attack_steps": recent_steps,
+            },
+            "runtime_summary": {
+                "operation_status": runtime_state.operation_status.value,
+                "execution_status": runtime_state.execution.status.value,
+                "target_count": runtime_state.execution.metadata.get("target_count", 0),
+                "recent_outcome_count": len(runtime_state.recent_outcomes),
+            },
+            "policy": policy_context,
+        }
+
+    def _planner_decide(
+        self,
+        *,
+        goal: str,
+        graph_context: dict[str, Any],
+        policy_context: dict[str, Any],
+        recent_stage_results: list[dict[str, Any]],
+        graph_tools: PlannerGraphTools,
+    ) -> PlannerOutcome:
+        planner = self.mission_planner
+        if hasattr(planner, "decide"):
+            return planner.decide(  # type: ignore[no-any-return,attr-defined]
+                goal=goal,
+                graph_context=graph_context,
+                policy_context=policy_context,
+                recent_stage_results=recent_stage_results,
+                graph_tools=graph_tools,
+            )
+        decision = planner.run(  # type: ignore[attr-defined]
+            goal=goal,
+            graph_context=graph_context,
             policy_context=policy_context,
-            current_goal=current_goal,
+            recent_stage_results=recent_stage_results,
         )
-        snapshot["operation_id"] = operation_id
-        snapshot["cycle_index"] = cycle_index
-        return snapshot
+        return self._legacy_decision_to_outcome(decision)
+
+    @staticmethod
+    def _legacy_decision_to_outcome(decision: PlannerDecision) -> PlannerOutcome:
+        return outcome_from_decision(decision)
+
+    @staticmethod
+    def _planner_outcome_to_legacy_decision(outcome: PlannerOutcome, *, goal: str) -> PlannerDecision:
+        return decision_from_outcome(outcome, goal=goal)
+
+    def _append_llm_decision_history_from_cycle(
+        self,
+        state: RuntimeState,
+        *,
+        cycle_index: int,
+        cycle: PipelineCycleResult,
+    ) -> None:
+        records = self._extract_llm_decision_history(cycle_index=cycle_index, cycle=cycle)
+        if not records:
+            return
+        append_llm_decision_history(state, records)
+        self._log_operation_event(
+            state,
+            event_type="llm_decision_history_recorded",
+            cycle_index=cycle_index,
+            cycle_name=cycle.cycle_name,
+            record_count=len(records),
+        )
 
     def _extract_llm_decision_history(
         self,
@@ -1499,186 +1537,14 @@ class AppOrchestrator:
             )
         return results
 
-    def _apply_planner_dead_end_constraints(
-        self,
-        *,
-        decision: PlannerDecision,
-        state: RuntimeState,
-        cycle_index: int,
-    ) -> PlannerDecision:
-        """Prevent repeat exploit validation against known dead-end targets."""
-
-        if decision.decision != "dispatch_agent" or decision.selected_agent != "exploit_validation_agent":
-            return decision
-        dead_ends = [
-            dict(item)
-            for item in state.execution.metadata.get("validation_dead_ends", [])
-            if isinstance(item, dict)
-        ]
-        if not dead_ends:
-            return decision
-        selected_text = " ".join(
-            [
-                decision.objective,
-                decision.task_brief or "",
-                str(decision.required_context),
-                str([ref.model_dump(mode="json") for ref in decision.target_refs]),
-            ]
-        )
-        matching = [item for item in dead_ends if item.get("target") and str(item["target"]) in selected_text]
-        if not matching or self._decision_has_new_validation_evidence(decision):
-            return decision
-        target = str(matching[-1]["target"])
-        decision.selected_agent = "recon_agent"
-        decision.selected_stage = "RECON_STAGE"
-        decision.objective = f"Collect new evidence before retrying validation for {target}"
-        decision.task_brief = (
-            f"Do not run exploit validation for {target}. Gather fresh fingerprint/path evidence or pivot capability evidence. "
-            "Prefer web_fingerprint/web_discover on other entry services such as 10.20.0.11:80 or control-plane service 10.20.0.3:8000 when in scope."
-        )
-        decision.allowed_tool_names = ["nmap_scan", "http_probe", "web_fingerprint", "web_discover", "tcp_connect_probe"]
-        decision.max_steps = max(int(decision.max_steps or 1), 3)
-        decision.reasoning_summary = (
-            f"Overrode repeated exploit validation for validation_dead_end target {target}; recon is required until new evidence or profile exists."
-        )
-        decision.metadata = {
-            **dict(decision.metadata),
-            "dead_end_override": True,
-            "dead_end_target": target,
-            "dead_end_reason": matching[-1].get("reason"),
-            "cycle_index": cycle_index,
+    @staticmethod
+    def _runtime_summary(state: RuntimeState) -> dict[str, Any]:
+        return {
+            "operation_status": state.operation_status.value,
+            "task_count": len(state.execution.tasks),
+            "pending_event_count": len(state.pending_events),
+            "replan_request_count": len(state.replan_requests),
         }
-        return decision
-
-    @staticmethod
-    def _decision_has_new_validation_evidence(decision: PlannerDecision) -> bool:
-        context = decision.required_context if isinstance(decision.required_context, dict) else {}
-        for key in ("new_evidence", "new_profile", "profile_id", "matched_profile_id", "validation_profile"):
-            value = context.get(key)
-            if value not in (None, "", [], {}):
-                return True
-        return False
-
-    def _record_validation_dead_end(
-        self,
-        *,
-        state: RuntimeState,
-        stage_result: Any,
-        cycle_index: int,
-    ) -> None:
-        """Remember unsupported validation targets so Planner does not repeat them."""
-
-        traces = list(getattr(stage_result, "tool_trace", None) or [])
-        if not traces:
-            return
-        vuln_traces = [trace for trace in traces if getattr(trace, "tool_name", "") == "vuln_profile_match"]
-        web_traces = [trace for trace in traces if getattr(trace, "tool_name", "") == "web_discover"]
-        if not vuln_traces or not web_traces:
-            return
-        empty_profile_targets = {
-            target
-            for trace in vuln_traces
-            if self._vuln_profile_match_empty(trace)
-            for target in [self._target_key_from_trace(trace)]
-            if target
-        }
-        no_new_path_targets = {
-            target
-            for trace in web_traces
-            if self._web_discover_no_new_paths(trace)
-            for target in [self._target_key_from_trace(trace)]
-            if target
-        }
-        targets = sorted(empty_profile_targets & no_new_path_targets)
-        if not targets:
-            return
-        records = [
-            dict(item)
-            for item in state.execution.metadata.get("validation_dead_ends", [])
-            if isinstance(item, dict)
-        ]
-        seen = {(str(item.get("target")), str(item.get("reason"))) for item in records}
-        for target in targets:
-            key = (target, "no_supported_profile")
-            if key in seen:
-                continue
-            records.append(
-                {
-                    "target": target,
-                    "reason": "no_supported_profile",
-                    "stage_task_id": getattr(stage_result, "stage_task_id", None),
-                    "cycle_index": cycle_index,
-                    "recorded_at": utc_now().isoformat(),
-                    "required_new_evidence": ["new_path", "new_fingerprint", "new_validation_profile"],
-                    "planner_constraint": "do_not_dispatch_exploit_validation_agent_for_target_without_new_evidence",
-                }
-            )
-        state.execution.metadata["validation_dead_ends"] = records
-
-    @staticmethod
-    def _vuln_profile_match_empty(trace: Any) -> bool:
-        stdout = str(getattr(trace, "stdout", "") or "").strip()
-        if stdout:
-            try:
-                parsed_stdout = json.loads(stdout)
-                if isinstance(parsed_stdout, list):
-                    return len(parsed_stdout) == 0
-            except Exception:
-                pass
-        parsed = getattr(trace, "parsed_output", None)
-        if isinstance(parsed, dict):
-            findings = parsed.get("findings") if isinstance(parsed.get("findings"), list) else []
-            entities = parsed.get("entities") if isinstance(parsed.get("entities"), list) else []
-            return not any(
-                isinstance(item, dict) and str(item.get("type") or item.get("kind") or "").lower() == "vulnerabilitycandidate"
-                for item in [*findings, *entities]
-            )
-        return False
-
-    @staticmethod
-    def _web_discover_no_new_paths(trace: Any) -> bool:
-        stdout = str(getattr(trace, "stdout", "") or "").strip()
-        paths: list[str] = []
-        if stdout:
-            try:
-                parsed_stdout = json.loads(stdout)
-                if isinstance(parsed_stdout, list):
-                    paths.extend(str(item.get("path") or "") for item in parsed_stdout if isinstance(item, dict))
-            except Exception:
-                pass
-        parsed = getattr(trace, "parsed_output", None)
-        if isinstance(parsed, dict):
-            for item in parsed.get("entities", []) if isinstance(parsed.get("entities"), list) else []:
-                if isinstance(item, dict) and item.get("type") == "web_path":
-                    paths.append(str(item.get("path") or ""))
-        interesting = {path for path in paths if path and path != "/"}
-        return not interesting
-
-    @classmethod
-    def _target_key_from_trace(cls, trace: Any) -> str | None:
-        arguments = getattr(trace, "arguments", None)
-        arguments = arguments if isinstance(arguments, dict) else {}
-        for key in ("target_url", "base_url", "url", "target"):
-            target = cls._target_key_from_value(arguments.get(key))
-            if target:
-                return target
-        return None
-
-    @staticmethod
-    def _target_key_from_value(value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        parsed = urlparse(text)
-        if parsed.hostname:
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
-            return f"{parsed.hostname}:{port}"
-        match = re.search(r"(?P<host>(?:\d{1,3}\.){3}\d{1,3})(?::(?P<port>\d{1,5}))?", text)
-        if match:
-            return f"{match.group('host')}:{match.group('port') or 80}"
-        return None
 
     @staticmethod
     def _blackbox_policy_context(policy_context: dict[str, Any], state: RuntimeState) -> dict[str, Any]:
@@ -1743,10 +1609,234 @@ class AppOrchestrator:
 
     @staticmethod
     def _cycle_planner_decision(cycle_result: OperationCycleResult) -> str | None:
-        if cycle_result.planner_decision is None:
+        if cycle_result.planning is None:
             return None
-        decision = cycle_result.planner_decision.decision
-        return str(decision) if decision is not None else None
+        for item in cycle_result.planning.final_output.decisions:
+            payload = item.get("planner_decision") if isinstance(item, dict) else None
+            if isinstance(payload, dict):
+                decision = payload.get("decision")
+                return str(decision) if decision is not None else None
+        return None
+
+    def _update_success_condition_progress(
+        self,
+        *,
+        state: RuntimeState,
+        kg: KnowledgeGraph,
+        ag: AttackGraph,
+        cycle_index: int = 0,
+    ) -> dict[str, Any] | None:
+        """Refresh the deterministic success gate for the next planner turn."""
+
+        lab_profile = self.settings.load_lab_profile()
+        success_config = self._mapping(lab_profile.get("success_conditions"))
+        contract_ref = lab_profile.get("success_contract_ref")
+        if not success_config and not contract_ref:
+            return None
+        if contract_ref:
+            contract = load_contract(str(contract_ref))
+            contract_payload = contract.model_dump(mode="json")
+        else:
+            contract_payload = {
+                "contract_id": str(success_config.get("contract_id") or f"{lab_profile.get('profile_id', 'operation')}_inline"),
+                "mode": str(success_config.get("mode") or lab_profile.get("mode") or "generic"),
+                "require_all": list(success_config.get("require_all") or []),
+                "require_chain": list(success_config.get("require_chain") or []),
+                "levels": self._mapping(success_config.get("levels")),
+                "target_level": success_config.get("target_level"),
+                "condition_bindings": self._mapping(success_config.get("condition_bindings")),
+            }
+        if contract_payload["condition_bindings"]:
+            profile = profile_from_dict(dict(lab_profile))
+            progress = SuccessConditionTracker().evaluate(
+                contract=contract_from_dict(dict(contract_payload)),
+                profile=profile,
+                kg_nodes=list(kg.to_dict().get("nodes") or []),
+                kg_edges=list(kg.to_dict().get("edges") or []),
+                ag_nodes=list(ag.to_dict().get("nodes") or []),
+                ag_edges=list(ag.to_dict().get("edges") or []),
+                runtime_state=state.model_dump(mode="json"),
+                cycle_index=cycle_index,
+            ).model_dump(mode="json")
+            progress = self._normalize_success_progress(progress)
+        else:
+            progress = self._inline_success_condition_progress(
+                state=state,
+                contract_payload=contract_payload,
+                cycle_index=cycle_index,
+            )
+        state.execution.metadata["success_condition_progress"] = progress
+        return progress
+
+    @staticmethod
+    def _normalize_success_progress(progress: dict[str, Any]) -> dict[str, Any]:
+        conditions: dict[str, Any] = {}
+        for name, result in (progress.get("condition_results") or {}).items():
+            if not isinstance(result, dict):
+                continue
+            refs = list(result.get("evidence_refs") or result.get("evidence_ids") or [])
+            conditions[str(name)] = {
+                **result,
+                "evidence_ids": [str(ref) for ref in refs if str(ref).strip()],
+                "evidence_refs": [str(ref) for ref in refs if str(ref).strip()],
+            }
+        normalized = {
+            **progress,
+            "conditions": conditions,
+            "recommended_planner_action": "stop_success"
+            if bool(progress.get("eligible_for_stop"))
+            else "continue",
+        }
+        return normalized
+
+    def _inline_success_condition_progress(
+        self,
+        *,
+        state: RuntimeState,
+        contract_payload: dict[str, Any],
+        cycle_index: int,
+    ) -> dict[str, Any]:
+        required = [str(item) for item in contract_payload.get("require_all") or []]
+        levels = {
+            str(level): [str(condition) for condition in conditions]
+            for level, conditions in self._mapping(contract_payload.get("levels")).items()
+            if isinstance(conditions, list)
+        }
+        target_level = str(contract_payload.get("target_level") or "") or None
+        signals = self._runtime_success_signals(state)
+        conditions: dict[str, dict[str, Any]] = {}
+        satisfied: list[str] = []
+        missing: list[str] = []
+        evidence_refs: list[str] = []
+        for condition in required:
+            item = signals.get(condition, {"satisfied": False, "evidence_ids": []})
+            is_satisfied = bool(item.get("satisfied"))
+            refs = [str(ref) for ref in item.get("evidence_ids", []) if str(ref).strip()]
+            conditions[condition] = {
+                "condition": condition,
+                "satisfied": is_satisfied,
+                "predicate": "runtime_signal",
+                "evidence_ids": refs,
+                "evidence_refs": refs,
+            }
+            if is_satisfied:
+                satisfied.append(condition)
+                evidence_refs.extend(refs)
+            else:
+                missing.append(condition)
+        all_required_satisfied = not missing
+        level_results = self._inline_level_results(levels=levels, signals=signals)
+        achieved_level = self._achieved_level(level_results)
+        target_level_satisfied = (
+            bool(level_results.get(target_level, {}).get("satisfied"))
+            if target_level
+            else all_required_satisfied
+        )
+        return {
+            "profile_id": str(state.execution.metadata.get("lab_profile", {}).get("profile_id") or ""),
+            "contract_id": str(contract_payload.get("contract_id") or ""),
+            "mode": str(contract_payload.get("mode") or ""),
+            "all_required_satisfied": all_required_satisfied,
+            "chain_integrity": True,
+            "goal_proof_valid": bool(signals.get("goal_check_recorded", {}).get("satisfied")),
+            "eligible_for_stop": target_level_satisfied,
+            "achieved_level": achieved_level,
+            "target_level": target_level,
+            "level_results": level_results,
+            "satisfied": satisfied,
+            "missing": missing,
+            "failed": [],
+            "conditions": conditions,
+            "condition_results": conditions,
+            "evidence_refs": self._dedupe_strings(evidence_refs),
+            "redacted_summary": f"{len(satisfied)}/{len(required)} inline success conditions satisfied",
+            "last_updated_cycle": cycle_index,
+        }
+
+    @staticmethod
+    def _inline_level_results(
+        *,
+        levels: dict[str, list[str]],
+        signals: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        results: dict[str, dict[str, Any]] = {}
+        for level, required in levels.items():
+            satisfied = [name for name in required if bool(signals.get(name, {}).get("satisfied"))]
+            missing = [name for name in required if name not in set(satisfied)]
+            results[level] = {
+                "level": level,
+                "required": list(required),
+                "satisfied": not missing,
+                "satisfied_conditions": satisfied,
+                "missing": missing,
+                "failed": [],
+            }
+        return results
+
+    @staticmethod
+    def _achieved_level(level_results: dict[str, dict[str, Any]]) -> str | None:
+        achieved: str | None = None
+        for level, result in level_results.items():
+            if bool(result.get("satisfied")):
+                achieved = level
+        return achieved
+
+    @staticmethod
+    def _runtime_success_signals(state: RuntimeState) -> dict[str, dict[str, Any]]:
+        signals: dict[str, dict[str, Any]] = {}
+
+        def mark(condition: str, refs: list[str] | None = None) -> None:
+            bucket = signals.setdefault(condition, {"satisfied": True, "evidence_ids": []})
+            bucket["satisfied"] = True
+            bucket["evidence_ids"] = AppOrchestrator._dedupe_strings(
+                list(bucket.get("evidence_ids") or []) + list(refs or [])
+            )
+
+        for finding in state.execution.metadata.get("findings", []) or []:
+            if not isinstance(finding, dict):
+                continue
+            refs = [
+                str(ref)
+                for ref in finding.get("evidence_refs", []) or []
+                if str(ref).strip()
+            ]
+            text = " ".join(
+                str(finding.get(key) or "")
+                for key in ("kind", "type", "summary", "title", "category")
+            ).lower()
+            if "service" in text:
+                mark("dmz_service_discovered", refs)
+            if "candidate" in text or "vulnerab" in text:
+                mark("vulnerability_candidate_recorded", refs)
+            if "goalcheck" in text or "goal_satisfied" in finding or bool(finding.get("goal_satisfied")):
+                mark("goal_check_recorded", refs)
+            if "database" in text and ("file" in text or "artifact" in text):
+                mark("database_file_read", refs)
+        goal_refs = [
+            str(ref)
+            for ref in state.execution.metadata.get("goal_evidence_refs", []) or []
+            if str(ref).strip()
+        ]
+        if state.execution.metadata.get("goal_satisfied"):
+            mark("goal_check_recorded", goal_refs)
+        for hint in state.execution.metadata.get("stage_runtime_hints", []) or []:
+            if not isinstance(hint, dict):
+                continue
+            refs = [str(ref) for ref in hint.get("evidence_refs", []) or [] if str(ref).strip()]
+            for condition in hint.get("satisfied_conditions", []) or []:
+                mark(str(condition), refs)
+        return signals
+
+    @staticmethod
+    def _dedupe_strings(items: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for item in items:
+            text = str(item).strip()
+            if text and text not in seen:
+                seen.add(text)
+                ordered.append(text)
+        return ordered
 
     def _load_tool_catalog(self) -> dict[str, Any]:
         if self.mcp_client is None:
@@ -1766,12 +1856,8 @@ class AppOrchestrator:
         """
 
         profile_id = str(lab_profile.get("profile_id") or "")
-        full_pentest_profiles = {
-            "full-vulhub-multihost-pentest",
-            "full-chain-autonomous-pentest-lab",
-        }
         return {
-            "full_pentest_active": profile_id in full_pentest_profiles,
+            "full_pentest_active": profile_id == "full-vulhub-multihost-pentest",
             "profile_id": profile_id or None,
             "source": "lab_profile.profile_id",
         }
@@ -1804,53 +1890,6 @@ class AppOrchestrator:
                 if evidence_id:
                     evidence_ids.add(str(evidence_id))
         return sorted(evidence_ids)
-
-    @classmethod
-    def _operation_summary_evidence_ids(cls, *, state: RuntimeState, progress: dict[str, Any]) -> list[str]:
-        """Merge evidence refs from success progress, KG/runtime metadata and stage outputs."""
-
-        evidence_ids: set[str] = set(cls._success_condition_evidence_ids(progress))
-
-        for item in state.execution.metadata.get("evidence_artifacts", []) or []:
-            if not isinstance(item, dict):
-                continue
-            for key in ("evidence_id", "id", "payload_ref", "tool_output_ref", "raw_output_ref"):
-                value = item.get(key)
-                if value:
-                    evidence_ids.add(str(value))
-
-        for outcome in state.recent_outcomes:
-            if outcome.payload_ref:
-                evidence_ids.add(str(outcome.payload_ref))
-            payload = outcome.metadata.get("outcome_payload")
-            if not isinstance(payload, dict):
-                continue
-            stage_result = payload.get("stage_result")
-            if isinstance(stage_result, dict):
-                for ref in stage_result.get("evidence_refs") or []:
-                    if ref:
-                        evidence_ids.add(str(ref))
-                for evidence in stage_result.get("evidence") or []:
-                    if not isinstance(evidence, dict):
-                        continue
-                    for key in ("evidence_id", "id", "payload_ref", "tool_output_ref", "raw_output_ref"):
-                        value = evidence.get(key)
-                        if value:
-                            evidence_ids.add(str(value))
-                for trace in stage_result.get("tool_trace") or stage_result.get("tool_traces") or []:
-                    if not isinstance(trace, dict):
-                        continue
-                    for ref in trace.get("evidence_refs") or []:
-                        if ref:
-                            evidence_ids.add(str(ref))
-                    raw_ref = trace.get("raw_output_ref")
-                    if raw_ref:
-                        evidence_ids.add(str(raw_ref))
-            for trace in payload.get("tool_trace") or []:
-                if isinstance(trace, dict) and trace.get("raw_output_ref"):
-                    evidence_ids.add(str(trace["raw_output_ref"]))
-
-        return sorted(ref for ref in evidence_ids if ref)
 
     @staticmethod
     def _result_status(
@@ -1928,8 +1967,7 @@ class AppOrchestrator:
         phase: str,
         exc: Exception,
         txt_logger: TxtTraceLogger | None = None,
-        planner_decision: PlannerDecision | None = None,
-        planning_success: bool = False,
+        planning: PipelineCycleResult | None = None,
         apply_results: list[PhaseTwoApplyResult] | None = None,
     ) -> OperationCycleResult:
         error_type = "llm_transport_error" if "llm_transport_error" in str(exc) else exc.__class__.__name__
@@ -1984,8 +2022,9 @@ class AppOrchestrator:
                     "cycle_index": cycle_index,
                     "started_at": error_record["recorded_at"],
                     "architecture": "planner_stage_agent_graph_main_path",
-                    "planning_success": planning_success,
+                    "planning_success": planning.success if planning is not None else False,
                     "execution_success": False,
+                    "feedback_success": False,
                     "selected_agent": None,
                     "selected_stage": None,
                     "applied_results": len(apply_results or []),
@@ -2011,13 +2050,23 @@ class AppOrchestrator:
         self.graph_memory_store.save_ag(operation_id, ag)
         self.graph_memory_store.save_runtime(operation_id, state)
         self.graph_memory_store.save_snapshot(operation_id, cycle_index)
+        failed_output = AgentOutput(
+            logs=[state.execution.summary],
+            errors=[f"{error_type}: {exc}"],
+        )
+        failed_cycle = PipelineCycleResult(
+            cycle_name=phase,
+            operation_id=operation_id,
+            success=False,
+            final_output=failed_output,
+            logs=[state.execution.summary],
+        )
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planner_decision=planner_decision,
-            planning_success=planning_success,
-            stage_result=None,
-            execution_success=False,
+            planning=planning or failed_cycle,
+            execution=failed_cycle if phase != "planning" else None,
+            feedback=None,
             apply_results=list(apply_results or []),
             selected_task_ids=[],
             applied_task_ids=[],
@@ -2079,7 +2128,6 @@ class AppOrchestrator:
         return {
             "planner_enabled": AppOrchestrator._planner_llm_enabled(settings),
             "planner_rank_enabled": AppOrchestrator._planner_rank_llm_enabled(settings),
-            "graph_planner_enabled": AppOrchestrator._graph_llm_planner_enabled(settings),
             "critic_enabled": settings.enable_critic_llm_advisor,
             "supervisor_enabled": settings.enable_supervisor_llm_advisor,
             "configured": config is not None,
@@ -2092,28 +2140,25 @@ class AppOrchestrator:
         """Stable description of the graph-driven multi-agent runtime."""
 
         return {
-            "architecture": "llm_multi_agent_graph_driven_multihost",
+            "architecture": "agentic_planner_single_executor_pev",
             "planner_agent": {
                 "implementation": "MissionPlannerAgent",
-                "kind": "llm_agent",
-                "core_decision_owner": "llm",
+                "kind": "agentic_graph_planner",
+                "core_decision_owner": "llm_with_typed_graph_tools",
             },
-            "stage_dispatcher": {
-                "implementation": "StageDispatcher",
-                "kind": "runtime_router",
+            "execution_agent": {
+                "implementation": "ExecutionAgent",
+                "kind": "single_capability_executor",
             },
-            "critic_agent": {
-                "implementation": "CriticAgent",
-                "kind": "llm_agent",
+            "verify_write": {
+                "implementation": "SuccessConditionTracker + PhaseTwoResultApplier",
+                "kind": "deterministic_verify_and_graph_write",
             },
             "non_agent_services": [
                 "ResultApplier",
-                "PolicyGate",
+                "SuccessConditionTracker",
                 "RuntimeStore",
                 "GraphMemoryStore",
-                "ExecutionAdapter",
-                "Parser",
-                "CandidateTaskService",
             ],
         }
 
@@ -2122,15 +2167,10 @@ class AppOrchestrator:
         return settings.enable_planner_rank_llm_advisor or settings.enable_planner_llm_advisor
 
     @staticmethod
-    def _graph_llm_planner_enabled(settings: AppSettings) -> bool:
-        return settings.enable_graph_llm_planner_advisor or settings.enable_planner_llm_advisor
-
-    @staticmethod
     def _planner_llm_enabled(settings: AppSettings) -> bool:
         return (
             settings.enable_planner_llm_advisor
             or settings.enable_planner_rank_llm_advisor
-            or settings.enable_graph_llm_planner_advisor
         )
 
     @staticmethod

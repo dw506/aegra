@@ -4,141 +4,121 @@ from datetime import datetime, timezone
 
 from src.core.models.ag import AttackGraph, GraphRef
 from src.core.models.attack_process import (
-    AgentExecutionNode,
     AttackProcessEdge,
     AttackProcessEdgeType,
     AttackProcessNodeType,
-    PlannerDecisionNode,
-    StageResultNode,
-    ToolCallNode,
+    AttackStepNode,
+    GoalOutcomeNode,
 )
 
 
-def test_attack_graph_adds_and_restores_process_nodes() -> None:
+def test_attack_graph_adds_and_restores_result_timeline_nodes() -> None:
     graph = AttackGraph()
-    planner = PlannerDecisionNode(
-        id="process-planner-1",
-        label="Planner selected recon",
+    recon = AttackStepNode(
+        id="attack-step-1",
+        label="Recon completed",
         operation_id="op-1",
         cycle_index=1,
-        agent_name="PlannerAgent",
-        status="selected",
+        agent_name="execution_agent",
+        status="succeeded",
+        capability="recon",
         refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
         created_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
     )
-    execution = AgentExecutionNode(
-        id="process-agent-1",
-        label="Recon agent execution",
+    exploit = AttackStepNode(
+        id="attack-step-2",
+        label="Exploit completed",
         operation_id="op-1",
-        cycle_index=1,
-        agent_name="ReconAgent",
-        status="running",
+        cycle_index=2,
+        agent_name="execution_agent",
+        status="succeeded",
+        capability="exploit",
         created_at=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
     )
-    tool_call = ToolCallNode(
-        id="process-tool-1",
-        label="Nmap scan",
+    outcome = GoalOutcomeNode(
+        id="goal-outcome-1",
+        label="Goal completed",
         operation_id="op-1",
-        cycle_index=1,
-        agent_name="ReconAgent",
-        status="completed",
-        properties={"tool": "nmap"},
+        cycle_index=3,
+        status="success",
+        properties={"achieved_level": "full"},
         created_at=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
     )
-    result = StageResultNode(
-        id="process-result-1",
-        label="Recon result",
-        operation_id="op-1",
-        cycle_index=1,
-        agent_name="ReconAgent",
-        status="completed",
-        summary="Open service found.",
-        created_at=datetime(2026, 1, 1, 0, 3, tzinfo=timezone.utc),
-    )
 
-    graph.add_process_node(planner)
-    graph.add_process_node(execution)
-    graph.add_process_node(tool_call)
-    graph.add_process_node(result)
+    graph.add_process_node(recon)
+    graph.add_process_node(exploit)
+    graph.add_process_node(outcome)
     graph.add_process_edge(
         AttackProcessEdge(
             id="process-edge-1",
-            edge_type=AttackProcessEdgeType.DISPATCHED_TO,
-            source=planner.id,
-            target=execution.id,
-            label="dispatched to",
+            edge_type=AttackProcessEdgeType.NEXT,
+            source=recon.id,
+            target=exploit.id,
+            label="next",
         )
     )
     graph.add_process_edge(
         id="process-edge-2",
-        edge_type=AttackProcessEdgeType.CALLED_TOOL,
-        source=execution.id,
-        target=tool_call.id,
-        label="called tool",
-    )
-    graph.add_process_edge(
-        id="process-edge-3",
-        edge_type=AttackProcessEdgeType.PRODUCED_RESULT,
-        source=tool_call.id,
-        target=result.id,
-        label="produced result",
+        edge_type=AttackProcessEdgeType.ADVANCED,
+        source=exploit.id,
+        target=outcome.id,
+        label="advanced",
     )
 
     serialized = graph.to_dict()
     restored = AttackGraph.from_dict(serialized)
 
     assert {node["kind"] for node in serialized["nodes"]} == {"process"}
-    assert isinstance(restored.get_node(planner.id), PlannerDecisionNode)
-    assert isinstance(restored.get_node(execution.id), AgentExecutionNode)
-    assert isinstance(restored.get_node(tool_call.id), ToolCallNode)
-    assert isinstance(restored.get_node(result.id), StageResultNode)
-    assert restored.get_edge("process-edge-2").edge_type == AttackProcessEdgeType.CALLED_TOOL
-    assert restored.neighbors(execution.id, AttackProcessEdgeType.CALLED_TOOL, direction="out")[0].id == tool_call.id
-    assert restored.by_subject_ref(GraphRef(graph="kg", ref_id="host-1", ref_type="Host"))[0].id == planner.id
+    assert isinstance(restored.get_node(recon.id), AttackStepNode)
+    assert isinstance(restored.get_node(exploit.id), AttackStepNode)
+    assert isinstance(restored.get_node(outcome.id), GoalOutcomeNode)
+    assert restored.get_edge("process-edge-2").edge_type == AttackProcessEdgeType.ADVANCED
+    assert restored.neighbors(recon.id, AttackProcessEdgeType.NEXT, direction="out")[0].id == exploit.id
+    assert restored.by_subject_ref(GraphRef(graph="kg", ref_id="host-1", ref_type="Host"))[0].id == recon.id
 
 
 def test_attack_graph_finds_and_sorts_process_nodes() -> None:
     graph = AttackGraph()
     graph.add_process_node(
-        id="process-planner-1",
-        node_type=AttackProcessNodeType.PLANNER_DECISION,
-        label="Planner selected recon",
+        id="attack-step-1",
+        node_type=AttackProcessNodeType.ATTACK_STEP,
+        label="Recon completed",
         operation_id="op-1",
         cycle_index=1,
-        agent_name="PlannerAgent",
+        agent_name="execution_agent",
         created_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
     )
     graph.add_process_node(
-        id="process-agent-1",
-        node_type=AttackProcessNodeType.AGENT_EXECUTION,
-        label="Recon agent execution",
+        id="attack-step-2",
+        node_type=AttackProcessNodeType.ATTACK_STEP,
+        label="Exploit completed",
         operation_id="op-1",
-        cycle_index=1,
-        agent_name="ReconAgent",
+        cycle_index=2,
+        agent_name="execution_agent",
         created_at=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
     )
     graph.add_process_node(
-        id="process-agent-2",
-        node_type=AttackProcessNodeType.AGENT_EXECUTION,
-        label="Exploit validation agent execution",
+        id="goal-outcome-1",
+        node_type=AttackProcessNodeType.GOAL_OUTCOME,
+        label="Goal outcome",
         operation_id="op-2",
-        cycle_index=2,
-        agent_name="ExploitValidationAgent",
+        cycle_index=3,
+        agent_name="execution_agent",
         created_at=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
     )
 
     assert [node.id for node in graph.find_process_nodes(operation_id="op-1")] == [
-        "process-planner-1",
-        "process-agent-1",
+        "attack-step-1",
+        "attack-step-2",
     ]
-    assert [node.id for node in graph.find_process_nodes(cycle_index=1, agent_name="ReconAgent")] == [
-        "process-agent-1",
+    assert [node.id for node in graph.find_process_nodes(cycle_index=1, agent_name="execution_agent")] == [
+        "attack-step-1",
     ]
-    assert [node.id for node in graph.find_process_nodes(node_type=AttackProcessNodeType.AGENT_EXECUTION)] == [
-        "process-agent-1",
-        "process-agent-2",
+    assert [node.id for node in graph.find_process_nodes(node_type=AttackProcessNodeType.ATTACK_STEP)] == [
+        "attack-step-1",
+        "attack-step-2",
     ]
     assert [node.id for node in graph.recent_process_nodes(limit=2)] == [
-        "process-agent-2",
-        "process-agent-1",
+        "goal-outcome-1",
+        "attack-step-2",
     ]

@@ -14,7 +14,44 @@ require_all:
   - credential_or_pivot_hint_discovered
   - pivot_route_recorded
   - restricted_zone_service_discovered
-  - final_goal_proof_valid
+  - database_proof_recorded
+
+target_level: full
+
+levels:
+  minimal:
+    - target_imported
+    - entry_zone_host_discovered
+    - entry_zone_service_discovered
+    - service_fingerprint_recorded
+    - vulnerability_candidate_recorded
+  standard:
+    - target_imported
+    - entry_zone_host_discovered
+    - entry_zone_service_discovered
+    - service_fingerprint_recorded
+    - vulnerability_candidate_recorded
+    - exploit_attempt_recorded
+    - exploit_success_recorded
+    - capability_or_session_recorded
+    - post_access_observation_recorded
+    - credential_or_pivot_hint_discovered
+    - pivot_route_recorded
+    - restricted_zone_service_discovered
+  full:
+    - target_imported
+    - entry_zone_host_discovered
+    - entry_zone_service_discovered
+    - service_fingerprint_recorded
+    - vulnerability_candidate_recorded
+    - exploit_attempt_recorded
+    - exploit_success_recorded
+    - capability_or_session_recorded
+    - post_access_observation_recorded
+    - credential_or_pivot_hint_discovered
+    - pivot_route_recorded
+    - restricted_zone_service_discovered
+    - database_proof_recorded
 
 require_chain:
   - [entry_zone_service_discovered, service_fingerprint_recorded]
@@ -26,7 +63,7 @@ require_chain:
   - [post_access_observation_recorded, credential_or_pivot_hint_discovered]
   - [credential_or_pivot_hint_discovered, pivot_route_recorded]
   - [pivot_route_recorded, restricted_zone_service_discovered]
-  - [restricted_zone_service_discovered, final_goal_proof_valid]
+  - [restricted_zone_service_discovered, database_proof_recorded]
 
 condition_bindings:
   target_imported:
@@ -145,7 +182,15 @@ condition_bindings:
       zone_ref: restricted
       route_type: pivot_route
 
-  final_goal_proof_valid:
-    predicate: oracle_proof_valid
+  # Terminal condition (option D): success == the internal database "file" was
+  # read over the pivot route. controlled_data_read_proof writes a redacted
+  # ControlledDataReadProof node (proof_sha256 only, never raw rows) which this
+  # predicate matches. No marker/secret enters the graph.
+  database_proof_recorded:
+    predicate: exists_node
     args:
-      goal_id: final_internal_goal
+      graph: kg
+      type:
+        in:
+          - ControlledDataReadProof
+      filters: {}

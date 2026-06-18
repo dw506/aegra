@@ -214,6 +214,8 @@ class StageResultAdapter:
                     summary=str(item.get("summary") or f"stage discovered {ref.ref_type or ref.ref_id}"),
                 )
             )
+        writes.extend(cls._structured_fact_writes(stage_result))
+        writes.extend(cls._goal_proof_fact_writes(stage_result))
         for item in stage_result.discovered_relations:
             if not isinstance(item, dict):
                 continue
@@ -267,8 +269,209 @@ class StageResultAdapter:
                             summary=f"tool-extracted: {fact.label}",
                         )
                     )
+            writes.extend(cls._tool_parsed_entity_fact_writes(stage_result, all_traces))
 
         return writes
+
+    @classmethod
+    def _structured_fact_writes(cls, stage_result: StageResult) -> list[FactWriteRequest]:
+        writes: list[FactWriteRequest] = []
+        for payload in stage_result.observations:
+            if not isinstance(payload, dict):
+                continue
+            hosts = list(payload.get("hosts_up") or [])
+            hosts.extend(item for item in payload.get("hosts") or [] if isinstance(item, dict))
+            for host in hosts:
+                record = {"host": host} if isinstance(host, str) else dict(host)
+                address = cls._string(record.get("address") or record.get("host") or record.get("ip"))
+                if not address:
+                    continue
+                attrs = {key: value for key, value in record.items() if key not in {"id", "entity_id", "type"}}
+                attrs["address"] = address
+                writes.append(
+                    cls._entity_write(
+                        stage_result=stage_result,
+                        ref_id=f"host::{address}",
+                        ref_type="Host",
+                        attributes=attrs,
+                        summary=f"host observed: {address}",
+                        confidence=cls._confidence(record),
+                    )
+                )
+            services = list(payload.get("services") or [])
+            services.extend(item for item in payload.get("service_discovery") or [] if isinstance(item, dict))
+            analysis = payload.get("analysis")
+            if isinstance(analysis, dict):
+                for item in analysis.get("service_fingerprints") or []:
+                    if isinstance(item, dict):
+                        fingerprint = dict(item.get("improved_fingerprint") or {})
+                        merged = {
+                            **item,
+                            "service": fingerprint.get("application") or item.get("service") or item.get("service_name"),
+                            "version": fingerprint.get("application_version") or item.get("version"),
+                        }
+                        services.append(merged)
+            for service in services:
+                if not isinstance(service, dict):
+                    continue
+                host = cls._string(service.get("host") or service.get("address") or service.get("target"))
+                port = cls._coerce_port(service.get("port"))
+                protocol = cls._string(service.get("protocol") or "tcp") or "tcp"
+                if not host or port is None:
+                    continue
+                service_name = cls._string(service.get("service_name") or service.get("service") or service.get("name"))
+                service_id = f"service::{host}:{port}/{protocol}"
+                attrs = {
+                    **{key: value for key, value in service.items() if key not in {"id", "entity_id", "type"}},
+                    "host": host,
+                    "port": port,
+                    "protocol": protocol,
+                    "service_name": service_name,
+                }
+                writes.append(
+                    cls._entity_write(
+                        stage_result=stage_result,
+                        ref_id=service_id,
+                        ref_type="Service",
+                        attributes=attrs,
+                        summary=f"service observed: {host}:{port}/{protocol}",
+                        confidence=cls._confidence(service),
+                    )
+                )
+                writes.append(
+                    FactWriteRequest(
+                        kind=FactWriteKind.RELATION_UPSERT,
+                        source_task_id=stage_result.stage_task_id,
+                        subject_ref=GraphRef(graph="kg", ref_id=f"host::{host}", ref_type="Host"),
+                        object_ref=GraphRef(graph="kg", ref_id=service_id, ref_type="Service"),
+                        relation_type="HOSTS",
+                        attributes={"source_task_id": stage_result.stage_task_id},
+                        confidence=cls._confidence(service),
+                        summary=f"{host} hosts {port}/{protocol}",
+                    )
+                )
+            for index, item in enumerate(payload.get("negative_evidence") or []):
+                summary = cls._string(item.get("summary") if isinstance(item, dict) else item)
+                if not summary:
+                    continue
+                attrs = dict(item) if isinstance(item, dict) else {"summary": summary}
+                attrs.setdefault("evidence_kind", "negative_evidence")
+                writes.append(
+                    cls._entity_write(
+                        stage_result=stage_result,
+                        ref_id=f"evidence::{stage_result.stage_task_id}::negative_evidence::{index}",
+                        ref_type="Evidence",
+                        attributes=attrs,
+                        summary=summary,
+                        confidence=cls._confidence(attrs),
+                    )
+                )
+        for finding in stage_result.findings:
+            if not isinstance(finding, dict):
+                continue
+            ref_id = cls._string(finding.get("finding_id") or finding.get("id"))
+            if not ref_id:
+                continue
+            writes.append(
+                cls._entity_write(
+                    stage_result=stage_result,
+                    ref_id=ref_id,
+                    ref_type="Finding",
+                    attributes={key: value for key, value in finding.items() if key not in {"id", "finding_id", "type"}},
+                    summary=str(finding.get("summary") or finding.get("title") or ref_id),
+                    confidence=cls._confidence(finding),
+                )
+            )
+        return writes
+
+    @classmethod
+    def _goal_proof_fact_writes(cls, stage_result: StageResult) -> list[FactWriteRequest]:
+        hints = stage_result.runtime_hints if isinstance(stage_result.runtime_hints, dict) else {}
+        if not bool(hints.get("goal_satisfied")):
+            return []
+        goal_id = cls._string(hints.get("goal_id"))
+        if not goal_id:
+            return []
+        evidence_source = hints.get("goal_evidence_refs")
+        if not isinstance(evidence_source, list):
+            evidence_source = hints.get("evidence_refs")
+        evidence_refs = [str(ref) for ref in (evidence_source or []) if str(ref).strip()]
+        attrs: dict[str, Any] = {
+            "goal_id": goal_id,
+            "evidence_refs": evidence_refs,
+            "redacted_summary": cls._string(hints.get("goal_summary")) or f"goal {goal_id} proof recorded",
+        }
+        proof_token = cls._string(hints.get("proof_token"))
+        if proof_token:
+            attrs["proof_token"] = proof_token
+        return [
+            cls._entity_write(
+                stage_result=stage_result,
+                ref_id=f"goal-proof::{goal_id}",
+                ref_type="GoalProof",
+                attributes=attrs,
+                summary=f"goal proof: {goal_id}",
+                confidence=1.0,
+            )
+        ]
+
+    @classmethod
+    def _tool_parsed_entity_fact_writes(
+        cls,
+        stage_result: StageResult,
+        traces: list[Any],
+    ) -> list[FactWriteRequest]:
+        writes: list[FactWriteRequest] = []
+        for trace in traces:
+            parsed = trace.parsed_output if hasattr(trace, "parsed_output") else {}
+            if not isinstance(parsed, dict):
+                continue
+            for entity in parsed.get("entities") or parsed.get("discovered_entities") or []:
+                if not isinstance(entity, dict):
+                    continue
+                ref_type = cls._string(entity.get("type") or entity.get("ref_type"))
+                if not ref_type:
+                    continue
+                ref_id = cls._string(
+                    entity.get("entity_id")
+                    or entity.get("id")
+                    or entity.get("candidate_id")
+                    or entity.get("capability_id")
+                    or entity.get("session_id")
+                    or entity.get("route_id")
+                )
+                if not ref_id:
+                    ref_id = f"{ref_type.lower()}::{stage_result.stage_task_id}::{len(writes)}"
+                writes.append(
+                    cls._entity_write(
+                        stage_result=stage_result,
+                        ref_id=ref_id,
+                        ref_type=ref_type,
+                        attributes={key: value for key, value in entity.items() if key not in {"id", "entity_id", "type", "ref_type"}},
+                        summary=str(entity.get("summary") or entity.get("label") or ref_id),
+                        confidence=cls._confidence(entity),
+                    )
+                )
+        return writes
+
+    @staticmethod
+    def _entity_write(
+        *,
+        stage_result: StageResult,
+        ref_id: str,
+        ref_type: str,
+        attributes: dict[str, Any],
+        summary: str,
+        confidence: float,
+    ) -> FactWriteRequest:
+        return FactWriteRequest(
+            kind=FactWriteKind.ENTITY_UPSERT,
+            source_task_id=stage_result.stage_task_id,
+            subject_ref=GraphRef(graph="kg", ref_id=ref_id, ref_type=ref_type),
+            attributes={**dict(attributes), "source_task_id": stage_result.stage_task_id},
+            confidence=confidence,
+            summary=summary,
+        )
 
     @classmethod
     def _runtime_requests(cls, stage_result: StageResult) -> list[RuntimeControlRequest]:
@@ -381,6 +584,16 @@ class StageResultAdapter:
         except (TypeError, ValueError):
             value = 0.5
         return max(0.0, min(1.0, value))
+
+    @staticmethod
+    def _coerce_port(value: Any) -> int | None:
+        try:
+            port = int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        if 1 <= port <= 65535:
+            return port
+        return None
 
     @staticmethod
     def _string(value: Any) -> str | None:

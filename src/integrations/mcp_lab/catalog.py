@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.integrations.mcp_lab.tools import lab_tool_specs
-
+#给 StageAgent 看的工具目录
 
 def build_default_lab_tool_catalog(*, server_id: str = "pentest-tools", include_unavailable: bool = True) -> dict[str, Any]:
     """Return all lab MCP tools under one server catalog.

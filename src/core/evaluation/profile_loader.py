@@ -53,7 +53,8 @@ class ProfileLoader:
         zone_bindings: dict[str, ZoneBinding] = {}
         for ref, zone_data in zone_bindings_raw.items():
             if isinstance(zone_data, dict):
-                zone_bindings[ref] = ZoneBinding(name=zone_data.get("name", ref), **zone_data)
+                rest = {key: value for key, value in zone_data.items() if key != "name"}
+                zone_bindings[ref] = ZoneBinding(name=zone_data.get("name", ref), **rest)
             else:
                 zone_bindings[ref] = ZoneBinding(name=ref)
         return OperationProfile(zone_bindings=zone_bindings, **data)

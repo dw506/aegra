@@ -12,34 +12,17 @@ from src.core.models.graph_common import GraphRef, stable_node_id, utc_now
 
 
 class AttackProcessNodeType(str, Enum):
-    """Node types for attack-process records stored in AG."""
+    """Result-tier node types stored in AG."""
 
-    ATTACK_CYCLE = "ATTACK_CYCLE"
-    PLANNER_DECISION = "PLANNER_DECISION"
-    AGENT_EXECUTION = "AGENT_EXECUTION"
-    TOOL_CALL = "TOOL_CALL"
-    STAGE_RESULT = "STAGE_RESULT"
-    HANDOFF_SUGGESTION = "HANDOFF_SUGGESTION"
-    BLOCKED_REASON = "BLOCKED_REASON"
-    GOAL_CHECK = "GOAL_CHECK"
-    STOP_DECISION = "STOP_DECISION"
+    ATTACK_STEP = "ATTACK_STEP"
+    GOAL_OUTCOME = "GOAL_OUTCOME"
 
 
 class AttackProcessEdgeType(str, Enum):
-    """Edge types connecting attack-process records in AG."""
+    """Result-tier edge types connecting AG records."""
 
-    NEXT_CYCLE = "NEXT_CYCLE"
-    PLANNED = "PLANNED"
-    DISPATCHED_TO = "DISPATCHED_TO"
-    CALLED_TOOL = "CALLED_TOOL"
-    PRODUCED_RESULT = "PRODUCED_RESULT"
-    SUPPORTED_BY_EVIDENCE = "SUPPORTED_BY_EVIDENCE"
-    UPDATED_KG = "UPDATED_KG"
-    SUGGESTED_HANDOFF = "SUGGESTED_HANDOFF"
-    ACCEPTED_BY_PLANNER = "ACCEPTED_BY_PLANNER"
-    REJECTED_BY_PLANNER = "REJECTED_BY_PLANNER"
-    BLOCKED_BY_POLICY = "BLOCKED_BY_POLICY"
-    SATISFIED_GOAL = "SATISFIED_GOAL"
+    NEXT = "NEXT"
+    ADVANCED = "ADVANCED"
 
 
 class AttackProcessNode(BaseModel):
@@ -63,58 +46,23 @@ class AttackProcessNode(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class AttackCycleNode(AttackProcessNode):
-    """A single planner/stage cycle recorded as an attack-process node."""
+class AttackStepNode(AttackProcessNode):
+    """One execution round's *result*, recorded as a single AG node.
 
-    node_type: Literal[AttackProcessNodeType.ATTACK_CYCLE] = AttackProcessNodeType.ATTACK_CYCLE
+    Coarse as a node, precise via links: ``kg_node_refs`` points at the KG nodes
+    this round produced/used and ``properties['log_ref']`` points at the full
+    round process log. Detail lives in KG + Log, not in AG.
+    """
 
-
-class PlannerDecisionNode(AttackProcessNode):
-    """A planner decision recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.PLANNER_DECISION] = AttackProcessNodeType.PLANNER_DECISION
-
-
-class AgentExecutionNode(AttackProcessNode):
-    """An agent execution recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.AGENT_EXECUTION] = AttackProcessNodeType.AGENT_EXECUTION
+    node_type: Literal[AttackProcessNodeType.ATTACK_STEP] = AttackProcessNodeType.ATTACK_STEP
+    capability: str | None = None
+    kg_node_refs: list[str] = Field(default_factory=list)
 
 
-class ToolCallNode(AttackProcessNode):
-    """A tool invocation recorded as an attack-process node."""
+class GoalOutcomeNode(AttackProcessNode):
+    """Terminal outcome of the operation (success/fail + achieved level)."""
 
-    node_type: Literal[AttackProcessNodeType.TOOL_CALL] = AttackProcessNodeType.TOOL_CALL
-
-
-class StageResultNode(AttackProcessNode):
-    """A stage result recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.STAGE_RESULT] = AttackProcessNodeType.STAGE_RESULT
-
-
-class HandoffSuggestionNode(AttackProcessNode):
-    """A stage-to-planner handoff suggestion recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.HANDOFF_SUGGESTION] = AttackProcessNodeType.HANDOFF_SUGGESTION
-
-
-class BlockedReasonNode(AttackProcessNode):
-    """A policy/runtime blocked reason recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.BLOCKED_REASON] = AttackProcessNodeType.BLOCKED_REASON
-
-
-class GoalCheckNode(AttackProcessNode):
-    """A goal-verification result recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.GOAL_CHECK] = AttackProcessNodeType.GOAL_CHECK
-
-
-class StopDecisionNode(AttackProcessNode):
-    """A planner stop decision recorded as an attack-process node."""
-
-    node_type: Literal[AttackProcessNodeType.STOP_DECISION] = AttackProcessNodeType.STOP_DECISION
+    node_type: Literal[AttackProcessNodeType.GOAL_OUTCOME] = AttackProcessNodeType.GOAL_OUTCOME
 
 
 class AttackProcessEdge(BaseModel):
@@ -134,17 +82,10 @@ class AttackProcessEdge(BaseModel):
 __all__ = [
     "AttackProcessEdge",
     "AttackProcessEdgeType",
-    "AttackCycleNode",
+    "AttackStepNode",
+    "GoalOutcomeNode",
     "AttackProcessNode",
     "AttackProcessNodeType",
-    "AgentExecutionNode",
-    "BlockedReasonNode",
     "GraphRef",
-    "GoalCheckNode",
-    "HandoffSuggestionNode",
-    "PlannerDecisionNode",
-    "StageResultNode",
-    "StopDecisionNode",
     "stable_node_id",
-    "ToolCallNode",
 ]

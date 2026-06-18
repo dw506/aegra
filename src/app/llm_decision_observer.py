@@ -157,7 +157,6 @@ class LLMDecisionObserver:
         return (
             self._settings.enable_planner_llm_advisor
             or self._settings.enable_planner_rank_llm_advisor
-            or self._settings.enable_graph_llm_planner_advisor
         )
 
     def _llm_model(self) -> str | None:

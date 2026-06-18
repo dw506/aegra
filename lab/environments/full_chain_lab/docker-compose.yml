@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Full-chain autonomous pentest lab
 # Topology:
 #   control_net + attacker_net: Aegra API, MCP tools (initial access zone)
@@ -42,6 +40,7 @@ services:
       - AEGRA_MCP_ENABLED=1
       - AEGRA_MCP_CONFIG_PATH=/app/configs/mcp.lab.full-chain.json
       - AEGRA_LAB_PROFILE_PATH=/app/lab/environments/full_chain_lab/profile.yml
+      - AEGRA_RUNTIME_POLICY_PATH=/app/configs/runtime_policy.full-chain.json
     ports:
       - "8000:8000"
     networks:
@@ -79,8 +78,6 @@ services:
     networks:
       dmz_net:
         ipv4_address: 10.20.0.10
-    ports:
-      - "18080:8080"
     volumes:
       - ./lab_flags/dmz-struts:/opt/aegra/flags:ro
       - ./lab_hints/dmz-struts:/opt/aegra/hints:ro
@@ -94,8 +91,6 @@ services:
     networks:
       dmz_net:
         ipv4_address: 10.20.0.11
-    ports:
-      - "18081:80"
     volumes:
       - ./lab_flags/dmz-thinkphp:/opt/aegra/flags:ro
       - ./lab_hints/dmz-thinkphp:/opt/aegra/hints:ro
@@ -109,8 +104,6 @@ services:
     networks:
       dmz_net:
         ipv4_address: 10.20.0.12
-    ports:
-      - "18082:5000"
     volumes:
       - ./lab_flags/dmz-flask:/opt/aegra/flags:ro
       - ./lab_hints/dmz-flask:/opt/aegra/hints:ro
@@ -121,19 +114,18 @@ services:
   # Pivot host (bridges dmz_net <-> internal_net)
   # -------------------------------------------------------------------------
   pivot-ssh:
-    image: linuxserver/openssh-server:latest
+    # Dual-homed SSH jump host on port 22 with password auth + nc/nmap, so the
+    # authorized pivot transport can bridge dmz_net -> internal_net.
+    build:
+      context: .
+      dockerfile: Dockerfile.pivot
     container_name: pivot-ssh
     networks:
       dmz_net:
         ipv4_address: 10.20.0.50
       internal_net:
         ipv4_address: 10.30.0.50
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - PUBLIC_KEY_FILE=/opt/aegra/hints/pivot_authorized_key.pub
     volumes:
-      - ./lab_hints/pivot-ssh:/opt/aegra/hints:ro
       - ./lab_loot/pivot-ssh:/opt/aegra/loot:ro
     restart: unless-stopped
 
@@ -179,11 +171,22 @@ services:
     # No ports: section
 
   internal-db-mock:
-    image: alpine:latest
+    # Real PostgreSQL holding the crown-jewels "database file" (loot table). Only
+    # reachable via pivot-ssh; the controlled_data_read_proof tool reads it over
+    # the established pivot route. The init script seeds one loot row carrying the
+    # goal marker (injected from private/.env, never exposed to the LLM).
+    image: postgres:16-alpine
     container_name: internal-db-mock
-    command: sleep infinity
     networks:
       internal_net:
         ipv4_address: 10.30.0.12
+    environment:
+      - POSTGRES_DB=corp
+      - POSTGRES_USER=dbadmin
+      - POSTGRES_PASSWORD=dbadminpass123
+    env_file:
+      - ./private/.env
+    volumes:
+      - ./internal_db_init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
-    # No ports: section
+    # No ports: section - not accessible from host, only via pivot

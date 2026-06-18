@@ -745,10 +745,13 @@ class KnowledgeGraph:
 
     @staticmethod
     def _normalize_node_type(value: str) -> NodeType:
+        # NB: VulnerabilityCandidate is intentionally NOT aliased — it has a
+        # first-class node model (NodeType.VULNERABILITY_CANDIDATE) and the success
+        # contract checks for that exact type. The remaining aliases map external
+        # shapes that have no dedicated NodeType to the closest first-class kind.
         aliases = {
             "Fingerprint": NodeType.OBSERVATION,
             "WebEndpoint": NodeType.SERVICE,
-            "VulnerabilityCandidate": NodeType.FINDING,
             "CandidateRejected": NodeType.FINDING,
             "NeedMoreEvidence": NodeType.FINDING,
             "ValidationPlan": NodeType.OBSERVATION,

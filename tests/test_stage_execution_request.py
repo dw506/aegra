@@ -7,105 +7,9 @@ from typing import Any
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
 from src.core.planning.models import PlannerDecision
-from src.core.stage.agents import ExploitValidationAgent, GoalAgent, ReconAgent, VulnAnalysisAgent
-from src.core.stage.base_stage_agent import StageAgentDecision, StageToolCall
-from src.core.stage.dispatcher import StageDispatcher
+from src.core.stage.agents import ExecutionStageAgent
 from src.core.stage.models import StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
-
-
-class FinishAdvisor:
-    def __init__(self) -> None:
-        self.requests: list[StageExecutionRequest] = []
-
-    def decide(self, **kwargs: Any) -> StageAgentDecision:
-        request = kwargs["request"]
-        self.requests.append(request)
-        return StageAgentDecision(
-            action="finish",
-            rationale="request satisfied",
-            finish={
-                "status": "succeeded",
-                "summary": f"finished {request.objective}",
-                "confidence": 0.9,
-                "handoff_suggestion": {
-                    "suggested_agent": "vuln_analysis_agent",
-                    "suggested_stage": "VULN_ANALYSIS_STAGE",
-                    "reason": "service evidence is ready for vulnerability analysis",
-                    "confidence": 0.8,
-                    "required_context_refs": ["kg:svc-1"],
-                },
-            },
-        )
-
-
-class ValidationPrecheckAdvisor:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def decide(self, **kwargs: Any) -> StageAgentDecision:
-        self.calls += 1
-        if kwargs["memory"]:
-            return StageAgentDecision(
-                action="finish",
-                rationale="precheck completed",
-                finish={"status": "succeeded", "summary": "validation precheck completed"},
-            )
-        return StageAgentDecision(
-            action="call_tool",
-            rationale="run bounded precheck",
-            tool_call=StageToolCall(
-                server_id="pentest-tools",
-                tool_name="validation_precheck",
-                arguments={"profile_id": "struts2-s2-045"},
-            ),
-        )
-
-
-class UrlTargetAdvisor:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def decide(self, **kwargs: Any) -> StageAgentDecision:
-        self.calls += 1
-        if kwargs["memory"]:
-            return StageAgentDecision(
-                action="finish",
-                rationale="fingerprint completed",
-                finish={"status": "succeeded", "summary": "fingerprint completed"},
-            )
-        return StageAgentDecision(
-            action="call_tool",
-            rationale="fingerprint URL target",
-            tool_call=StageToolCall(
-                server_id="pentest-tools",
-                tool_name="web_fingerprint",
-                arguments={"target": "http://10.0.0.5:8080"},
-            ),
-        )
-
-
-class MissingToolAdvisor:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def decide(self, **kwargs: Any) -> StageAgentDecision:
-        self.calls += 1
-        if kwargs["memory"]:
-            return StageAgentDecision(
-                action="finish",
-                rationale="missing tool recorded",
-                finish={"status": "partial", "summary": "missing catalog tool recorded"},
-            )
-        return StageAgentDecision(
-            action="call_tool",
-            rationale="try optional tool",
-            tool_call=StageToolCall(
-                server_id="pentest-tools",
-                tool_name="optional_missing_tool",
-                arguments={"url": "http://example.test/"},
-            ),
-        )
 
 
 class RecordingMCP:
@@ -135,17 +39,16 @@ class FakeStageLLM:
         return PackyLLMResponse(model="gpt-test", text=json.dumps(payload), usage=None)
 
 
-def test_stage_agent_registry_still_registers_five_agents() -> None:
+def test_stage_agent_registry_resolves_single_execution_agent() -> None:
     registry = StageAgentRegistry.default()
 
-    assert registry.resolve("RECON_STAGE").agent_name == "recon_agent"
-    assert registry.resolve("VULN_ANALYSIS_STAGE").agent_name == "vuln_analysis_agent"
-    assert registry.resolve("EXPLOIT_STAGE").agent_name == "exploit_validation_agent"
-    assert registry.resolve("ACCESS_PIVOT_STAGE").agent_name == "access_pivot_agent"
-    assert registry.resolve("GOAL_STAGE").agent_name == "goal_agent"
+    for stage in ("RECON_STAGE", "VULN_ANALYSIS_STAGE", "EXPLOIT_STAGE", "ACCESS_PIVOT_STAGE", "GOAL_STAGE"):
+        assert registry.resolve(stage).agent_name == "execution_agent"
+    # P2: one executor instance serves every capability/stage round.
+    assert registry.resolve("RECON_STAGE") is registry.resolve("GOAL_STAGE")
 
 
-def test_exploit_validation_agent_name_matches_planner_and_dispatcher() -> None:
+def test_planner_selected_agent_resolves_to_single_executor() -> None:
     registry = StageAgentRegistry.default()
     agent = registry.resolve("EXPLOIT_STAGE")
     decision = PlannerDecision(
@@ -160,9 +63,10 @@ def test_exploit_validation_agent_name_matches_planner_and_dispatcher() -> None:
         confidence=0.8,
     )
 
-    assert agent.agent_name == "exploit_validation_agent"
-    assert registry.resolve_agent("exploit_validation_agent").stage_type == "EXPLOIT_STAGE"
-    assert decision.selected_agent == agent.agent_name
+    assert agent.agent_name == "execution_agent"
+    # Legacy planner agent names still resolve — to the single executor.
+    assert registry.resolve_agent("exploit_validation_agent") is agent
+    assert registry.resolve_agent(decision.selected_agent) is agent
 
 
 def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None:
@@ -201,7 +105,7 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
         mcp_tool_catalog={},
     )
 
-    result = ReconAgent(llm_client=llm).run(request)
+    result = ExecutionStageAgent(llm_client=llm).run(request)
 
     assert isinstance(result, StageResult)
     assert result.stage_task_id == "stage-op-1-2-recon_agent"
@@ -212,8 +116,8 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
     assert result.handoff_suggestion.required_context_refs == ["kg:svc-1"]
 
 
-def test_base_stage_agent_main_path_has_no_task_graph_dependency() -> None:
-    source = Path("src/core/stage/base_stage_agent.py").read_text(encoding="utf-8")
+def test_execution_stage_agent_main_path_has_no_task_graph_dependency() -> None:
+    source = Path("src/core/stage/llm_driven_stage_agent.py").read_text(encoding="utf-8")
 
     assert "TaskGraph" not in source
     assert "src.core.models.tg" not in source
@@ -263,7 +167,7 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
         },
     )
 
-    result = ExploitValidationAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
@@ -293,7 +197,7 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "http_probe"}]}},
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "partial"
     assert mcp.calls == []
@@ -323,7 +227,7 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "web_fingerprint"}]}},
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["url"] == "http://10.0.0.5:8080"
@@ -353,7 +257,7 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["server_id"] == "pentest-tools"
@@ -387,7 +291,7 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
         max_steps=1,
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.evidence_refs == ["runtime://tool-output/nmap"]
@@ -419,7 +323,7 @@ def test_stage_agent_accepts_stage_result_alias_and_string_observations() -> Non
         max_steps=1,
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.observations == [{"type": "note", "detail": "Target remains within authorized DMZ scope."}]
@@ -453,7 +357,7 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
         max_steps=1,
     )
 
-    result = VulnAnalysisAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert len(llm.calls) == 2
     assert result.status == "succeeded"
@@ -500,7 +404,7 @@ def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
         max_steps=1,
     )
 
-    result = VulnAnalysisAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.findings[0]["summary"] == "Example App identified from page title."
@@ -519,7 +423,7 @@ def test_stage_agent_empty_success_finish_requests_replan() -> None:
         max_steps=1,
     )
 
-    result = GoalAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "needs_replan"
     assert "no tool results" in (result.replan_recommendation or "")
@@ -552,7 +456,7 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
         },
     )
 
-    result = ReconAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert mcp.calls == []
     assert result.tool_traces[0].exit_code == "tool_server_unavailable"

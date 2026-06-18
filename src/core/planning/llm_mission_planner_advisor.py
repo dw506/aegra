@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerDecision, PlannerOutcome
 from src.core.stage.models import normalize_stage_name
 
 
@@ -29,10 +29,7 @@ class LLMMissionPlannerAdvisorConfig(BaseModel):
 
 
 class LLMMissionPlannerAdvisor:
-    """Ask an LLM to choose the next PlannerDecision from KG/AG/runtime context.
-
-    The advisor returns PlannerDecision for the stage dispatcher main path.
-    """
+    """Ask an LLM to choose the next PlannerOutcome from graph-tool context."""
 
     def __init__(
         self,
@@ -52,8 +49,8 @@ class LLMMissionPlannerAdvisor:
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
         recent_stage_results: list[dict[str, Any]] | None = None,
-    ) -> PlannerDecision | dict[str, Any]:
-        """Return the next PlannerDecision from the LLM."""
+    ) -> PlannerOutcome | PlannerDecision | dict[str, Any]:
+        """Return the next planner outcome from the LLM."""
 
         operation_id = str(graph_context.get("operation_id") or "operation")
         cycle_index = int(graph_context.get("cycle_index") or graph_context.get("runtime", {}).get("cycle_index") or 0)
@@ -95,7 +92,6 @@ class LLMMissionPlannerAdvisor:
 
         payload.setdefault("operation_id", operation_id)
         payload.setdefault("cycle_index", cycle_index)
-        payload = _normalize_decision_payload(payload, goal=goal)
         payload.setdefault("metadata", {})
         payload["metadata"] = {
             **dict(payload["metadata"]),
@@ -104,6 +100,26 @@ class LLMMissionPlannerAdvisor:
             "model": response.model,
             "usage": response.usage,
         }
+        if payload.get("action") is not None:
+            try:
+                return PlannerOutcome.model_validate(payload)
+            except ValidationError as exc:
+                return _fallback_decision(
+                    operation_id=operation_id,
+                    cycle_index=cycle_index,
+                    goal=goal,
+                    decision="replan",
+                    reason="llm mission planner returned invalid PlannerOutcome schema",
+                    stop_condition="invalid_planner_schema",
+                    metadata={
+                        "planner": "llm_mission_planner",
+                        "accepted": False,
+                        "error": str(exc),
+                        "raw_text": response.text[:2000],
+                        "normalized_payload": payload,
+                    },
+                )
+        payload = _normalize_decision_payload(payload, goal=goal)
         try:
             return PlannerDecision.model_validate(payload)
         except ValidationError as exc:
@@ -131,26 +147,25 @@ class LLMMissionPlannerAdvisor:
         policy_context: dict[str, Any],
         recent_stage_results: list[dict[str, Any]] | None = None,
     ) -> str:
-        decision_contract = {
+        outcome_contract = {
             "operation_id": "operation id string",
             "cycle_index": 0,
-            "decision": "dispatch_agent | replan | pause_for_review | stop_success | stop_failed",
-            "selected_agent": "registered agent name string | null",
-            "selected_stage": "stage name string from the registered agent capability | null",
-            "objective": "bounded objective for the selected agent or stop/replan reason",
-            "target_refs": [],
-            "required_context": {},
-            "success_criteria": [],
-            "risk_level": "low | medium | high | critical",
-            "max_steps": 3,
-            "task_brief": "autonomous task brief for the selected StageAgent",
-            "autonomy_level": "agent_decides",
-            "allowed_tool_names": "*",
-            "target_selection": "agent_decides_from_kg_runtime_and_tool_results",
-            "handoff_policy": "stage_agent_may_suggest_next_agent",
-            "reasoning_summary": "short summary, no chain of thought",
-            "handoff_acceptance": None,
-            "stop_condition": None,
+            "action": "execute | replan | pause_for_review | stop_success | stop_failed",
+            "directive": {
+                "operation_id": "operation id string",
+                "cycle_index": 0,
+                "capability": "recon | analysis | exploit | pivot | lateral | goal | evidence",
+                "objective": "bounded one-round objective",
+                "target_refs": [],
+                "allowed_tools": [],
+                "tool_hints": [],
+                "max_tools": 8,
+                "success_hint": "what is enough for this round",
+                "required_context": {},
+                "risk_level": "low | medium | high | critical",
+            },
+            "reason": "short summary, no chain of thought",
+            "stop_condition": "contract_satisfied | failure reason | null",
             "confidence": 0.8,
             "metadata": {},
         }
@@ -164,6 +179,9 @@ class LLMMissionPlannerAdvisor:
                 "recent_evidence": graph_context.get("recent_evidence") or [],
                 "known_assets": graph_context.get("known_assets") or [],
                 "known_services": graph_context.get("known_services") or [],
+                "zone_objectives": graph_context.get("zone_objectives") or [],
+                "pivot_candidates": graph_context.get("pivot_candidates") or [],
+                "self_infrastructure_addresses": graph_context.get("self_infrastructure_addresses") or [],
                 "active_sessions": graph_context.get("active_sessions") or [],
                 "recent_attack_process_nodes": graph_context.get("recent_attack_process_nodes") or [],
                 "recent_handoff_suggestions": graph_context.get("recent_handoff_suggestions") or [],
@@ -171,44 +189,49 @@ class LLMMissionPlannerAdvisor:
                 "validation_dead_ends": graph_context.get("validation_dead_ends") or [],
                 "current_goal": graph_context.get("current_goal") or goal,
                 "recent_results": list(recent_stage_results or []),
-                "planner_decision_contract": decision_contract,
+                "planner_outcome_contract": outcome_contract,
+                "min_summary": graph_context.get("min_summary") or {},
+                "graph_tools": graph_context.get("graph_tools") or {},
                 "agent_capabilities": graph_context.get("agent_capabilities") or [],
                 "mcp_tool_capabilities": graph_context.get("mcp_tool_capabilities") or graph_context.get("mcp_tool_catalog") or {},
             },
             self._config.max_context_chars,
         )
         return (
-            "Return strict JSON only matching PlannerDecision. "
-            "Read KG, AG, Runtime and Policy before choosing. "
-            "AG is the attack process graph: it records each Planner decision, Agent execution, Tool call and Result. "
+            "Return strict JSON only matching PlannerOutcome. "
+            "Use the supplied graph tool summaries and available graph_tools before choosing. "
+            "AG is a result timeline: one ATTACK_STEP per execution round plus terminal outcomes. "
             "Do not output shell commands. Do not output MCP tool arguments. "
-            "Do not micro-control tool calls; give the selected StageAgent an autonomous task_brief. "
-            "StageAgents may autonomously choose any available MCP tool in ToolCatalog, including run_command. "
+            "Do not micro-control tool calls; output one RoundDirective with a capability and bounded objective. "
+            "ExecutionAgent may autonomously choose allowed tools, including run_command, inside authorized scope. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
-            "The execution layer is a parallel capability pool, not a pipeline. "
-            "Do not use a fixed stage sequence and do not require every agent to run. "
-            "Select the next agent from evidence gaps in KG, AG, Runtime, Policy and ToolCatalog. "
-            "Treat recent StageResult control hints as hard constraints: if a recent result contains "
-            "recommended_next_agent, next_stage_suggestion, next_step_guidance, or handoff_suggestion, "
+            "Do not use a fixed stage sequence and do not require every capability to run. "
+            "Select the next capability from success_condition_progress.missing, KG, AG timeline, Runtime, Policy and ToolCatalog. "
+            "Treat recent RoundResult/StageResult control hints as hard constraints: if a recent result contains "
+            "next_step_guidance or capability guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
-            "supported_bounded_validation_candidate=false, do not choose ExploitValidationAgent for that target. "
+            "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "
             "If Runtime validation_dead_ends contains validation_dead_end(target=T, reason=no_supported_profile), "
-            "do not choose ExploitValidationAgent for target T unless required_context includes a new_profile, "
+            "do not choose capability=exploit for target T unless required_context includes a new_profile, "
             "profile_id, matched_profile_id, validation_profile, or new_evidence. "
-            "When validation is blocked by no_supported_profile, prefer ReconAgent to fingerprint unexplored "
-            "services such as 10.20.0.11:80 or 10.20.0.3:8000 when in scope, or AccessPivotAgent if capability "
-            "or pivot evidence is the missing chain link. "
-            "Use agent_capabilities as the only source for valid agent/stage pairs. "
-            "If evidence is insufficient, select an appropriate registered agent or choose replan. "
+            "When validation is blocked by no_supported_profile, prefer capability=recon to fingerprint a service that "
+            "has not yet been fingerprinted; do NOT repeatedly re-fingerprint a service that already has product/"
+            "version evidence — once fingerprinted, move toward validation or pivot. "
+            "Read zone_objectives: for any zone with directly_reachable=false and reached=false, the mission is not "
+            "complete and recon alone will never reach it. To make progress on such a zone you must obtain a "
+            "capability/session and an authorized pivot route. When a zone like that is unreached, prioritize "
+            "obtaining a session on a host in pivot_candidates (these expose transport-capable services and are "
+            "likely bridges toward the unreached zone), then choose capability=pivot to enumerate routes from that "
+            "session, register a pivot route, and discover restricted-zone services — rather than looping recon. "
+            "Treat any address in self_infrastructure_addresses as the operation's own control plane / tooling: it "
+            "is NOT an attack surface — never select it as a target, fingerprint it, or analyze it for vulnerabilities. "
+            "Use graph_tools.write only for planner judgment-level records such as record_finding/link_evidence; "
+            "machine facts from tools are written deterministically after execution. "
+            "If evidence is insufficient, choose action=execute with an appropriate capability or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "
-            "If Runtime metadata has goal_satisfied=true and there is a GoalAgent StageResult, "
-            "a GoalCheck finding, evidence refs, and AG GoalCheck/StageResult process nodes, "
-            "choose stop_success with stop_condition=goal_satisfied. "
-            "If goal_satisfied=true exists without complete evidence, select an appropriate registered agent or choose replan. "
-            "For dispatch_agent, selected_agent and selected_stage must be non-null. "
-            "For dispatch_agent, include task_brief, allowed_tool_names, target_selection, handoff_policy and max_steps. "
-            "For non-dispatch decisions, selected_agent may be null. "
-            "Use reasoning_summary for a concise justification without chain-of-thought.\n\n"
+            "If success_condition_progress.eligible_for_stop=true, choose action=stop_success with stop_condition=contract_satisfied. "
+            "For action=execute, directive must be non-null. For stop/replan/pause actions, directive must be null. "
+            "Use reason for a concise justification without chain-of-thought.\n\n"
             f"{context}"
         )
 

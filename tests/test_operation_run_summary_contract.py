@@ -11,8 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.app import api as app_api
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.models.runtime import OutcomeCacheEntry, RuntimeStatus
+from src.core.graph.kg_store import KnowledgeGraph
+from src.core.models.ag import AttackGraph
+from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerDecision
+from src.core.runtime.result_applier import PhaseTwoResultApplier
 from src.core.stage.models import StageResult, ToolTrace
 
 try:
@@ -90,93 +93,13 @@ def test_operation_run_summary_contract_uses_success_condition_progress(tmp_path
     }
 
 
-def test_operation_run_summary_merges_stage_and_tool_evidence_when_progress_empty(tmp_path: Path) -> None:
-    orchestrator = AppOrchestrator(settings=_settings(tmp_path))
-    state = orchestrator.create_operation("op-evidence-merge")
-    state.record_outcome(
-        OutcomeCacheEntry(
-            outcome_id="outcome-stage",
-            task_id="stage-recon",
-            outcome_type="RECON_STAGE",
-            summary="stage wrote evidence",
-            payload_ref="runtime://outcome/stage-recon",
-            metadata={
-                "outcome_payload": {
-                    "stage_result": {
-                        "evidence_refs": ["ev-stage-ref"],
-                        "evidence": [{"evidence_id": "ev-stage-record", "payload_ref": "raw-stage.json"}],
-                        "tool_trace": [{"raw_output_ref": "tool-output.json", "evidence_refs": ["ev-tool-ref"]}],
-                    }
-                }
-            },
-        )
-    )
-    state.execution.metadata["evidence_artifacts"] = [{"evidence_id": "ev-kg"}]
-    orchestrator.runtime_store.save_state(state)
-
-    summary = orchestrator.get_operation_run_summary("op-evidence-merge")
-
-    assert summary.evidence_ids == [
-        "ev-kg",
-        "ev-stage-record",
-        "ev-stage-ref",
-        "ev-tool-ref",
-        "raw-stage.json",
-        "runtime://outcome/stage-recon",
-        "tool-output.json",
-    ]
-
-
-def test_planner_dead_end_constraint_overrides_repeated_exploit_validation(tmp_path: Path) -> None:
-    orchestrator = AppOrchestrator(settings=_settings(tmp_path))
-    state = orchestrator.create_operation("op-dead-end")
-    state.execution.metadata["validation_dead_ends"] = [
-        {"target": "10.20.0.10:8080", "reason": "no_supported_profile"}
-    ]
-    decision = PlannerDecision(
-        operation_id="op-dead-end",
-        cycle_index=5,
-        decision="dispatch_agent",
-        selected_agent="exploit_validation_agent",
-        selected_stage="EXPLOIT_STAGE",
-        objective="Validate candidate on 10.20.0.10:8080",
-        required_context={"target_url": "http://10.20.0.10:8080/"},
-        risk_level="medium",
-        max_steps=1,
-        confidence=0.8,
-    )
-
-    constrained = orchestrator._apply_planner_dead_end_constraints(
-        decision=decision,
-        state=state,
-        cycle_index=5,
-    )
-
-    assert constrained.selected_agent == "recon_agent"
-    assert constrained.selected_stage == "RECON_STAGE"
-    assert constrained.metadata["dead_end_override"] is True
-
-
-def test_full_pentest_activation_uses_lab_profile_not_mcp_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AEGRA_MCP_TOOLSET", raising=False)
-    orchestrator = AppOrchestrator(settings=_settings(tmp_path))
-
-    state = orchestrator.create_operation("op-lab-profile")
-
-    assert state.execution.metadata["lab_activation"] == {
-        "full_pentest_active": True,
-        "profile_id": "full-vulhub-multihost-pentest",
-        "source": "lab_profile.profile_id",
-    }
-
-
 def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp_path: Path) -> None:
     orchestrator = AppOrchestrator(
         settings=AppSettings(
             runtime_store_backend="memory",
             runtime_store_dir=tmp_path / "runtime",
             lab_profile={
-                "profile_id": "full-vulhub-multihost-pentest",
+                "profile_id": "inline-progress-test",
                 "success_conditions": {
                     "require_all": [
                         "dmz_service_discovered",
@@ -209,12 +132,17 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
         tool_trace=[ToolTrace(tool_name="web_fingerprint", success=True, summary="candidate")],
     )
 
-    orchestrator._update_success_condition_progress(state=state, stage_result=recon_result)
-    orchestrator._update_success_condition_progress(state=state, stage_result=vuln_result)
+    kg = KnowledgeGraph()
+    ag = AttackGraph()
+    applier = PhaseTwoResultApplier()
+    applier.apply_stage_result(recon_result, state, kg, ag)
+    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
+    applier.apply_stage_result(vuln_result, state, kg, ag)
+    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
 
     progress = state.execution.metadata["success_condition_progress"]
-    assert progress["conditions"]["dmz_service_discovered"]["evidence_ids"] == ["ev-recon"]
-    assert progress["conditions"]["vulnerability_candidate_recorded"]["evidence_ids"] == ["ev-vuln"]
+    assert progress["conditions"]["dmz_service_discovered"]["satisfied"] is True
+    assert progress["conditions"]["vulnerability_candidate_recorded"]["satisfied"] is True
     assert progress["all_required_satisfied"] is True
 
 
@@ -224,7 +152,7 @@ def test_success_condition_progress_does_not_match_internal_service_from_dmz_rec
             runtime_store_backend="memory",
             runtime_store_dir=tmp_path / "runtime",
             lab_profile={
-                "profile_id": "full-vulhub-multihost-pentest",
+                "profile_id": "inline-progress-specific-test",
                 "success_conditions": {
                     "require_all": [
                         "dmz_service_discovered",
@@ -246,10 +174,13 @@ def test_success_condition_progress_does_not_match_internal_service_from_dmz_rec
         tool_trace=[ToolTrace(tool_name="nmap_scan", success=True, raw_output_ref="raw-nmap.json")],
     )
 
-    orchestrator._update_success_condition_progress(state=state, stage_result=recon_result)
+    kg = KnowledgeGraph()
+    ag = AttackGraph()
+    PhaseTwoResultApplier().apply_stage_result(recon_result, state, kg, ag)
+    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
 
     progress = state.execution.metadata["success_condition_progress"]
-    assert progress["conditions"]["dmz_service_discovered"]["evidence_ids"] == ["raw-nmap.json"]
+    assert progress["conditions"]["dmz_service_discovered"]["satisfied"] is True
     assert progress["conditions"]["internal_service_discovered_after_authorized_route"]["satisfied"] is False
     assert progress["all_required_satisfied"] is False
 

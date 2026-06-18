@@ -5,7 +5,7 @@ import json
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 
 
 class FakePackyClient:
@@ -33,24 +33,28 @@ class FakePackyClient:
         return self._response
 
 
-def test_llm_planner_decision_prompt_uses_decision_contract_not_task_graph() -> None:
+def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> None:
     response = PackyLLMResponse(
         model="gpt-test",
         text=json.dumps(
             {
                 "operation_id": "op-1",
                 "cycle_index": 3,
-                "decision": "dispatch_agent",
-                "selected_agent": "recon_agent",
-                "selected_stage": "RECON_STAGE",
-                "objective": "Collect missing service evidence",
-                "target_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
-                "required_context": {"reason": "evidence_gap"},
-                "success_criteria": ["service evidence recorded"],
-                "risk_level": "low",
-                "max_steps": 3,
-                "reasoning_summary": "Evidence is insufficient, so recon is next.",
-                "handoff_acceptance": None,
+                "action": "execute",
+                "directive": {
+                    "operation_id": "op-1",
+                    "cycle_index": 3,
+                    "capability": "recon",
+                    "objective": "Collect missing service evidence",
+                    "target_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
+                    "allowed_tools": ["nmap_scan"],
+                    "tool_hints": [],
+                    "max_tools": 3,
+                    "success_hint": "service evidence recorded",
+                    "required_context": {"reason": "evidence_gap"},
+                    "risk_level": "low",
+                },
+                "reason": "Evidence is insufficient, so recon is next.",
                 "stop_condition": None,
                 "confidence": 0.8,
                 "metadata": {},
@@ -61,7 +65,7 @@ def test_llm_planner_decision_prompt_uses_decision_contract_not_task_graph() -> 
     advisor = LLMMissionPlannerAdvisor(client=fake)
     planner = MissionPlannerAgent(advisor=advisor)
 
-    decision = planner.run(
+    outcome = planner.decide(
         goal="validate objective",
         graph_context={
             "operation_id": "op-1",
@@ -77,14 +81,14 @@ def test_llm_planner_decision_prompt_uses_decision_contract_not_task_graph() -> 
     )
     prompt_text = f"{fake.calls[0]['system_prompt']}\n{fake.calls[0]['user_prompt']}"
 
-    assert isinstance(decision, PlannerDecision)
-    assert decision.selected_agent == "recon_agent"
-    assert "PlannerDecision" in prompt_text
+    assert isinstance(outcome, PlannerOutcome)
+    assert outcome.directive is not None
+    assert outcome.directive.capability == "recon"
+    assert "PlannerOutcome" in prompt_text
+    assert "RoundDirective" in prompt_text
     assert "TG" not in prompt_text
     assert "TaskGraph" not in prompt_text
     assert "selected_next_task" not in prompt_text
     assert "shell commands" in prompt_text
     assert "MCP tool arguments" in prompt_text
-    assert "LabProfile" in prompt_text
-    assert "ToolCatalog" in prompt_text
-    assert "parallel capability pool" in prompt_text
+    assert "ExecutionAgent" in prompt_text

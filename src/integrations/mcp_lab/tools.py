@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
-from urllib.request import ProxyHandler, Request, build_opener, urlopen
+from urllib.request import Request, urlopen
 
 from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
 
@@ -30,21 +30,6 @@ MAX_COMMAND_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 20000
 DEFAULT_FFUF_WORDS = ["admin", "login", "robots.txt", "sitemap.xml", "api", "debug", "health"]
 SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
-    "struts2-s2-045": VulnerabilityProfile(
-        vulnerability_id="struts2-s2-045",
-        cve="CVE-2017-5638",
-        affected_products=["apache struts", "struts2", "struts2 showcase", "fileupload sample"],
-        required_service="http",
-        required_paths=["/"],
-        safe_validation_methods=["http_probe", "validation_precheck"],
-    ),
-    "thinkphp-5-rce": VulnerabilityProfile(
-        vulnerability_id="thinkphp-5-rce",
-        affected_products=["thinkphp", "thinkphp 5", "thinkphp 5.0.23"],
-        required_service="http",
-        required_paths=["/"],
-        safe_validation_methods=["http_probe", "validation_precheck"],
-    ),
     "lab-http-accessible": VulnerabilityProfile(
         vulnerability_id="lab-http-accessible",
         affected_products=["generic-http"],
@@ -328,15 +313,13 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "internal_service_discover",
-        "description": "Probe one internal lab service using bounded TCP or HTTP checks, optionally through a registered pivot route.",
+        "description": "Probe one internal lab service using bounded TCP or HTTP checks.",
         "inputSchema": {
             "type": "object",
             "required": ["host", "port"],
             "properties": {
                 "host": {"type": "string"},
                 "port": {"type": "integer"},
-                "route_id": {"type": "string"},
-                "session_id": {"type": "string"},
                 "protocol": {"type": "string", "default": "tcp"},
                 "path": {"type": "string", "default": "/"},
                 "timeout_seconds": {"type": "integer", "minimum": 1},
@@ -346,17 +329,38 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "pivoted_nmap_scan",
-        "description": "Run bounded service discovery from a configured pivot route against an authorized restricted-zone target or CIDR.",
+        "description": "Run a bounded nmap scan against the restricted zone through a configured pivot route.",
         "inputSchema": {
             "type": "object",
-            "required": ["target"],
+            "required": ["target", "route_id"],
             "properties": {
-                "target": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
-                "ports": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+                "target": {"type": "string"},
+                "ports": {"type": "string"},
                 "route_id": {"type": "string"},
-                "service_detection": {"type": "boolean", "default": True},
-                "skip_ping": {"type": "boolean", "default": True},
-                "no_dns": {"type": "boolean", "default": True},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "controlled_data_read_proof",
+        "description": (
+            "Read one row from a restricted-zone database over a configured pivot route and return a "
+            "redacted proof (row count + sha256 digest) only — never raw rows or credentials."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["host", "port", "route_id"],
+            "properties": {
+                "host": {"type": "string"},
+                "port": {"type": "integer"},
+                "route_id": {"type": "string"},
+                "database": {"type": "string"},
+                "username": {"type": "string"},
+                "password": {"type": "string"},
+                "pivot_host": {"type": "string"},
+                "pivot_username": {"type": "string"},
+                "pivot_password": {"type": "string"},
                 "timeout_seconds": {"type": "integer", "minimum": 1},
             },
             "additionalProperties": True,
@@ -562,30 +566,6 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "controlled_data_read_proof",
-        "description": (
-            "Read a bounded, non-destructive proof from an authorized data service reachable "
-            "through existing access or a pivot route. Connection secrets are resolved from "
-            "lab configuration/environment and raw values are not returned."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "required": ["host", "port"],
-            "properties": {
-                "host": {"type": "string"},
-                "port": {"type": "integer"},
-                "service": {"type": "string"},
-                "route_id": {"type": "string"},
-                "session_id": {"type": "string"},
-                "database": {"type": "string"},
-                "username": {"type": "string"},
-                "query": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
         "name": "success_condition_check",
         "description": (
             "Return a redacted summary of the current success_condition_progress from runtime metadata. "
@@ -608,7 +588,7 @@ OPTIONAL_TOOL_BINARIES: dict[str, str] = {
     "ffuf_discover": "ffuf",
 }
 
-
+#根据当前环境检查工具是否可用
 def lab_tool_specs(*, include_unavailable: bool = False) -> list[dict[str, Any]]:
     """Return tool specs that reflect binaries available in the current runtime."""
 
@@ -629,7 +609,7 @@ def lab_tool_specs(*, include_unavailable: bool = False) -> list[dict[str, Any]]
         specs.append(annotated)
     return specs
 
-
+#工具分发入口
 def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Dispatch one lab tool and return a unified structured payload."""
 
@@ -685,6 +665,8 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _ensure_raw_output_ref(arguments=arguments, payload=_internal_service_discover(arguments))
         if name == "pivoted_nmap_scan":
             return _ensure_raw_output_ref(arguments=arguments, payload=_pivoted_nmap_scan(arguments))
+        if name == "controlled_data_read_proof":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_controlled_data_read_proof(arguments))
         if name == "chain_goal_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_goal_check(arguments))
         if name == "goal_check":
@@ -707,8 +689,6 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_route_register(arguments))
         if name == "internal_goal_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_internal_goal_check(arguments))
-        if name == "controlled_data_read_proof":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_controlled_data_read_proof(arguments))
         if name == "success_condition_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_success_condition_check(arguments))
     except Exception as exc:
@@ -1048,13 +1028,12 @@ def _http_basic_auth_check(arguments: dict[str, Any]) -> dict[str, Any]:
 def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
     service = _string(arguments.get("service"))
     product = (_string(arguments.get("product")) or "").lower()
-    match_text = _profile_match_text(arguments)
     parsed = _default_parsed()
     matches: list[dict[str, Any]] = []
     for profile in SAFE_VALIDATION_PROFILES.values():
         if service and profile.required_service and service.lower() != profile.required_service.lower():
             continue
-        if profile.affected_products and not _profile_matches_signals(profile, service=service, product=product, match_text=match_text):
+        if product and profile.affected_products and not any(product in item.lower() for item in profile.affected_products):
             continue
         item = profile.model_dump(mode="json")
         matches.append(item)
@@ -1081,64 +1060,6 @@ def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
         )
     parsed["writeback_hints"] = {"observation_category": "vulnerability_profile_match"}
     return _payload(success=True, stdout=json.dumps(matches, ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _profile_match_text(arguments: dict[str, Any]) -> str:
-    values: list[str] = []
-
-    def add(value: Any) -> None:
-        if value is None:
-            return
-        if isinstance(value, dict):
-            for nested in value.values():
-                add(nested)
-            return
-        if isinstance(value, list):
-            for nested in value:
-                add(nested)
-            return
-        text = str(value).strip()
-        if text:
-            values.append(text)
-
-    for key in (
-        "title",
-        "path",
-        "paths",
-        "url",
-        "target_url",
-        "banner",
-        "server",
-        "headers",
-        "framework",
-        "fingerprint",
-        "fingerprints",
-        "body_excerpt",
-        "content",
-        "evidence",
-        "observations",
-    ):
-        add(arguments.get(key))
-    return " ".join(values).lower()
-
-
-def _profile_matches_signals(profile: VulnerabilityProfile, *, service: str | None, product: str, match_text: str) -> bool:
-    product_tokens = [item.lower() for item in profile.affected_products if item]
-    if not product_tokens:
-        return True
-    haystack = " ".join([product, match_text]).lower()
-    for token in product_tokens:
-        if not token:
-            continue
-        if token.startswith("generic-http") and str(service or "").lower() in {"http", "https"}:
-            return True
-        if token in haystack:
-            return True
-        compact_token = re.sub(r"[^a-z0-9]+", "", token)
-        compact_haystack = re.sub(r"[^a-z0-9]+", "", haystack)
-        if compact_token and compact_token in compact_haystack:
-            return True
-    return False
 
 
 def _validation_precheck(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1262,17 +1183,14 @@ def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
 def _identity_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
     identity = _string(arguments.get("identity")) or _string(arguments.get("username")) or "unknown"
     host = _string(arguments.get("host")) or _string(arguments.get("target")) or "unknown-host"
-    pivot_candidates = _configured_pivot_route_candidates()
     parsed = _default_parsed()
     entity = {"type": "identity_context", "host": host, "identity": identity, "session_id": _string(arguments.get("session_id"))}
     parsed["entities"].append(entity)
-    for candidate in pivot_candidates:
-        parsed["entities"].append({"type": "PivotRouteCandidate", **candidate})
     parsed["runtime_hints"] = {
         "identity": identity,
         "host": host,
         "identity_context_observed": True,
-        "pivot_route_candidates": pivot_candidates,
+        "pivot_route_candidates": _pivot_route_candidates(),
     }
     parsed["writeback_hints"] = {"observation_category": "identity_context"}
     return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
@@ -1324,17 +1242,9 @@ def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
                 reachable = True
                 error = ""
         except OSError as exc:
-            pivot_probe = _probe_tcp_via_configured_pivot(host=host, port=port, timeout_seconds=timeout)
-            reachable = pivot_probe["reachable"]
-            error = "" if reachable else str(exc)
+            reachable = False
+            error = str(exc)
     route_id = _string(arguments.get("route_id")) or f"route::{_string(arguments.get('source_host')) or 'unknown-source'}::{host}:{port}"
-    route_candidate = _configured_pivot_route_by_id(route_id)
-    route_transport_validated = False
-    destination_reachable = reachable
-    if not reachable and route_candidate and route_candidate.get("destination_cidr") and _validate_configured_pivot_transport(timeout_seconds=timeout):
-        reachable = True
-        route_transport_validated = True
-        error = ""
     parsed = _default_parsed()
     entity = {
         "type": "PivotRoute",
@@ -1342,44 +1252,256 @@ def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
         "source_host": _string(arguments.get("source_host")),
         "via_host": _string(arguments.get("via_host")),
         "destination_host": host,
-        "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
         "port": port,
         "protocol": protocol,
         "status": "validated" if reachable else "unreachable",
-        "destination_reachable": destination_reachable,
-        "route_transport_validated": route_transport_validated,
         "confidence": 0.85 if reachable else 0.25,
     }
     parsed["entities"].append(entity)
-    parsed["evidence"].append(
-        {
-            "kind": "reachability evidence",
-            "route_id": route_id,
-            "destination_host": host,
-            "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
-            "port": port,
-            "reachable": reachable,
-            "destination_reachable": destination_reachable,
-            "route_transport_validated": route_transport_validated,
-        }
-    )
+    parsed["evidence"].append({"kind": "reachability evidence", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable})
     parsed["runtime_hints"] = {
         "register_pivot_route": True,
         "route_id": route_id,
         "destination_host": host,
-        "destination_cidr": route_candidate.get("destination_cidr") if route_candidate else None,
         "source_host": _string(arguments.get("source_host")),
         "via_host": _string(arguments.get("via_host")),
         "session_id": _string(arguments.get("session_id")),
         "allowed_ports": [port],
         "protocol": protocol,
         "reachable": reachable,
-        "validated": reachable,
-        "route_transport_validated": route_transport_validated,
         "reason": error,
     }
     parsed["writeback_hints"] = {"observation_category": "pivot_route_validation"}
     return _payload(success=reachable, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), stderr=error, exit_code=0 if reachable else "unreachable", parsed=parsed)
+
+
+# --- Pivot transport (server-side, single converged egress) -----------------
+#
+# Everything that must reach the restricted zone goes through ONE transport
+# primitive: ``_run_via_configured_pivot``, which SSHes to the configured pivot
+# host (dual-homed dmz<->internal) and runs the given argv there. The other
+# ``_*_via_configured_pivot`` helpers are thin adapters that build the argv and
+# reshape the result for one operation -- they hold no transport logic of their
+# own. Credentials are read from env/route and never appear in any payload.
+
+_DATA_SERVICE_PORTS: dict[int, str] = {
+    5432: "postgres",
+    3306: "mysql",
+    1433: "mssql",
+    27017: "mongodb",
+    6379: "redis",
+    1521: "oracle",
+}
+
+
+def _service_name_for_port(port: int | None) -> str:
+    return _DATA_SERVICE_PORTS.get(int(port or 0), "unknown")
+
+
+def _is_restricted_data_service_name(service_name: str | None) -> bool:
+    text = str(service_name or "").lower()
+    return any(token in text for token in ("postgres", "mysql", "mssql", "mongo", "redis", "oracle"))
+
+
+def _load_runtime_pivot_routes() -> list[dict[str, Any]]:
+    """Read configured pivot routes from the runtime policy file, if present."""
+
+    path = _string(os.getenv("AEGRA_RUNTIME_POLICY_PATH"))
+    if not path or not Path(path).exists():
+        return []
+    try:
+        policy = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(policy, dict):
+        return []
+    adapter_policy = policy.get("adapter_policy")
+    pivot = adapter_policy.get("pivot") if isinstance(adapter_policy, dict) else None
+    if not isinstance(pivot, dict):
+        return []
+    routes: list[dict[str, Any]] = []
+    default_route = pivot.get("default_route")
+    if isinstance(default_route, dict):
+        routes.append(default_route)
+    extra = pivot.get("routes")
+    if isinstance(extra, list):
+        routes.extend(route for route in extra if isinstance(route, dict))
+    return routes
+
+
+def _resolve_pivot_route(route_id: str | None) -> dict[str, Any] | None:
+    routes = _load_runtime_pivot_routes()
+    if route_id:
+        for route in routes:
+            if str(route.get("route_id")) == str(route_id):
+                return route
+    return routes[0] if routes else None
+
+
+def _pivot_route_candidates() -> list[dict[str, Any]]:
+    """Redacted pivot routes for planner context -- never carries credentials."""
+
+    candidates: list[dict[str, Any]] = []
+    for route in _load_runtime_pivot_routes():
+        transport = route.get("transport") if isinstance(route.get("transport"), dict) else {}
+        candidates.append(
+            {
+                "route_id": _string(route.get("route_id")),
+                "source_host": _string(route.get("source_host")),
+                "via_host": _string(route.get("via_host")),
+                "destination_cidr": _string(route.get("destination_cidr")),
+                "destination_host": _string(route.get("destination_host")),
+                "protocol": _string(route.get("protocol")),
+                "transport_adapter": _string(transport.get("adapter")),
+            }
+        )
+    return candidates
+
+
+def _pivot_transport_available(arguments: dict[str, Any] | None = None) -> bool:
+    return shutil.which("ssh") is not None and shutil.which("sshpass") is not None
+
+
+def _run_via_configured_pivot(
+    *,
+    route_id: str | None,
+    argv: list[str],
+    timeout: int,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    """THE single pivot egress: SSH to the configured pivot host and run argv."""
+
+    route = _resolve_pivot_route(route_id)
+    if route is None:
+        return subprocess.CompletedProcess(argv, returncode=255, stdout="", stderr="no configured pivot route")
+    if not _pivot_transport_available():
+        return subprocess.CompletedProcess(argv, returncode=255, stdout="", stderr="pivot transport unavailable")
+    via = _string(route.get("via_host")) or _string(route.get("source_host")) or ""
+    user = _string(os.getenv("AEGRA_LAB_PIVOT_USER")) or _string(route.get("username")) or "pivot"
+    password = _string(os.getenv("AEGRA_LAB_PIVOT_PASSWORD")) or _string(route.get("password")) or ""
+    remote = " ".join(shlex.quote(part) for part in argv)
+    if env:
+        prefix = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
+        remote = f"{prefix} {remote}"
+    ssh_argv = [
+        "sshpass", "-p", password, "ssh",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", f"ConnectTimeout={max(1, timeout)}",
+        f"{user}@{via}", remote,
+    ]
+    return subprocess.run(ssh_argv, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def _probe_tcp_via_configured_pivot(*, route_id: str | None, host: str, port: int, timeout: int) -> dict[str, Any]:
+    completed = _run_via_configured_pivot(
+        route_id=route_id,
+        argv=["nc", "-z", "-w", str(max(1, timeout)), str(host), str(port)],
+        timeout=timeout,
+    )
+    return {"reachable": completed.returncode == 0, "stderr": completed.stderr or ""}
+
+
+def _run_psql_query_via_configured_pivot(
+    *,
+    route_id: str | None,
+    host: str,
+    port: int,
+    database: str,
+    username: str,
+    password: str | None,
+    query: str,
+    timeout: int,
+) -> dict[str, Any]:
+    completed = _run_via_configured_pivot(
+        route_id=route_id,
+        argv=["psql", "-h", str(host), "-p", str(port), "-U", str(username), "-d", str(database), "-t", "-A", "-F", "|", "-c", query],
+        timeout=timeout,
+        env={"PGPASSWORD": str(password or "")},
+    )
+    return {"success": completed.returncode == 0, "stdout": completed.stdout or "", "stderr": completed.stderr or ""}
+
+
+def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
+    target = _required(arguments, "target")
+    ports = _string(arguments.get("ports"))
+    route_id = _required(arguments, "route_id")
+    timeout = _int(arguments.get("timeout_seconds"), 60)
+    argv = ["nmap", "-Pn", "-sV"]
+    if ports:
+        argv += ["-p", ports]
+    argv.append(target)
+    completed = _run_via_configured_pivot(route_id=route_id, argv=argv, timeout=timeout)
+    stdout = completed.stdout or ""
+    success = completed.returncode == 0
+    parsed = _parse_nmap_output(target, stdout)
+    services: list[dict[str, Any]] = []
+    satisfied: list[dict[str, Any]] = []
+    for entity in parsed["entities"]:
+        if entity.get("type") != "Service":
+            continue
+        service_name = entity.get("service") or _service_name_for_port(entity.get("port"))
+        services.append(
+            {"host": entity.get("host"), "port": entity.get("port"), "service_name": service_name, "via_pivot_route": route_id}
+        )
+        if _is_restricted_data_service_name(service_name) or int(entity.get("port") or 0) in _DATA_SERVICE_PORTS:
+            evidence_id = f"internal-service::{route_id}::{entity.get('host')}:{entity.get('port')}"
+            satisfied.append({"condition": "restricted_data_service_discovered", "evidence_ids": [evidence_id]})
+    parsed["services"] = services
+    hints = dict(parsed.get("runtime_hints") or {})
+    hints["via_pivot_route"] = route_id
+    if satisfied:
+        hints["satisfied_conditions"] = satisfied
+    parsed["runtime_hints"] = hints
+    return _payload(success=success, stdout=stdout, stderr=completed.stderr or "", exit_code=0 if success else "scan_failed", parsed=parsed)
+
+
+def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
+    host = _required(arguments, "host")
+    port = _int(arguments.get("port"), 0)
+    route_id = _required(arguments, "route_id")
+    database = _string(arguments.get("database")) or "postgres"
+    username = _string(arguments.get("username")) or "postgres"
+    timeout = _int(arguments.get("timeout_seconds"), 30)
+    if not _pivot_transport_available():
+        return _payload(
+            success=False,
+            stderr="pivot transport unavailable",
+            exit_code="pivot_unavailable",
+            parsed={"runtime_hints": {"controlled_data_read": False}},
+        )
+    query = "SELECT current_database(), current_user, version();"
+    result = _run_psql_query_via_configured_pivot(
+        route_id=route_id,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=arguments.get("password"),
+        query=query,
+        timeout=timeout,
+    )
+    stdout = _string(result.get("stdout")) or ""
+    rows = [line for line in stdout.splitlines() if line.strip()]
+    row_count = len(rows)
+    digest = hashlib.sha256(stdout.encode("utf-8")).hexdigest() if stdout else ""
+    success = bool(result.get("success")) and row_count > 0
+    parsed = _default_parsed()
+    parsed["evidence"].append(
+        {
+            "evidence_id": f"controlled-data::{route_id}::{host}:{port}",
+            "kind": "controlled_data_read_proof",
+            "host": host,
+            "port": port,
+            "via_pivot_route": route_id,
+            "row_count": row_count,
+            "row_digest_sha256": digest,
+        }
+    )
+    parsed["runtime_hints"] = {"controlled_data_read": success, "via_pivot_route": route_id}
+    parsed["writeback_hints"] = {"observation_category": "controlled_data_read_proof"}
+    summary = f"read {row_count} row(s) from {host}:{port} via {route_id}; sha256={digest[:12]}"
+    return _payload(success=success, stdout=summary, stderr=_string(result.get("stderr")) or "", exit_code=0 if success else "read_failed", parsed=parsed)
 
 
 def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1387,8 +1509,49 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     port = _int(arguments.get("port"), 0)
     protocol = (_string(arguments.get("protocol")) or "tcp").lower()
     route_id = _string(arguments.get("route_id"))
-    session_id = _string(arguments.get("session_id"))
-    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
+
+    if route_id:
+        # Restricted-zone service: reachable only through the configured pivot
+        # route, so the reachability probe is run over the pivot transport.
+        timeout = _int(arguments.get("timeout_seconds"), 5)
+        result = _probe_tcp_via_configured_pivot(route_id=route_id, host=host, port=port, timeout=timeout)
+        reachable = bool(result.get("reachable"))
+        service_name = _service_name_for_port(port)
+        evidence_id = f"internal-service::{route_id}::{host}:{port}"
+        parsed = _default_parsed()
+        parsed["services"] = [
+            {"host": host, "port": port, "service_name": service_name, "via_pivot_route": route_id, "reachable": reachable}
+        ]
+        parsed["entities"].append(
+            {
+                "type": "InternalService",
+                "host": host,
+                "port": port,
+                "protocol": protocol,
+                "service_name": service_name,
+                "via_pivot_route": route_id,
+                "confidence": 0.8 if reachable else 0.25,
+            }
+        )
+        parsed["evidence"].append(
+            {"evidence_id": evidence_id, "kind": "internal_service_discovery", "host": host, "port": port, "via_pivot_route": route_id}
+        )
+        runtime_hints: dict[str, Any] = {"via_pivot_route": route_id, "reachable": reachable}
+        if reachable and _is_restricted_data_service_name(service_name):
+            runtime_hints["satisfied_conditions"] = [
+                {"condition": "restricted_data_service_discovered", "evidence_ids": [evidence_id]}
+            ]
+        parsed["runtime_hints"] = runtime_hints
+        parsed["writeback_hints"] = {"observation_category": "internal_service_discovery"}
+        return _payload(
+            success=reachable,
+            stdout=json.dumps(parsed["services"][0], ensure_ascii=True, sort_keys=True),
+            stderr=_string(result.get("stderr")) or "",
+            exit_code=0 if reachable else "unreachable",
+            parsed=parsed,
+        )
+
+    # No pivot route — direct bounded probe (entry zone).
     if protocol in {"http", "https"}:
         result = _http_probe(
             {
@@ -1400,212 +1563,21 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
             }
         )
     else:
-        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": timeout})
-        if not result.get("success") and (route_id or session_id or _pivot_transport_available()):
-            pivot_probe = _probe_tcp_via_configured_pivot(host=host, port=port, timeout_seconds=timeout)
-            if pivot_probe["reachable"]:
-                result = _payload(
-                    success=True,
-                    stdout=json.dumps({"host": host, "port": port, "reachable": True, "via_pivot": True}, sort_keys=True),
-                    parsed=_default_parsed(),
-                )
+        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
     parsed = result.get("parsed") if isinstance(result.get("parsed"), dict) else _default_parsed()
-    service_name = _classify_service_name(port=port, protocol=protocol, hinted_service=_string(arguments.get("service")))
-    reachable = bool(result.get("success"))
-    evidence_id = f"internal-service::{route_id or session_id or 'configured-pivot'}::{host}:{port}"
     parsed["entities"].append(
         {
             "type": "InternalService",
             "host": host,
             "port": port,
             "protocol": protocol,
-            "service_name": service_name,
-            "via_pivot_route": route_id,
-            "confidence": 0.75 if reachable else 0.25,
+            "via_pivot_route": None,
+            "confidence": 0.75 if result.get("success") else 0.25,
         }
     )
-    parsed["hosts"] = [{"address": host, "zone_ref": "restricted"}] if reachable else []
-    parsed["services"] = (
-        [{"host": host, "address": host, "port": port, "protocol": protocol, "service_name": service_name, "zone_ref": "restricted"}]
-        if reachable
-        else []
-    )
-    parsed["evidence"].append({"kind": "reachability evidence", "evidence_id": evidence_id, "host": host, "port": port, "via_pivot_route": route_id})
-    if reachable:
-        conditions = ["internal_service_discovered_after_authorized_route", "restricted_zone_service_discovered"]
-        if _is_data_service(port=port, service_name=service_name):
-            conditions.append("restricted_data_service_discovered")
-        parsed["runtime_hints"] = {
-            **(parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}),
-            "route_id": route_id,
-            "session_id": session_id,
-            "satisfied_conditions": [{"condition": name, "evidence_ids": [evidence_id]} for name in conditions],
-        }
+    parsed["evidence"].append({"kind": "reachability evidence", "host": host, "port": port, "via_pivot_route": None})
     result["parsed"] = parsed
     return result
-
-
-def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
-    if arguments.get("target") is None:
-        raise ValueError("target is required")
-    targets = _target_list(arguments.get("target"))
-    timeout = max(1, min(_int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS), MAX_COMMAND_TIMEOUT_SECONDS))
-    ports = arguments.get("ports")
-    argv = ["nmap"]
-    if bool(arguments.get("no_dns", True)):
-        argv.append("-n")
-    if bool(arguments.get("skip_ping", True)):
-        argv.append("-Pn")
-    if bool(arguments.get("service_detection", True)):
-        argv.append("-sV")
-    if ports:
-        argv.extend(["-p", ",".join(str(port) for port in ports) if isinstance(ports, list) else str(ports)])
-    argv.extend(targets)
-    remote = f"timeout {timeout} {shlex.join(argv)}"
-    try:
-        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return _payload(
-            success=False,
-            stderr=str(exc),
-            exit_code="pivoted_scan_failed",
-            parsed={"runtime_hints": {"blocked_by": "pivoted_scan_failed"}},
-        )
-    if completed is None:
-        return _payload(
-            success=False,
-            stderr="configured pivot transport unavailable",
-            exit_code="pivot_unavailable",
-            parsed={"runtime_hints": {"blocked_by": "pivot_unavailable"}},
-        )
-    if completed.returncode != 0 and "could not locate nse_main.lua" in str(completed.stderr):
-        fallback_argv = [part for part in argv if part != "-sV"]
-        fallback_remote = f"timeout {timeout} {shlex.join(fallback_argv)}"
-        try:
-            fallback = _run_via_configured_pivot(remote_command=fallback_remote, timeout_seconds=timeout)
-        except (OSError, subprocess.SubprocessError):
-            fallback = None
-        if fallback is not None:
-            completed = fallback
-    stdout = _limit(completed.stdout, MAX_OUTPUT_CHARS)
-    stderr = _limit(_redact_configured_secret(completed.stderr), MAX_OUTPUT_CHARS)
-    parsed = _parse_nmap_output(",".join(targets), stdout)
-    route_id = _string(arguments.get("route_id")) or (_configured_pivot_route_candidates()[0].get("route_id") if _configured_pivot_route_candidates() else None)
-    evidence_id = f"pivoted-nmap::{route_id or 'configured-pivot'}::{hashlib.sha256(','.join(targets).encode()).hexdigest()[:12]}"
-    parsed["evidence"].append({"kind": "pivoted_service_discovery", "evidence_id": evidence_id, "route_id": route_id, "targets": targets})
-    conditions = ["internal_service_discovered_after_authorized_route", "restricted_zone_service_discovered"]
-    if any(_is_data_service(port=int(item.get("port") or 0), service_name=str(item.get("service") or item.get("service_name") or "")) for item in parsed.get("entities", []) if isinstance(item, dict)):
-        conditions.append("restricted_data_service_discovered")
-    parsed["runtime_hints"] = {
-        **(parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}),
-        "route_id": route_id,
-        "pivoted_scan": True,
-        "satisfied_conditions": [{"condition": name, "evidence_ids": [evidence_id]} for name in conditions],
-    }
-    parsed["writeback_hints"] = {"observation_category": "pivoted_service_discovery", "route_id": route_id}
-    success = completed.returncode == 0 and bool(parsed.get("entities"))
-    return _payload(success=success, stdout=stdout, stderr=stderr, exit_code=completed.returncode, parsed=parsed)
-
-
-def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
-    host = _required(arguments, "host")
-    port = _int(arguments.get("port"), 0)
-    service = (_string(arguments.get("service")) or _classify_service_name(port=port, protocol="tcp")).lower()
-    if service not in {"postgres", "postgresql"}:
-        return _payload(
-            success=False,
-            stderr=f"unsupported controlled data service: {service}",
-            exit_code="unsupported_data_service",
-            parsed={"runtime_hints": {"blocked_by": "unsupported_data_service"}},
-        )
-
-    route_id = _string(arguments.get("route_id"))
-    session_id = _string(arguments.get("session_id"))
-    timeout = max(1, min(_int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS), MAX_COMMAND_TIMEOUT_SECONDS))
-    database = _string(arguments.get("database")) or _string(os.getenv("AEGRA_LAB_DB_NAME") or os.getenv("AEGRA_LAB_DB_DATABASE"))
-    username = _string(arguments.get("username")) or _string(os.getenv("AEGRA_LAB_DB_USER"))
-    password = _string(os.getenv("AEGRA_LAB_DB_PASSWORD"))
-    query = _string(arguments.get("query")) or _string(os.getenv("AEGRA_LAB_DB_PROOF_QUERY")) or "select current_database(), current_user, version()"
-    missing = [name for name, value in {"database": database, "username": username, "password": password}.items() if not value]
-    if missing:
-        return _payload(
-            success=False,
-            stderr=f"missing configured data-service parameter(s): {', '.join(missing)}",
-            exit_code="missing_data_service_config",
-            parsed={"runtime_hints": {"blocked_by": "missing_data_service_config", "missing": missing}},
-        )
-
-    if route_id or session_id or _pivot_transport_available():
-        result = _run_psql_query_via_configured_pivot(
-            host=host,
-            port=port,
-            database=database,
-            username=username,
-            password=password,
-            query=query,
-            timeout_seconds=timeout,
-        )
-    else:
-        result = _run_local_psql_query(
-            host=host,
-            port=port,
-            database=database,
-            username=username,
-            password=password,
-            query=query,
-            timeout_seconds=timeout,
-        )
-
-    parsed = _default_parsed()
-    evidence_id = f"controlled-data-proof::{route_id or session_id or 'direct'}::{host}:{port}"
-    if not result["success"]:
-        parsed["runtime_hints"] = {
-            "blocked_by": "data_read_failed",
-            "route_id": route_id,
-            "session_id": session_id,
-        }
-        return _payload(success=False, stderr=result["stderr"], exit_code="data_read_failed", parsed=parsed)
-
-    rows = [line for line in result["stdout"].splitlines() if line.strip()]
-    proof_material = "\n".join(rows)
-    proof_hash = hashlib.sha256(proof_material.encode("utf-8", errors="replace")).hexdigest()
-    entity = {
-        "type": "ControlledDataReadProof",
-        "service": service,
-        "host": host,
-        "port": port,
-        "database": database,
-        "row_count": len(rows),
-        "proof_sha256": proof_hash,
-        "route_id": route_id,
-        "session_id": session_id,
-    }
-    parsed["entities"].append(entity)
-    parsed["findings"].append({"kind": "ControlledDataReadProof", "summary": "controlled data service proof read", "evidence_refs": [evidence_id]})
-    parsed["evidence"].append(
-        {
-            "kind": "controlled_data_read_proof",
-            "evidence_id": evidence_id,
-            "host": host,
-            "port": port,
-            "service": service,
-            "row_count": len(rows),
-            "proof_sha256": proof_hash,
-        }
-    )
-    parsed["runtime_hints"] = {
-        "goal_satisfied": True,
-        "controlled_data_read": True,
-        "route_id": route_id,
-        "session_id": session_id,
-        "goal_evidence_refs": [evidence_id],
-        "satisfied_conditions": [
-            {"condition": "controlled_data_service_read", "evidence_ids": [evidence_id]},
-            {"condition": "goal_check_recorded", "evidence_ids": [evidence_id]},
-        ],
-    }
-    parsed["writeback_hints"] = {"observation_category": "controlled_data_read_proof", "route_id": route_id}
-    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
 
 
 def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1805,80 +1777,32 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
         **{str(k): str(v) for k, v in extra_params.items()},
     }
 
-    # Execute safe_payload_template as a profile-declared bounded HTTP action.
+    # Execute safe_payload_template as an HTTP probe if it is a URL template
     template = _string(profile.get("safe_payload_template"))
     result_stdout = ""
     result_success = False
     executed_steps: list[str] = []
 
     if template:
-        safe_command = _string(extra_params.get("safe_command") or extra_params.get("safe_cmd"))
-        if "SAFE_CMD" in template and safe_command is None:
-            return _payload(
-                success=False,
-                stderr="safe_payload_template requires extra_params.safe_command",
-                exit_code="safe_command_required",
-                parsed={
-                    "runtime_hints": {
-                        "blocked_by": "safe_command_required",
-                        "exploit_profile_id": profile_id,
-                    }
-                },
-            )
         try:
-            rendered_payload = template.format(**sub_context)
+            rendered_url = template.format(**sub_context)
         except (KeyError, ValueError):
-            rendered_payload = template
-        if safe_command is not None:
-            rendered_payload = rendered_payload.replace("SAFE_CMD", safe_command.replace("\\", "\\\\").replace("'", "\\'"))
-        rendered_payload = " ".join(rendered_payload.split())
-        if rendered_payload.lower().startswith("content-type:"):
-            content_type = rendered_payload.split(":", 1)[1].strip()
-            try:
-                response = _open_url(
-                    target_url,
-                    method="POST",
-                    timeout=timeout,
-                    headers={"Content-Type": content_type},
-                    data=b"",
-                )
-                body_excerpt = response["body_excerpt"]
-                result_success = int(response["status"]) < 500
-                command_marker = _string(extra_params.get("success_contains"))
-                if command_marker:
-                    result_success = result_success and command_marker in body_excerpt
-                result_stdout = json.dumps(
-                    {
-                        "url": target_url,
-                        "status": response["status"],
-                        "body_excerpt": body_excerpt[:2048],
-                        "body_excerpt_sha256": hashlib.sha256(
-                            body_excerpt.encode("utf-8", errors="replace")
-                        ).hexdigest(),
-                    },
-                    sort_keys=True,
-                )
-                executed_steps.append("http_content_type_payload")
-            except Exception as exc:
-                result_stdout = ""
-                result_success = False
-                executed_steps.append(f"http_content_type_payload_failed:{exc!s:.120}")
-        else:
-            try:
-                response = _open_url(rendered_payload, method="GET", timeout=timeout)
-                result_success = int(response["status"]) < 500
-                result_stdout = json.dumps({
-                    "url": rendered_payload,
-                    "status": response["status"],
-                    "body_excerpt_sha256": hashlib.sha256(
-                        response["body_excerpt"].encode("utf-8", errors="replace")
-                    ).hexdigest(),
-                }, sort_keys=True)
-                executed_steps.append(f"http_probe:{rendered_payload}")
-            except Exception as exc:
-                result_stdout = ""
-                result_success = False
-                executed_steps.append(f"http_probe_failed:{exc!s:.120}")
+            rendered_url = target_url
+        try:
+            response = _open_url(rendered_url, method="GET", timeout=timeout)
+            result_success = int(response["status"]) < 500
+            result_stdout = json.dumps({
+                "url": rendered_url,
+                "status": response["status"],
+                "body_excerpt_sha256": hashlib.sha256(
+                    response["body_excerpt"].encode("utf-8", errors="replace")
+                ).hexdigest(),
+            }, sort_keys=True)
+            executed_steps.append(f"http_probe:{rendered_url}")
+        except Exception as exc:
+            result_stdout = ""
+            result_success = False
+            executed_steps.append(f"http_probe_failed:{exc!s:.120}")
     else:
         # No payload template — probe the target URL directly as a bounded availability check
         try:
@@ -1918,9 +1842,6 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
         "session_id": session_id,
         "route_id": route_id,
     }
-    satisfied_conditions = extra_params.get("satisfied_conditions")
-    if result_success and isinstance(satisfied_conditions, list):
-        parsed["runtime_hints"]["satisfied_conditions"] = [str(item) for item in satisfied_conditions if str(item).strip()]
     parsed["writeback_hints"] = {
         "observation_category": "exploit_execution",
         "exploit_profile_id": profile_id,
@@ -2174,178 +2095,6 @@ def _internal_goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _pivot_transport_available() -> bool:
-    return bool(os.getenv("AEGRA_LAB_PIVOT_HOST") and os.getenv("AEGRA_LAB_PIVOT_USER") and os.getenv("AEGRA_LAB_PIVOT_PASSWORD"))
-
-
-def _runtime_policy_payload() -> dict[str, Any]:
-    path = _string(os.getenv("AEGRA_RUNTIME_POLICY_PATH"))
-    if not path:
-        return {}
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def _configured_pivot_route_candidates() -> list[dict[str, Any]]:
-    policy = _runtime_policy_payload()
-    adapter_policy = policy.get("adapter_policy") if isinstance(policy.get("adapter_policy"), dict) else {}
-    pivot_policy = adapter_policy.get("pivot") if isinstance(adapter_policy.get("pivot"), dict) else {}
-    candidates: list[dict[str, Any]] = []
-    for value in pivot_policy.values():
-        if not isinstance(value, dict):
-            continue
-        route_id = _string(value.get("route_id"))
-        destination_cidr = _string(value.get("destination_cidr"))
-        destination_host = _string(value.get("destination_host"))
-        if route_id is None and destination_cidr is None and destination_host is None:
-            continue
-        transport = value.get("transport") if isinstance(value.get("transport"), dict) else {}
-        candidates.append(
-            {
-                "route_id": route_id,
-                "source_host": _string(value.get("source_host")),
-                "via_host": _string(value.get("via_host")),
-                "destination_cidr": destination_cidr,
-                "destination_host": destination_host,
-                "protocol": _string(value.get("protocol")),
-                "transport_adapter": _string(transport.get("adapter")),
-            }
-        )
-    return candidates
-
-
-def _configured_pivot_route_by_id(route_id: str | None) -> dict[str, Any] | None:
-    if not route_id:
-        return None
-    for candidate in _configured_pivot_route_candidates():
-        if candidate.get("route_id") == route_id:
-            return candidate
-    return None
-
-
-def _run_via_configured_pivot(*, remote_command: str, timeout_seconds: int) -> subprocess.CompletedProcess[str] | None:
-    if not _pivot_transport_available() or shutil.which("ssh") is None or shutil.which("sshpass") is None:
-        return None
-    env = os.environ.copy()
-    env["SSHPASS"] = str(os.getenv("AEGRA_LAB_PIVOT_PASSWORD") or "")
-    argv = [
-        "sshpass",
-        "-e",
-        "ssh",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        f"ConnectTimeout={max(1, min(timeout_seconds, 30))}",
-        f"{os.getenv('AEGRA_LAB_PIVOT_USER')}@{os.getenv('AEGRA_LAB_PIVOT_HOST')}",
-        remote_command,
-    ]
-    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout_seconds + 5, env=env)
-
-
-def _probe_tcp_via_configured_pivot(*, host: str, port: int, timeout_seconds: int) -> dict[str, Any]:
-    inner = f"nc -z -w {max(1, min(timeout_seconds, 30))} {shlex.quote(host)} {int(port)}"
-    remote = f"timeout {max(1, min(timeout_seconds, 30))} sh -lc {shlex.quote(inner)}"
-    try:
-        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout_seconds)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {"reachable": False, "stderr": str(exc)}
-    if completed is None:
-        return {"reachable": False, "stderr": "configured pivot transport unavailable"}
-    return {"reachable": completed.returncode == 0, "stderr": _limit(completed.stderr, 500)}
-
-
-def _run_psql_query_via_configured_pivot(
-    *,
-    host: str,
-    port: int,
-    database: str,
-    username: str,
-    password: str,
-    query: str,
-    timeout_seconds: int,
-) -> dict[str, Any]:
-    command = (
-        f"PGPASSWORD={shlex.quote(password)} "
-        f"psql -h {shlex.quote(host)} -p {int(port)} -U {shlex.quote(username)} "
-        f"-d {shlex.quote(database)} -Atc {shlex.quote(query)}"
-    )
-    remote = f"timeout {max(1, min(timeout_seconds, 120))} sh -lc {shlex.quote(command)}"
-    try:
-        completed = _run_via_configured_pivot(remote_command=remote, timeout_seconds=timeout_seconds)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {"success": False, "stdout": "", "stderr": str(exc)}
-    if completed is None:
-        return {"success": False, "stdout": "", "stderr": "configured pivot transport unavailable"}
-    return {
-        "success": completed.returncode == 0,
-        "stdout": _limit(completed.stdout, 5000),
-        "stderr": _limit(_redact_configured_secret(completed.stderr), 1000),
-    }
-
-
-def _run_local_psql_query(
-    *,
-    host: str,
-    port: int,
-    database: str,
-    username: str,
-    password: str,
-    query: str,
-    timeout_seconds: int,
-) -> dict[str, Any]:
-    if shutil.which("psql") is None:
-        return {"success": False, "stdout": "", "stderr": "psql is not installed"}
-    env = os.environ.copy()
-    env["PGPASSWORD"] = password
-    argv = ["psql", "-h", host, "-p", str(port), "-U", username, "-d", database, "-Atc", query]
-    try:
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_seconds, env=env)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {"success": False, "stdout": "", "stderr": str(exc)}
-    return {
-        "success": completed.returncode == 0,
-        "stdout": _limit(completed.stdout, 5000),
-        "stderr": _limit(_redact_configured_secret(completed.stderr), 1000),
-    }
-
-
-def _redact_configured_secret(value: str) -> str:
-    text = str(value or "")
-    for secret in (os.getenv("AEGRA_LAB_PIVOT_PASSWORD"), os.getenv("AEGRA_LAB_DB_PASSWORD")):
-        if secret:
-            text = text.replace(secret, "[redacted]")
-    return text
-
-
-def _classify_service_name(*, port: int, protocol: str, hinted_service: str | None = None) -> str:
-    if hinted_service:
-        return hinted_service.lower()
-    if port == 5432:
-        return "postgres"
-    if port == 3306:
-        return "mysql"
-    if port == 6379:
-        return "redis"
-    if protocol in {"http", "https"}:
-        return protocol
-    return "tcp"
-
-
-def _is_data_service(*, port: int, service_name: str) -> bool:
-    return service_name.lower() in {"postgres", "postgresql", "mysql", "mariadb", "redis", "mongodb", "mssql", "oracle"} or port in {
-        5432,
-        3306,
-        6379,
-        27017,
-        1433,
-        1521,
-    }
-
-
 def _success_condition_check(arguments: dict[str, Any]) -> dict[str, Any]:
     operation_id = _string(arguments.get("operation_id") or os.getenv("AEGRA_OPERATION_ID"))
     progress: dict[str, Any] = {}
@@ -2519,20 +2268,10 @@ def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
-def _open_url(
-    url: str,
-    *,
-    method: str,
-    timeout: int,
-    headers: dict[str, str] | None = None,
-    data: bytes | None = None,
-) -> dict[str, Any]:
-    request = Request(url, method=method, headers=headers or {}, data=data)
+def _open_url(url: str, *, method: str, timeout: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    request = Request(url, method=method, headers=headers or {})
     try:
-        # Lab tooling should reach local/container networks directly, regardless
-        # of proxy variables inherited from the host shell.
-        opener = build_opener(ProxyHandler({})).open
-        with opener(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:
             body = response.read(4096).decode("utf-8", errors="replace")
             status = int(getattr(response, "status", 200))
             headers = {key.lower(): value for key, value in response.headers.items()}
