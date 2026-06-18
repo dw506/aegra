@@ -2,22 +2,25 @@ from __future__ import annotations
 
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.planning.models import PlannerDecision
-from src.core.stage.models import StageExecutionRequest, StageResult, StageType, ToolTrace
+from src.core.planning.models import PlannerOutcome
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, StageType, ToolTrace
 from src.core.stage.registry import StageAgentRegistry
 
 
 class FixedPlanner:
-    def run(self, **kwargs):
-        return PlannerDecision(
+    def decide(self, **kwargs):
+        return PlannerOutcome(
             operation_id="operation",
             cycle_index=0,
-            decision="dispatch_agent",
-            selected_agent="recon_agent",
-            selected_stage="RECON_STAGE",
-            objective="collect environment facts",
-            risk_level="low",
-            max_steps=2,
+            action="execute",
+            directive=RoundDirective(
+                operation_id="operation",
+                cycle_index=0,
+                capability="recon",
+                objective="collect environment facts",
+                max_tools=2,
+                risk_level="low",
+            ),
             confidence=0.9,
         )
 

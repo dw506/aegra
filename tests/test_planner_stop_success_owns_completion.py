@@ -4,8 +4,8 @@ from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.models.runtime import RuntimeStatus
-from src.core.planning.models import PlannerDecision
-from src.core.stage.models import StageExecutionRequest, StageResult
+from src.core.planning.models import PlannerOutcome
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
 
 
@@ -52,29 +52,29 @@ class SequencedPlanner:
     def __init__(self) -> None:
         self.calls = 0
 
-    def run(self, **_: object) -> PlannerDecision:
+    def decide(self, **_: object) -> PlannerOutcome:
         self.calls += 1
         if self.calls == 1:
-            return PlannerDecision(
+            return PlannerOutcome(
                 operation_id="operation",
                 cycle_index=0,
-                decision="dispatch_agent",
-                selected_agent="goal_agent",
-                selected_stage="GOAL_STAGE",
-                objective="verify goal evidence",
-                risk_level="low",
-                max_steps=1,
+                action="execute",
+                directive=RoundDirective(
+                    operation_id="operation",
+                    cycle_index=0,
+                    capability="goal",
+                    objective="verify goal evidence",
+                    max_tools=1,
+                    risk_level="low",
+                ),
                 confidence=0.9,
             )
-        return PlannerDecision(
+        return PlannerOutcome(
             operation_id="operation",
             cycle_index=0,
-            decision="stop_success",
-            objective="complete after planner reviewed goal evidence",
-            risk_level="low",
-            max_steps=1,
+            action="stop_success",
+            reason="GoalAgent produced evidence-backed goal_satisfied=true and the required goal evidence is recorded.",
             stop_condition="goal_satisfied",
-            reasoning_summary="GoalAgent produced evidence-backed goal_satisfied=true and the required goal evidence is recorded.",
             confidence=0.9,
         )
 

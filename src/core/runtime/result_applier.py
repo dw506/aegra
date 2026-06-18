@@ -48,7 +48,7 @@ from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.kg_enums import EdgeType, NodeType
 from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
 from src.core.models.runtime import utc_now
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 from src.core.runtime.budgets import RuntimeBudgetManager
 from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
@@ -172,25 +172,25 @@ class PhaseTwoResultApplier:
         )
         return apply_result
 
-    def apply_planner_decision(
+    def apply_planner_outcome(
         self,
-        decision: PlannerDecision,
+        outcome: PlannerOutcome,
         state: RuntimeState,
         kg_store: KnowledgeGraph,
         attack_graph: AttackGraph,
     ) -> PhaseTwoApplyResult:
-        """Record a PlannerDecision in AG and Runtime."""
+        """Record a PlannerOutcome in AG and Runtime."""
 
         del kg_store
         apply_result = PhaseTwoApplyResult()
-        # AG only records execution results. Planner decisions are runtime/audit
+        # AG only records execution results. Planner outcomes are runtime/audit
         # metadata; the round's ATTACK_STEP is written from StageResult.
-        state.execution.metadata["last_planner_decision"] = decision.model_dump(mode="json")
+        state.execution.metadata["last_planner_outcome"] = outcome.model_dump(mode="json")
         self._append_audit_log(
             state,
             {
-                "event_type": "planner_decision_applied",
-                "planner_decision": decision.model_dump(mode="json"),
+                "event_type": "planner_outcome_applied",
+                "planner_outcome": outcome.model_dump(mode="json"),
             },
         )
         apply_result.ag_graph = attack_graph.to_dict()
@@ -204,7 +204,7 @@ class PhaseTwoResultApplier:
                 include_runtime=True,
             )
         )
-        apply_result.logs.append(f"recorded planner decision {decision.decision}")
+        apply_result.logs.append(f"recorded planner outcome {outcome.action}")
         return apply_result
 
     def apply_stage_result(

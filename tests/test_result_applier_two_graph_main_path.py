@@ -5,9 +5,9 @@ from pathlib import Path
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import OperationRuntime, RuntimeState
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import StageResult, ToolTrace
+from src.core.stage.models import RoundDirective, StageResult, ToolTrace
 
 
 def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
@@ -16,18 +16,21 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    decision = PlannerDecision(
+    outcome = PlannerOutcome(
         operation_id="op-two-graph",
         cycle_index=1,
-        decision="dispatch_agent",
-        selected_agent="recon_agent",
-        selected_stage="RECON_STAGE",
-        objective="Collect host facts",
-        risk_level="low",
-        max_steps=2,
+        action="execute",
+        directive=RoundDirective(
+            operation_id="op-two-graph",
+            cycle_index=1,
+            capability="recon",
+            objective="Collect host facts",
+            max_tools=2,
+            risk_level="low",
+        ),
         confidence=0.9,
     )
-    planner_apply = applier.apply_planner_decision(decision, state, kg, ag)
+    planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
 
     stage_result = StageResult(
         operation_id="op-two-graph",
@@ -44,7 +47,7 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
     assert stage_apply.ag_graph is not None
 
-    assert state.execution.metadata["last_planner_decision"]["decision"] == "dispatch_agent"
+    assert state.execution.metadata["last_planner_outcome"]["action"] == "execute"
     assert kg.get_node("host-1").label == "host 1"
     # v3 result-tier AG: exactly one ATTACK_STEP per round, no process nodes.
     process_nodes = ag.find_process_nodes()

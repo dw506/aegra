@@ -60,12 +60,8 @@ class ExecutionAgent:
     ) -> RoundResult:
         """Execute one capability round through the single execution agent."""
 
-        stage_type = normalize_stage_name(directive.legacy_stage_type or CAPABILITY_TO_STAGE[directive.capability])
-        agent = (
-            self._registry.resolve_agent(directive.legacy_agent_name)
-            if directive.legacy_agent_name
-            else self._registry.resolve(stage_type)
-        )
+        stage_type = normalize_stage_name(CAPABILITY_TO_STAGE[directive.capability])
+        agent = self._registry.resolve(stage_type)
         self._registry.validate_assignment(agent_name=agent.agent_name, stage_type=stage_type)
         # Pass the FULL catalog (every in-scope tool stays callable); the planner's
         # allowed_tools are attached only as a focus hint. The real authorization

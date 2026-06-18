@@ -26,9 +26,9 @@ from src.core.models.ag import AttackGraph
 from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, WorkerRuntime, WorkerStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
-from src.core.planning.mission_planner_agent import MissionPlannerAgent, decision_from_outcome, outcome_from_decision
+from src.core.planning.mission_planner_agent import MissionPlannerAgent
 from src.core.planning.graph_tools import PlannerGraphTools
-from src.core.planning.models import PlannerDecision, PlannerOutcome
+from src.core.planning.models import PlannerOutcome
 from src.core.runtime.audit_report import build_operation_audit_report
 from src.core.runtime.observability import (
     append_operation_log,
@@ -51,7 +51,7 @@ from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, Runti
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
 
-#把用户输入的目标转换成标准 Asset
+#把用户输入的目标转换成标准 Asset  用户输入目标 → 标准资产对象 → 写入 runtime policy 的 engagement scope
 class TargetHost(BaseModel): 
     """Inventory record for host/domain/cidr/url/service target import."""
   
@@ -152,7 +152,7 @@ class OperationRunSummary(BaseModel):
     graph_url: str
     audit_url: str
 
-
+ #主循环
 class AppOrchestrator:
     """Application-layer orchestration facade for phase-one control flows."""
 
@@ -197,6 +197,7 @@ class AppOrchestrator:
         )
         self.mission_planner = MissionPlannerAgent(advisor=mission_advisor)
 
+#创建 operation 的初始 RuntimeState，状态为 CREATED
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
         """Create a new operation with control-plane metadata attached."""
 
@@ -250,6 +251,7 @@ class AppOrchestrator:
         )
         self.runtime_store.save_state(created)
         return created.model_copy(deep=True)
+    
     #导入目标
     def import_targets(self, operation_id: str, targets: list[TargetHost]) -> RuntimeState:
         """Persist the current target inventory in operation metadata."""
@@ -637,6 +639,7 @@ class AppOrchestrator:
                 "tool_catalog": tool_catalog,
             },
         )
+        #生成一个图状态快照
         planner_payload_for_snapshot = {**planner_payload, "policy_context": blackbox_policy_context}
         graph_snapshot = self._kg_ag_runtime_snapshot(
             operation_id=operation_id,
@@ -647,12 +650,14 @@ class AppOrchestrator:
             runtime_state=state,
             extra=planner_payload_for_snapshot,
         )
+        #更新成功条件进度
         self._update_success_condition_progress(
             state=state,
             kg=kg,
             ag=ag,
             cycle_index=cycle_index,
         )
+        #图查询/摘要工具，构造 Planner 所需的轻量图摘要
         planner_tools = PlannerGraphTools(
             operation_id=operation_id,
             cycle_index=cycle_index,
@@ -665,17 +670,19 @@ class AppOrchestrator:
         graph_snapshot["success_condition_progress"] = self._mapping(
             state.execution.metadata.get("success_condition_progress")
         )
+        #把当前系统中注册的 Agent/Stage 能力摘要加入上下文
         graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
+        #MCP 工具目录加入 Planner 上下文
         graph_snapshot["mcp_tool_catalog"] = tool_catalog
+        #调用 Planner 做决策
         try:
             outcome = self._planner_decide(
                 goal=goal,
                 graph_context=graph_snapshot,
                 policy_context=blackbox_policy_context,
-                recent_stage_results=self._planner_recent_stage_results(state),
+                recent_stage_results=self._planner_recent_stage_results(state),          #最近几轮 Stage 执行结果
                 graph_tools=planner_tools,
             )
-            decision = self._planner_outcome_to_legacy_decision(outcome, goal=goal)
             operation_trace_logger.write_block(
                 "PLANNER_OUTCOME",
                 "planner outcome",
@@ -683,7 +690,7 @@ class AppOrchestrator:
                     "cycle_index": cycle_index,
                     "action": outcome.action,
                     "capability": outcome.directive.capability if outcome.directive else None,
-                    "objective": outcome.directive.objective if outcome.directive else decision.objective,
+                    "objective": outcome.directive.objective if outcome.directive else goal,
                     "max_tools": outcome.directive.max_tools if outcome.directive else None,
                 },
             )
@@ -701,7 +708,6 @@ class AppOrchestrator:
         if outcome.operation_id != operation_id:
             original_operation_id = outcome.operation_id
             outcome.operation_id = operation_id
-            decision.operation_id = operation_id
             self._log_operation_event(
                 state,
                 event_type="planner_outcome_operation_id_normalized",
@@ -714,7 +720,6 @@ class AppOrchestrator:
         outcome.cycle_index = cycle_index
         if outcome.directive is not None:
             outcome.directive.cycle_index = cycle_index
-        decision.cycle_index = cycle_index
         txt_logger.write_block(
             "PLANNER",
             "planner outcome",
@@ -722,14 +727,14 @@ class AppOrchestrator:
                 "cycle": cycle_index,
                 "action": outcome.action,
                 "capability": outcome.directive.capability if outcome.directive else None,
-                "objective": outcome.directive.objective if outcome.directive else decision.objective,
-                "risk_level": outcome.directive.risk_level if outcome.directive else decision.risk_level,
+                "objective": outcome.directive.objective if outcome.directive else goal,
+                "risk_level": outcome.directive.risk_level if outcome.directive else "medium",
                 "confidence": outcome.confidence,
                 "reason": outcome.reason,
                 "target_refs": list(outcome.directive.target_refs if outcome.directive else []),
             },
         )
-        planning_apply = self.result_applier.apply_planner_decision(decision, state, kg, ag)
+        planning_apply = self.result_applier.apply_planner_outcome(outcome, state, kg, ag)
         for delta in planning_apply.visual_graph_deltas:
             graph_delta_publisher.publish_nowait(delta)
 
@@ -737,7 +742,6 @@ class AppOrchestrator:
             decisions=[
                 {
                     "planner_outcome": outcome.model_dump(mode="json"),
-                    "planner_decision": decision.model_dump(mode="json"),
                 }
             ],
             logs=[outcome.reason or f"planner action={outcome.action}"],
@@ -1410,6 +1414,7 @@ class AppOrchestrator:
         extra: dict[str, Any],
     ) -> dict[str, Any]:
         del graph_refs
+        #获取策略上下文
         policy_context = AppOrchestrator._mapping(extra.get("policy_context") or runtime_state.execution.metadata.get("runtime_policy"))
         current_goal = str(
             extra.get("mission_goal")
@@ -1456,30 +1461,13 @@ class AppOrchestrator:
         recent_stage_results: list[dict[str, Any]],
         graph_tools: PlannerGraphTools,
     ) -> PlannerOutcome:
-        planner = self.mission_planner
-        if hasattr(planner, "decide"):
-            return planner.decide(  # type: ignore[no-any-return,attr-defined]
-                goal=goal,
-                graph_context=graph_context,
-                policy_context=policy_context,
-                recent_stage_results=recent_stage_results,
-                graph_tools=graph_tools,
-            )
-        decision = planner.run(  # type: ignore[attr-defined]
+        return self.mission_planner.decide(
             goal=goal,
             graph_context=graph_context,
             policy_context=policy_context,
             recent_stage_results=recent_stage_results,
+            graph_tools=graph_tools,
         )
-        return self._legacy_decision_to_outcome(decision)
-
-    @staticmethod
-    def _legacy_decision_to_outcome(decision: PlannerDecision) -> PlannerOutcome:
-        return outcome_from_decision(decision)
-
-    @staticmethod
-    def _planner_outcome_to_legacy_decision(outcome: PlannerOutcome, *, goal: str) -> PlannerDecision:
-        return decision_from_outcome(outcome, goal=goal)
 
     def _append_llm_decision_history_from_cycle(
         self,

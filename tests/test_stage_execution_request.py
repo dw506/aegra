@@ -6,7 +6,6 @@ from typing import Any
 
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
-from src.core.planning.models import PlannerDecision
 from src.core.stage.agents import ExecutionStageAgent
 from src.core.stage.models import StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
@@ -51,22 +50,10 @@ def test_stage_agent_registry_resolves_single_execution_agent() -> None:
 def test_planner_selected_agent_resolves_to_single_executor() -> None:
     registry = StageAgentRegistry.default()
     agent = registry.resolve("EXPLOIT_STAGE")
-    decision = PlannerDecision(
-        operation_id="op-1",
-        cycle_index=0,
-        decision="dispatch_agent",
-        selected_agent="exploit_validation_agent",
-        selected_stage="EXPLOIT_STAGE",
-        objective="Validate exploitability",
-        risk_level="medium",
-        max_steps=2,
-        confidence=0.8,
-    )
 
     assert agent.agent_name == "execution_agent"
     # Legacy planner agent names still resolve — to the single executor.
     assert registry.resolve_agent("exploit_validation_agent") is agent
-    assert registry.resolve_agent(decision.selected_agent) is agent
 
 
 def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None:

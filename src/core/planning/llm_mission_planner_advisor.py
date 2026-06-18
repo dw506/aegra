@@ -10,8 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
-from src.core.planning.models import PlannerDecision, PlannerOutcome
-from src.core.stage.models import normalize_stage_name
+from src.core.planning.models import PlannerOutcome
 
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
@@ -49,7 +48,7 @@ class LLMMissionPlannerAdvisor:
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
         recent_stage_results: list[dict[str, Any]] | None = None,
-    ) -> PlannerOutcome | PlannerDecision | dict[str, Any]:
+    ) -> PlannerOutcome:
         """Return the next planner outcome from the LLM."""
 
         operation_id = str(graph_context.get("operation_id") or "operation")
@@ -68,11 +67,9 @@ class LLMMissionPlannerAdvisor:
                 temperature=self._config.temperature,
             )
         except PackyLLMError as exc:
-            return _fallback_decision(
+            return _fallback_outcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                goal=goal,
-                decision="replan",
                 reason="llm mission planner unavailable",
                 stop_condition="planner_llm_unavailable",
                 metadata={"planner": "llm_mission_planner", "accepted": False, "error": str(exc)},
@@ -80,11 +77,9 @@ class LLMMissionPlannerAdvisor:
 
         payload = _extract_json_object(response.text)
         if payload is None:
-            return _fallback_decision(
+            return _fallback_outcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                goal=goal,
-                decision="replan",
                 reason="llm mission planner returned non-json",
                 stop_condition="invalid_planner_json",
                 metadata={"planner": "llm_mission_planner", "accepted": False, "raw_text": response.text[:1000]},
@@ -100,35 +95,13 @@ class LLMMissionPlannerAdvisor:
             "model": response.model,
             "usage": response.usage,
         }
-        if payload.get("action") is not None:
-            try:
-                return PlannerOutcome.model_validate(payload)
-            except ValidationError as exc:
-                return _fallback_decision(
-                    operation_id=operation_id,
-                    cycle_index=cycle_index,
-                    goal=goal,
-                    decision="replan",
-                    reason="llm mission planner returned invalid PlannerOutcome schema",
-                    stop_condition="invalid_planner_schema",
-                    metadata={
-                        "planner": "llm_mission_planner",
-                        "accepted": False,
-                        "error": str(exc),
-                        "raw_text": response.text[:2000],
-                        "normalized_payload": payload,
-                    },
-                )
-        payload = _normalize_decision_payload(payload, goal=goal)
         try:
-            return PlannerDecision.model_validate(payload)
+            return PlannerOutcome.model_validate(payload)
         except ValidationError as exc:
-            return _fallback_decision(
+            return _fallback_outcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                goal=goal,
-                decision="replan",
-                reason="llm mission planner returned invalid PlannerDecision schema",
+                reason="llm mission planner returned invalid PlannerOutcome schema",
                 stop_condition="invalid_planner_schema",
                 metadata={
                     "planner": "llm_mission_planner",
@@ -274,152 +247,24 @@ def _truncate_json(payload: dict[str, Any], max_chars: int) -> str:
     return text[: max_chars - 80] + "...<truncated>"
 
 
-def _fallback_decision(
+def _fallback_outcome(
     *,
     operation_id: str,
     cycle_index: int,
-    goal: str,
-    decision: str,
     reason: str,
     stop_condition: str | None,
     metadata: dict[str, Any],
-) -> PlannerDecision:
-    return PlannerDecision(
+) -> PlannerOutcome:
+    return PlannerOutcome(
         operation_id=operation_id,
         cycle_index=cycle_index,
-        decision=decision,  # type: ignore[arg-type]
-        selected_agent=None,
-        selected_stage=None,
-        objective=goal,
-        target_refs=[],
-        required_context={},
-        success_criteria=[],
-        risk_level="medium",
-        max_steps=1,
-        reasoning_summary=reason,
-        handoff_acceptance=None,
+        action="replan",
+        directive=None,
+        reason=reason,
         stop_condition=stop_condition,
         confidence=0.0,
         metadata=metadata,
     )
-
-
-def _normalize_decision_payload(payload: dict[str, Any], *, goal: str) -> dict[str, Any]:
-    allowed_top_level = {
-        "operation_id",
-        "cycle_index",
-        "decision",
-        "selected_agent",
-        "selected_stage",
-        "objective",
-        "target_refs",
-        "required_context",
-        "success_criteria",
-        "risk_level",
-        "max_steps",
-        "task_brief",
-        "autonomy_level",
-        "allowed_tool_names",
-        "target_selection",
-        "handoff_policy",
-        "reasoning_summary",
-        "handoff_acceptance",
-        "stop_condition",
-        "confidence",
-        "metadata",
-    }
-    normalized = {key: value for key, value in payload.items() if key in allowed_top_level}
-
-    selected_task = payload.get("selected_next_task")
-    if "decision" not in normalized:
-        normalized.update(_legacy_planner_result_to_decision(payload, selected_task=selected_task))
-    elif normalized.get("decision") == "dispatch_agent" and selected_task:
-        normalized.update(_legacy_selected_task_fields(selected_task))
-
-    normalized.setdefault("objective", goal)
-    normalized.setdefault("target_refs", [])
-    normalized.setdefault("required_context", {})
-    normalized.setdefault("success_criteria", [])
-    normalized.setdefault("risk_level", "medium")
-    normalized.setdefault("max_steps", 3)
-    normalized.setdefault("task_brief", None)
-    normalized.setdefault("autonomy_level", None)
-    normalized.setdefault("allowed_tool_names", None)
-    normalized.setdefault("target_selection", None)
-    normalized.setdefault("handoff_policy", None)
-    normalized.setdefault("reasoning_summary", payload.get("summary") or "")
-    normalized.setdefault("handoff_acceptance", None)
-    normalized.setdefault("stop_condition", None)
-    normalized.setdefault("confidence", 0.5)
-    normalized.setdefault("metadata", {})
-    if not normalized.get("objective"):
-        normalized["objective"] = goal
-    normalized["target_refs"] = [ref for ref in normalized.get("target_refs", []) if isinstance(ref, dict)]
-    normalized["required_context"] = dict(normalized.get("required_context") or {})
-    normalized["success_criteria"] = [
-        str(value) for value in normalized.get("success_criteria", []) if value is not None
-    ]
-    normalized["max_steps"] = int(normalized.get("max_steps") or 3)
-    normalized["confidence"] = float(normalized.get("confidence") if normalized.get("confidence") is not None else 0.5)
-    normalized["metadata"] = dict(normalized.get("metadata") or {})
-    return normalized
-
-
-def _legacy_planner_result_to_decision(
-    payload: dict[str, Any],
-    *,
-    selected_task: Any,
-) -> dict[str, Any]:
-    if payload.get("stop_condition"):
-        return {
-            "decision": "stop_failed" if payload.get("replan_needed") else "stop_success",
-            "selected_agent": None,
-            "selected_stage": None,
-        }
-    if payload.get("replan_needed"):
-        return {
-            "decision": "replan",
-            "selected_agent": None,
-            "selected_stage": None,
-        }
-    if selected_task:
-        return {
-            "decision": "dispatch_agent",
-            **_legacy_selected_task_fields(selected_task),
-        }
-    return {
-        "decision": "replan",
-        "selected_agent": None,
-        "selected_stage": None,
-    }
-
-
-def _legacy_selected_task_fields(selected_task: Any) -> dict[str, Any]:
-    if isinstance(selected_task, str):
-        return {"selected_agent": None, "selected_stage": None}
-    if not isinstance(selected_task, dict):
-        return {"selected_agent": None, "selected_stage": None}
-    selected_stage = selected_task.get("selected_stage")
-    raw_stage = selected_task.get("stage_type") or selected_task.get("task_type") or selected_stage
-    try:
-        selected_stage = normalize_stage_name(raw_stage)
-    except ValueError:
-        selected_stage = selected_task.get("selected_stage")
-    return {
-        "selected_agent": selected_task.get("selected_agent"),
-        "selected_stage": selected_stage,
-        "objective": selected_task.get("objective") or selected_task.get("label"),
-        "target_refs": selected_task.get("target_refs") or selected_task.get("input_refs") or [],
-        "required_context": selected_task.get("required_context") or {},
-        "success_criteria": selected_task.get("success_criteria") or [],
-        "risk_level": selected_task.get("risk_level") or "medium",
-        "max_steps": selected_task.get("max_steps") or 3,
-        "task_brief": selected_task.get("task_brief"),
-        "autonomy_level": selected_task.get("autonomy_level"),
-        "allowed_tool_names": selected_task.get("allowed_tool_names"),
-        "target_selection": selected_task.get("target_selection"),
-        "handoff_policy": selected_task.get("handoff_policy"),
-    }
 
 
 __all__ = ["LLMMissionPlannerAdvisor", "LLMMissionPlannerAdvisorConfig"]

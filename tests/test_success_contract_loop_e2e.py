@@ -14,9 +14,17 @@ from typing import Any
 
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.planning.models import PlannerDecision
-from src.core.stage.models import StageExecutionRequest, StageResult
+from src.core.planning.models import PlannerOutcome
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
 from src.core.stage.registry import StageAgentRegistry
+
+_STAGE_CAP = {
+    "RECON_STAGE": "recon",
+    "VULN_ANALYSIS_STAGE": "analysis",
+    "EXPLOIT_STAGE": "exploit",
+    "ACCESS_PIVOT_STAGE": "pivot",
+    "GOAL_STAGE": "goal",
+}
 
 
 def _agent(agent_name: str, stage_type: str, **result_kwargs: Any):
@@ -54,19 +62,17 @@ class _GateAwarePlanner:
     def __init__(self) -> None:
         self.decisions: list[str] = []
 
-    def run(self, *, goal: str, graph_context: dict[str, Any], **_: Any) -> PlannerDecision:
+    def decide(self, *, goal: str, graph_context: dict[str, Any], **_: Any) -> PlannerOutcome:
         progress = graph_context.get("success_condition_progress") or {}
         operation_id = str(graph_context["operation_id"])
         cycle_index = int(graph_context["cycle_index"])
         if progress.get("eligible_for_stop"):
             self.decisions.append("stop_success")
-            return PlannerDecision(
+            return PlannerOutcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                decision="stop_success",
-                objective=goal,
-                risk_level="low",
-                max_steps=1,
+                action="stop_success",
+                reason=goal,
                 stop_condition="contract_satisfied",
                 confidence=1.0,
             )
@@ -74,15 +80,18 @@ class _GateAwarePlanner:
         for condition, agent, stage in _CHAIN:
             if condition in missing:
                 self.decisions.append(f"dispatch:{agent}")
-                return PlannerDecision(
+                return PlannerOutcome(
                     operation_id=operation_id,
                     cycle_index=cycle_index,
-                    decision="dispatch_agent",
-                    selected_agent=agent,
-                    selected_stage=stage,
-                    objective=goal,
-                    risk_level="low",
-                    max_steps=1,
+                    action="execute",
+                    directive=RoundDirective(
+                        operation_id=operation_id,
+                        cycle_index=cycle_index,
+                        capability=_STAGE_CAP[stage],
+                        objective=goal,
+                        max_tools=1,
+                        risk_level="low",
+                    ),
                     confidence=0.9,
                 )
         raise AssertionError("no missing condition but gate not eligible")
@@ -93,19 +102,17 @@ class _ProfileDrivenPlanner:
         self.chain = list(chain)
         self.decisions: list[str] = []
 
-    def run(self, *, goal: str, graph_context: dict[str, Any], **_: Any) -> PlannerDecision:
+    def decide(self, *, goal: str, graph_context: dict[str, Any], **_: Any) -> PlannerOutcome:
         progress = graph_context.get("success_condition_progress") or {}
         operation_id = str(graph_context["operation_id"])
         cycle_index = int(graph_context["cycle_index"])
         if progress.get("eligible_for_stop"):
             self.decisions.append("stop_success")
-            return PlannerDecision(
+            return PlannerOutcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                decision="stop_success",
-                objective=goal,
-                risk_level="low",
-                max_steps=1,
+                action="stop_success",
+                reason=goal,
                 stop_condition="contract_satisfied",
                 confidence=1.0,
             )
@@ -113,15 +120,18 @@ class _ProfileDrivenPlanner:
         for condition, agent, stage in self.chain:
             if condition in missing:
                 self.decisions.append(f"dispatch:{agent}")
-                return PlannerDecision(
+                return PlannerOutcome(
                     operation_id=operation_id,
                     cycle_index=cycle_index,
-                    decision="dispatch_agent",
-                    selected_agent=agent,
-                    selected_stage=stage,
-                    objective=goal,
-                    risk_level="low",
-                    max_steps=1,
+                    action="execute",
+                    directive=RoundDirective(
+                        operation_id=operation_id,
+                        cycle_index=cycle_index,
+                        capability=_STAGE_CAP[stage],
+                        objective=goal,
+                        max_tools=1,
+                        risk_level="low",
+                    ),
                     confidence=0.9,
                 )
         raise AssertionError("no missing condition but gate not eligible")

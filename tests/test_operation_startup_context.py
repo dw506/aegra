@@ -7,7 +7,7 @@ from typing import Any
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.agent_protocol import GraphRef, GraphScope
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 
 
 class CapturingMissionPlanner:
@@ -15,27 +15,23 @@ class CapturingMissionPlanner:
         self.graph_context: dict[str, Any] | None = None
         self.policy_context: dict[str, Any] | None = None
 
-    def run(
+    def decide(
         self,
         *,
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
         recent_stage_results: list[dict[str, Any]] | None = None,
-    ) -> PlannerDecision:
+        **_: Any,
+    ) -> PlannerOutcome:
         del recent_stage_results
         self.graph_context = graph_context
         self.policy_context = policy_context
-        return PlannerDecision(
+        return PlannerOutcome(
             operation_id=str(graph_context["operation_id"]),
             cycle_index=int(graph_context["cycle_index"]),
-            decision="replan",
-            selected_agent=None,
-            selected_stage=None,
-            objective=goal,
-            risk_level="low",
-            max_steps=1,
-            reasoning_summary="captured startup context",
+            action="replan",
+            reason="captured startup context",
             confidence=0.7,
         )
 
@@ -50,28 +46,24 @@ class SequenceMissionPlanner:
         self.decisions = list(decisions)
         self.calls = 0
 
-    def run(
+    def decide(
         self,
         *,
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
         recent_stage_results: list[dict[str, Any]] | None = None,
-    ) -> PlannerDecision:
+        **_: Any,
+    ) -> PlannerOutcome:
         del policy_context, recent_stage_results
         self.calls += 1
-        decision = self.decisions.pop(0) if self.decisions else "stop_failed"
-        return PlannerDecision(
+        action = self.decisions.pop(0) if self.decisions else "stop_failed"
+        return PlannerOutcome(
             operation_id=str(graph_context["operation_id"]),
             cycle_index=int(graph_context["cycle_index"]),
-            decision=decision,  # type: ignore[arg-type]
-            selected_agent=None,
-            selected_stage=None,
-            objective=goal,
-            risk_level="low",
-            max_steps=1,
-            reasoning_summary=f"planner returned {decision}",
-            stop_condition="goal_satisfied" if decision == "stop_success" else None,
+            action=action,  # type: ignore[arg-type]
+            reason=f"planner returned {action}",
+            stop_condition="goal_satisfied" if action == "stop_success" else None,
             confidence=0.7,
         )
 
@@ -145,7 +137,7 @@ def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> N
     )
 
     assert [
-        result.planning.final_output.decisions[0]["planner_decision"]["decision"]
+        result.planning.final_output.decisions[0]["planner_outcome"]["action"]
         for result in results
         if result.planning is not None
     ] == [

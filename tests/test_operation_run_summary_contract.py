@@ -14,7 +14,7 @@ from src.app.settings import AppSettings
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import RuntimeStatus
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
 from src.core.stage.models import StageResult, ToolTrace
 
@@ -38,25 +38,22 @@ SUCCESS_PROGRESS = {
 
 
 class StopSuccessPlanner:
-    def run(
+    def decide(
         self,
         *,
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
         recent_stage_results: list[dict[str, Any]] | None = None,
-    ) -> PlannerDecision:
+        **_: Any,
+    ) -> PlannerOutcome:
         del policy_context, recent_stage_results
-        return PlannerDecision(
+        return PlannerOutcome(
             operation_id=str(graph_context["operation_id"]),
             cycle_index=int(graph_context["cycle_index"]),
-            decision="stop_success",
-            selected_agent=None,
-            selected_stage=None,
-            objective=goal,
-            risk_level="low",
-            max_steps=1,
-            reasoning_summary="required success conditions are satisfied",
+            action="stop_success",
+            reason="required success conditions are satisfied",
+            stop_condition="contract_satisfied",
             confidence=1.0,
         )
 

@@ -5,9 +5,9 @@ from src.core.agents.agent_protocol import GraphScope
 from src.core.models.ag import AttackGraph, GraphRef
 from src.core.models.attack_process import AttackProcessNodeType
 from src.core.models.runtime import OperationRuntime, RuntimeState
-from src.core.planning.models import PlannerDecision
+from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import StageResult, StageType, ToolTrace
+from src.core.stage.models import RoundDirective, StageResult, StageType, ToolTrace
 
 
 def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> None:
@@ -16,18 +16,21 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    decision = PlannerDecision(
+    outcome = PlannerOutcome(
         operation_id="op-apply",
         cycle_index=1,
-        decision="dispatch_agent",
-        selected_agent="recon_agent",
-        selected_stage="RECON_STAGE",
-        objective="map exposed service",
-        risk_level="low",
-        max_steps=2,
+        action="execute",
+        directive=RoundDirective(
+            operation_id="op-apply",
+            cycle_index=1,
+            capability="recon",
+            objective="map exposed service",
+            max_tools=2,
+            risk_level="low",
+        ),
         confidence=0.9,
     )
-    planner_apply = applier.apply_planner_decision(decision, state, kg, ag)
+    planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
 
     stage_result = StageResult(
         operation_id="op-apply",

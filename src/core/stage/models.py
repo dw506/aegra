@@ -159,15 +159,6 @@ class RoundDirective(BaseModel):
     success_hint: str | None = None
     required_context: dict[str, Any] = Field(default_factory=dict)
     risk_level: str = "medium"
-    legacy_agent_name: str | None = None
-    legacy_stage_type: StageName | None = None
-
-    @field_validator("legacy_stage_type", mode="before")
-    @classmethod
-    def normalize_legacy_stage_type(cls, value: Any) -> StageName | None:
-        if value is None:
-            return None
-        return normalize_stage_name(value)
 
 
 class RoundResult(BaseModel):
@@ -187,7 +178,7 @@ class RoundResult(BaseModel):
 
 
 class StageExecutionRequest(BaseModel):
-    """PlannerDecision-derived request consumed by a StageAgent."""
+    """RoundDirective-derived request consumed by the execution agent."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
