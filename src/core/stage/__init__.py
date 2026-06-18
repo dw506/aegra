@@ -3,7 +3,6 @@
 from src.core.stage.adapters import StageResultAdapter
 from src.core.stage.llm_driven_stage_agent import LLMDrivenStageAgent
 from src.core.stage.models import (
-    GraphStateSnapshot,
     GraphUpdateIntent,
     StageName,
     StageExecutionRequest,
@@ -15,7 +14,6 @@ from src.core.stage.models import (
 from src.core.stage.registry import StageAgentRegistry
 
 __all__ = [
-    "GraphStateSnapshot",
     "GraphUpdateIntent",
     "LLMDrivenStageAgent",
     "StageAgentRegistry",

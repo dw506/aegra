@@ -84,6 +84,13 @@ class PlannerGraphTools:
             "recent_attack_steps": attack_steps,
         }
 
+    @staticmethod
+    def tool_manifest() -> dict[str, list[str]]:
+        return {
+            "read": ["kg_query", "kg_get_node", "kg_neighbors", "ag_get_timeline", "ag_get_step", "get_round_log"],
+            "write": ["record_finding", "record_attack_step", "link_evidence"],
+        }
+
     def kg_query(self, node_type: str | None = None, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         filters = dict(filters or {})
         nodes = self.kg.list_nodes(type=node_type) if node_type else self.kg.list_nodes()

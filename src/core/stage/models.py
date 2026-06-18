@@ -81,23 +81,6 @@ class GraphUpdateIntent(BaseModel):
     source: Literal["planner", "stage_agent", "tool_trace", "result_applier"] = "stage_agent"
 
 
-class GraphStateSnapshot(BaseModel):
-    """Read-only graph/runtime/policy snapshot passed into LLM agents."""
-
-    model_config = ConfigDict(extra="allow", validate_assignment=True)
-
-    kg_summary: dict[str, Any] = Field(default_factory=dict)
-    ag_summary: dict[str, Any] = Field(default_factory=dict)
-    runtime_summary: dict[str, Any] = Field(default_factory=dict)
-    policy_summary: dict[str, Any] = Field(default_factory=dict)
-    recent_evidence: list[dict[str, Any]] = Field(default_factory=list)
-    active_sessions: list[dict[str, Any]] = Field(default_factory=list)
-    known_assets: list[dict[str, Any]] = Field(default_factory=list)
-    known_services: list[dict[str, Any]] = Field(default_factory=list)
-    known_identities: list[dict[str, Any]] = Field(default_factory=list)
-    current_task_context: dict[str, Any] = Field(default_factory=dict)
-
-
 class ToolTrace(BaseModel):
     """Audit record for one tool call inside a bounded stage loop."""
 
@@ -192,8 +175,8 @@ class StageExecutionRequest(BaseModel):
     success_criteria: list[str] = Field(default_factory=list)
     risk_level: str = "medium"
     max_steps: int = Field(default=8, ge=1)
-    kg_snapshot: dict[str, Any] = Field(default_factory=dict)
-    ag_process_history: dict[str, Any] = Field(default_factory=dict)
+    graph_summary: dict[str, Any] = Field(default_factory=dict)
+    graph_history: dict[str, Any] = Field(default_factory=dict)
     runtime_context: dict[str, Any] = Field(default_factory=dict)
     policy_context: dict[str, Any] = Field(default_factory=dict)
     mcp_tool_catalog: dict[str, Any] = Field(default_factory=dict)
@@ -321,7 +304,6 @@ __all__ = [
     "CAPABILITY_NAMES",
     "CapabilityName",
     "ExtractedFact",
-    "GraphStateSnapshot",
     "GraphUpdateIntent",
     "RoundDirective",
     "RoundResult",

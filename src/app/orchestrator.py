@@ -639,17 +639,6 @@ class AppOrchestrator:
                 "tool_catalog": tool_catalog,
             },
         )
-        #生成一个图状态快照
-        planner_payload_for_snapshot = {**planner_payload, "policy_context": blackbox_policy_context}
-        graph_snapshot = self._kg_ag_runtime_snapshot(
-            operation_id=operation_id,
-            cycle_index=cycle_index,
-            graph_refs=graph_refs,
-            kg=kg,
-            ag=ag,
-            runtime_state=state,
-            extra=planner_payload_for_snapshot,
-        )
         #更新成功条件进度
         self._update_success_condition_progress(
             state=state,
@@ -666,19 +655,23 @@ class AppOrchestrator:
             runtime_state=state,
             runtime_root=self.settings.runtime_store_dir,
         )
-        graph_snapshot["min_summary"] = planner_tools.build_min_summary()
-        graph_snapshot["success_condition_progress"] = self._mapping(
-            state.execution.metadata.get("success_condition_progress")
-        )
-        #把当前系统中注册的 Agent/Stage 能力摘要加入上下文
-        graph_snapshot["agent_capabilities"] = self.stage_registry.capability_summary()
-        #MCP 工具目录加入 Planner 上下文
-        graph_snapshot["mcp_tool_catalog"] = tool_catalog
+        min_summary = planner_tools.build_min_summary()
+        success_progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
+        planner_context = {
+            "operation_id": operation_id,
+            "cycle_index": cycle_index,
+            "current_goal": goal,
+            "min_summary": min_summary,
+            "success_condition_progress": success_progress,
+            "graph_tools": PlannerGraphTools.tool_manifest(),
+            "agent_capabilities": self.stage_registry.capability_summary(),
+            "mcp_tool_catalog": tool_catalog,
+        }
         #调用 Planner 做决策
         try:
             outcome = self._planner_decide(
                 goal=goal,
-                graph_context=graph_snapshot,
+                graph_context=planner_context,
                 policy_context=blackbox_policy_context,
                 recent_stage_results=self._planner_recent_stage_results(state),          #最近几轮 Stage 执行结果
                 graph_tools=planner_tools,
@@ -787,8 +780,14 @@ class AppOrchestrator:
             try:
                 round_result = ExecutionAgent(self.stage_registry).run(
                     outcome.directive,
-                    kg_snapshot=graph_snapshot,
-                    ag_process_history={},
+                    graph_summary={
+                        "operation_id": operation_id,
+                        "cycle_index": cycle_index,
+                        "current_goal": goal,
+                        "min_summary": min_summary,
+                        "success_condition_progress": success_progress,
+                    },
+                    graph_history={},
                     runtime_context=self._blackbox_runtime_context(state),
                     policy_context=blackbox_policy_context,
                     mcp_tool_catalog=tool_catalog,
@@ -1401,56 +1400,6 @@ class AppOrchestrator:
             if candidate is not None and str(candidate).strip():
                 return str(candidate).strip()
         return "Validate the authorized mission goal"
-
-    @staticmethod
-    def _kg_ag_runtime_snapshot(
-        *,
-        operation_id: str,
-        cycle_index: int,
-        graph_refs: list[AgentGraphRef],
-        kg: KnowledgeGraph,
-        ag: AttackGraph,
-        runtime_state: RuntimeState,
-        extra: dict[str, Any],
-    ) -> dict[str, Any]:
-        del graph_refs
-        #获取策略上下文
-        policy_context = AppOrchestrator._mapping(extra.get("policy_context") or runtime_state.execution.metadata.get("runtime_policy"))
-        current_goal = str(
-            extra.get("mission_goal")
-            or extra.get("goal")
-            or extra.get("objective")
-            or runtime_state.execution.summary
-            or ""
-        )
-        recent_steps = [
-            node.model_dump(mode="json")
-            for node in ag.find_process_nodes()
-            if getattr(getattr(node, "node_type", None), "value", None) == "ATTACK_STEP"
-        ]
-        recent_steps = sorted(recent_steps, key=lambda item: int(item.get("cycle_index") or 0))[-3:]
-        return {
-            "operation_id": operation_id,
-            "cycle_index": cycle_index,
-            "current_goal": current_goal,
-            "kg_summary": {
-                "node_count": len(kg.list_nodes()),
-                "edge_count": len(kg.list_edges()),
-                "version": kg.version,
-            },
-            "ag_summary": {
-                "step_count": len(recent_steps),
-                "version": ag.version,
-                "recent_attack_steps": recent_steps,
-            },
-            "runtime_summary": {
-                "operation_status": runtime_state.operation_status.value,
-                "execution_status": runtime_state.execution.status.value,
-                "target_count": runtime_state.execution.metadata.get("target_count", 0),
-                "recent_outcome_count": len(runtime_state.recent_outcomes),
-            },
-            "policy": policy_context,
-        }
 
     def _planner_decide(
         self,

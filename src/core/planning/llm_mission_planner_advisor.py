@@ -145,59 +145,39 @@ class LLMMissionPlannerAdvisor:
         context = _truncate_json(
             {
                 "mission_goal": goal,
-                "kg": graph_context.get("kg") or graph_context.get("kg_summary") or {},
-                "ag_process": graph_context.get("ag_process_summary") or graph_context.get("ag") or graph_context.get("ag_summary") or {},
-                "runtime": graph_context.get("runtime") or graph_context.get("runtime_summary") or {},
+                "operation_id": graph_context.get("operation_id"),
+                "cycle_index": graph_context.get("cycle_index"),
                 "policy": policy_context,
-                "recent_evidence": graph_context.get("recent_evidence") or [],
-                "known_assets": graph_context.get("known_assets") or [],
-                "known_services": graph_context.get("known_services") or [],
-                "zone_objectives": graph_context.get("zone_objectives") or [],
-                "pivot_candidates": graph_context.get("pivot_candidates") or [],
-                "self_infrastructure_addresses": graph_context.get("self_infrastructure_addresses") or [],
-                "active_sessions": graph_context.get("active_sessions") or [],
-                "recent_attack_process_nodes": graph_context.get("recent_attack_process_nodes") or [],
-                "recent_handoff_suggestions": graph_context.get("recent_handoff_suggestions") or [],
-                "recent_failures": graph_context.get("recent_failures") or [],
-                "validation_dead_ends": graph_context.get("validation_dead_ends") or [],
-                "current_goal": graph_context.get("current_goal") or goal,
-                "recent_results": list(recent_stage_results or []),
-                "planner_outcome_contract": outcome_contract,
                 "min_summary": graph_context.get("min_summary") or {},
+                "success_condition_progress": graph_context.get("success_condition_progress") or {},
                 "graph_tools": graph_context.get("graph_tools") or {},
                 "agent_capabilities": graph_context.get("agent_capabilities") or [],
-                "mcp_tool_capabilities": graph_context.get("mcp_tool_capabilities") or graph_context.get("mcp_tool_catalog") or {},
+                "mcp_tool_catalog": graph_context.get("mcp_tool_catalog") or {},
+                "recent_results": list(recent_stage_results or []),
+                "planner_outcome_contract": outcome_contract,
             },
             self._config.max_context_chars,
         )
         return (
             "Return strict JSON only matching PlannerOutcome. "
-            "Use the supplied graph tool summaries and available graph_tools before choosing. "
+            "Use min_summary as the only always-on graph context. For graph details, request or rely on "
+            "typed graph_tools such as kg_query, kg_get_node, kg_neighbors, ag_get_timeline, ag_get_step, "
+            "and get_round_log instead of expecting a full graph dump in the prompt. "
             "AG is a result timeline: one ATTACK_STEP per execution round plus terminal outcomes. "
             "Do not output shell commands. Do not output MCP tool arguments. "
             "Do not micro-control tool calls; output one RoundDirective with a capability and bounded objective. "
             "ExecutionAgent may autonomously choose allowed tools, including run_command, inside authorized scope. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
             "Do not use a fixed stage sequence and do not require every capability to run. "
-            "Select the next capability from success_condition_progress.missing, KG, AG timeline, Runtime, Policy and ToolCatalog. "
+            "Select the next capability from success_condition_progress.missing, min_summary, Policy, "
+            "recent results, and ToolCatalog. "
             "Treat recent RoundResult/StageResult control hints as hard constraints: if a recent result contains "
             "next_step_guidance or capability guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
             "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "
-            "If Runtime validation_dead_ends contains validation_dead_end(target=T, reason=no_supported_profile), "
-            "do not choose capability=exploit for target T unless required_context includes a new_profile, "
-            "profile_id, matched_profile_id, validation_profile, or new_evidence. "
-            "When validation is blocked by no_supported_profile, prefer capability=recon to fingerprint a service that "
-            "has not yet been fingerprinted; do NOT repeatedly re-fingerprint a service that already has product/"
-            "version evidence — once fingerprinted, move toward validation or pivot. "
-            "Read zone_objectives: for any zone with directly_reachable=false and reached=false, the mission is not "
-            "complete and recon alone will never reach it. To make progress on such a zone you must obtain a "
-            "capability/session and an authorized pivot route. When a zone like that is unreached, prioritize "
-            "obtaining a session on a host in pivot_candidates (these expose transport-capable services and are "
-            "likely bridges toward the unreached zone), then choose capability=pivot to enumerate routes from that "
-            "session, register a pivot route, and discover restricted-zone services — rather than looping recon. "
-            "Treat any address in self_infrastructure_addresses as the operation's own control plane / tooling: it "
-            "is NOT an attack surface — never select it as a target, fingerprint it, or analyze it for vulnerabilities. "
+            "If detail such as zone objectives, pivot candidates, validation dead ends, assets, services, "
+            "sessions, or process history is needed, use graph refs in target_refs/required_context and the "
+            "typed graph tools rather than relying on prompt-resident snapshots. "
             "Use graph_tools.write only for planner judgment-level records such as record_finding/link_evidence; "
             "machine facts from tools are written deterministically after execution. "
             "If evidence is insufficient, choose action=execute with an appropriate capability or choose replan. "

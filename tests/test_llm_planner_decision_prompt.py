@@ -70,10 +70,9 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
         graph_context={
             "operation_id": "op-1",
             "cycle_index": 3,
-            "kg_summary": {"hosts": ["host-1"]},
-            "ag_summary": {"process_nodes": []},
-            "runtime_summary": {"status": "running"},
-            "lab_profile": {"profile_id": "docker-multihost"},
+            "min_summary": {"kg_node_count": 1, "kg_edge_count": 0, "recent_attack_steps": []},
+            "success_condition_progress": {"eligible_for_stop": False, "missing": ["dmz_service_discovered"]},
+            "graph_tools": {"read": ["kg_query"], "write": ["record_finding"]},
             "mcp_tool_catalog": {"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
             "agent_capabilities": [{"agent_name": "recon_agent", "stage_type": "RECON_STAGE"}],
         },
@@ -92,3 +91,9 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
     assert "shell commands" in prompt_text
     assert "MCP tool arguments" in prompt_text
     assert "ExecutionAgent" in prompt_text
+    assert "min_summary" in prompt_text
+    assert "kg_query" in prompt_text
+    assert "kg_summary" not in prompt_text
+    assert "ag_summary" not in prompt_text
+    assert "known_assets" not in prompt_text
+    assert "pivot_candidates" not in prompt_text

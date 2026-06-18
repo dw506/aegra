@@ -59,11 +59,9 @@ class MissionPlannerAgent:
 
         planner_context = dict(graph_context)
         if graph_tools is not None:
-            planner_context["min_summary"] = graph_tools.build_min_summary()
-            planner_context["graph_tools"] = {
-                "read": ["kg_query", "kg_get_node", "kg_neighbors", "ag_get_timeline", "ag_get_step", "get_round_log"],
-                "write": ["record_finding", "record_attack_step", "link_evidence"],
-            }
+            if "min_summary" not in planner_context:
+                planner_context["min_summary"] = graph_tools.build_min_summary()
+            planner_context["graph_tools"] = graph_tools.tool_manifest()
         raw = self._advisor.propose_next_decision(
             goal=goal,
             graph_context=planner_context,

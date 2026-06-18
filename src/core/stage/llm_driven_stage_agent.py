@@ -359,8 +359,8 @@ class LLMDrivenStageAgent:
             "task_brief": request.task_brief,
             "target_refs": [ref.model_dump(mode="json") for ref in request.target_refs],
             "success_criteria": request.success_criteria,
-            "kg_snapshot": request.kg_snapshot,
-            "ag_process_history": request.ag_process_history,
+            "graph_summary": request.graph_summary,
+            "graph_history": request.graph_history,
             "runtime_context": request.runtime_context,
             "policy_context": request.policy_context,
             "mcp_tool_catalog": request.mcp_tool_catalog,
@@ -871,7 +871,7 @@ class LLMDrivenStageAgent:
 
     @classmethod
     def _infer_target_url(cls, request: StageExecutionRequest) -> str | None:
-        for candidate in (request.required_context, request.runtime_context, request.kg_snapshot, request.ag_process_history):
+        for candidate in (request.required_context, request.runtime_context, request.graph_summary, request.graph_history):
             found = cls._find_url_value(candidate)
             if found:
                 return found
