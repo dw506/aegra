@@ -1,2 +1,0 @@
-"""Controlled tool recipe adapters."""
-
