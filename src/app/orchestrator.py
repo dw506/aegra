@@ -15,7 +15,6 @@ from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, 
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.execution.execution_agent import ExecutionAgent
-from src.core.execution.tool_gateway import ToolGateway
 from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
@@ -181,12 +180,12 @@ class AppOrchestrator:
             if llm_client_config is not None
             else None
         )
-        # Single execution boundary: agents call the gateway, which resolves
-        # pivot transport behind one `call_tool` and otherwise delegates to MCP.
-        self.tool_gateway = ToolGateway(self.mcp_client) if self.mcp_client is not None else None
+        # Tools are called over MCP only; the executor talks to the MCP client
+        # directly. Pivot transport is resolved server-side by the mcp_lab tools
+        # (route_id in tool arguments / runtime policy), not a client-side adapter.
         self.stage_registry = StageAgentRegistry.default(
             llm_client=stage_llm_client,
-            mcp_client=self.tool_gateway,
+            mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
         self.execution_agent = ExecutionAgent(self.stage_registry)

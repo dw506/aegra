@@ -1,4 +1,4 @@
-"""Small MCP client protocol used by execution adapters."""
+"""Small MCP client protocol used by the executor to call tools over MCP."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MCPToolCallResult(BaseModel):
-    """Normalized MCP tool response before conversion to ToolExecutionResult."""
+    """Normalized MCP tool call response returned to the executor."""
 
     model_config = ConfigDict(extra="allow")
 

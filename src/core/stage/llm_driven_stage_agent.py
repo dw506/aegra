@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
-from src.core.execution.tool_gateway import ToolGateway
 from src.core.models.events import utc_now
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
@@ -283,22 +282,12 @@ class LLMDrivenStageAgent:
             self._log_tool_result(logger, trace)
             return trace
 
-        if isinstance(self._mcp_client, ToolGateway):
-            raw = self._mcp_client.call_tool(
-                server_id=call.server_id,
-                tool_name=call.tool_name,
-                arguments=dict(call.arguments),
-                timeout_seconds=call.timeout_seconds,
-                pivot_routes=list(request.pivot_routes),
-                sessions=list(request.sessions),
-            )
-        else:
-            raw = self._mcp_client.call_tool(
-                server_id=call.server_id,
-                tool_name=call.tool_name,
-                arguments=dict(call.arguments),
-                timeout_seconds=call.timeout_seconds,
-            )
+        raw = self._mcp_client.call_tool(
+            server_id=call.server_id,
+            tool_name=call.tool_name,
+            arguments=dict(call.arguments),
+            timeout_seconds=call.timeout_seconds,
+        )
         result = raw if isinstance(raw, MCPToolCallResult) else MCPToolCallResult.model_validate(raw)
         original_policy = self._original_policy_decision(call=call, policy_context=request.policy_context)
         parsed_output = dict(result.metadata.get("parsed_output") or {})
