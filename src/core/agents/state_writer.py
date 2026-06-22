@@ -20,12 +20,9 @@ from src.core.agents.agent_models import (
 )
 from src.core.agents.agent_protocol import (
     AgentInput,
-    AgentKind,
     AgentOutput,
-    BaseAgent,
     GraphRef,
     GraphScope,
-    WritePermission,
 )
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.kg_enums import EdgeType, NodeType
@@ -103,41 +100,19 @@ class KGPatchApplyRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class StateWriterAgent(BaseAgent):
-    """Normalize perception-layer records into KG-only patch deltas."""
+class StateWriterAgent:
+    """Normalize perception-layer records into KG-only patch deltas.
+
+    The live KG-persistence path uses only ``build_store_apply_request`` and
+    ``apply_to_store`` (driven by PhaseTwoResultApplier). The observation/evidence
+    normalization in ``normalize_records`` below is retained but no longer on a
+    live path; it was previously the BaseAgent ``execute`` hook.
+    """
 
     def __init__(self, name: str = "state_writer_agent") -> None:
-        super().__init__(
-            name=name,
-            kind=AgentKind.STATE_WRITER,
-            write_permission=WritePermission(
-                scopes=[GraphScope.KG],
-                allow_structural_write=True,
-                allow_state_write=True,
-                allow_event_emit=True,
-            ),
-        )
+        self.name = name
 
-    def validate_input(self, agent_input: AgentInput) -> None:
-        """Ensure the invocation contains KG context and writable records."""
-
-        super().validate_input(agent_input)
-        self._resolve_kg_ref(agent_input)
-
-        observations = self._parse_records(
-            agent_input.raw_payload.get("observation") or agent_input.raw_payload.get("observations"),
-            ObservationRecord,
-        )
-        evidence = self._parse_records(
-            agent_input.raw_payload.get("evidence") or agent_input.raw_payload.get("evidences"),
-            EvidenceRecord,
-        )
-        if not observations and not evidence:
-            raise ValueError(
-                "state writer input requires raw_payload.observation(s) or raw_payload.evidence"
-            )
-
-    def execute(self, agent_input: AgentInput) -> AgentOutput:
+    def normalize_records(self, agent_input: AgentInput) -> AgentOutput:
         """Convert observations and evidence into KG patch deltas and events."""
 
         kg_ref = self._resolve_kg_ref(agent_input)

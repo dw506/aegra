@@ -20,7 +20,6 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.agent_protocol import (
-    AgentExecutionResult,
     AgentInput,
     AgentKind,
     AgentOutput,
@@ -323,7 +322,7 @@ class AgentResultAdapter:
     @classmethod
     def to_task_result(
         cls,
-        result: AgentTaskResult | AgentExecutionResult | AgentOutput,
+        result: AgentTaskResult | AgentOutput,
         *,
         agent_input: AgentInput | None = None,
         agent_name: str | None = None,
@@ -331,13 +330,6 @@ class AgentResultAdapter:
     ) -> AgentTaskResult:
         if isinstance(result, AgentTaskResult):
             return result
-        if isinstance(result, AgentExecutionResult):
-            return cls.agent_output_to_task_result(
-                agent_input=agent_input,
-                agent_output=result.output,
-                agent_name=result.agent_name,
-                agent_kind=result.agent_kind,
-            )
         return cls.agent_output_to_task_result(
             agent_input=agent_input,
             agent_output=result,
