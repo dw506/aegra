@@ -92,55 +92,6 @@ class EvidenceRecord(BaseAgentRecord):
     )
 
 
-class OutcomeRecord(BaseAgentRecord):
-    """Structured outcome generated from task or decision execution."""
-
-    id: str = Field(
-        default_factory=lambda: new_record_id("outcome"),
-        description="Unique identifier for the outcome record.",
-    )
-    task_id: str = Field(
-        min_length=1,
-        description="Task identifier associated with this outcome.",
-    )
-    outcome_type: str = Field(
-        min_length=1,
-        description="Outcome category such as execution_result or validation_result.",
-    )
-    success: bool = Field(
-        description="Whether the underlying operation completed successfully.",
-    )
-    raw_result_ref: str | None = Field(
-        default=None,
-        description="Optional reference to the raw underlying execution result.",
-    )
-
-
-class DecisionRecord(BaseAgentRecord):
-    """Structured decision emitted by planner or critic-style agents."""
-
-    id: str = Field(
-        default_factory=lambda: new_record_id("decision"),
-        description="Unique identifier for the decision record.",
-    )
-    decision_type: str = Field(
-        min_length=1,
-        description="Decision category such as schedule, prune or prioritize.",
-    )
-    score: float = Field(
-        default=0.0,
-        description="Decision score or ranking signal.",
-    )
-    target_refs: list[GraphRef] = Field(
-        default_factory=list,
-        description="Primary target references of this decision.",
-    )
-    rationale: str = Field(
-        min_length=1,
-        description="Human-readable rationale for the decision.",
-    )
-
-
 class StateDeltaRecord(BaseAgentRecord):
     """Scoped graph or runtime delta proposed by an agent."""
 
@@ -172,37 +123,9 @@ class StateDeltaRecord(BaseAgentRecord):
         return data
 
 
-class ReplanRequestRecord(BaseAgentRecord):
-    """Structured replanning request emitted by agents."""
-
-    id: str = Field(
-        default_factory=lambda: new_record_id("replan"),
-        description="Unique identifier for the replan request record.",
-    )
-    trigger_task_id: str = Field(
-        min_length=1,
-        description="Task whose outcome or state triggered replanning.",
-    )
-    reason: str = Field(
-        min_length=1,
-        description="Reason that replanning is requested.",
-    )
-    affected_refs: list[GraphRef] = Field(
-        default_factory=list,
-        description="Graph or runtime references impacted by the requested replan.",
-    )
-    severity: str = Field(
-        min_length=1,
-        description="Severity hint such as low, medium or high.",
-    )
-
-
 __all__ = [
-    "DecisionRecord",
     "EvidenceRecord",
     "ObservationRecord",
-    "OutcomeRecord",
-    "ReplanRequestRecord",
     "StateDeltaRecord",
     "new_record_id",
     "utc_now",

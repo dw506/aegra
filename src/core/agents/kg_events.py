@@ -1,4 +1,10 @@
-"""KG delta event models exchanged between State Writer and Graph Projection."""
+"""KG delta event models produced by the result-applier KG write path.
+
+These typed delta events (built by ``PhaseTwoResultApplier._kg_batch`` from the
+state deltas extracted via ToolTraceFactExtractor) carry KG changes for audit
+and downstream consumers. (Historically labelled "State Writer / Graph
+Projection"; Graph Projection has been removed.)
+"""
 
 from __future__ import annotations
 
