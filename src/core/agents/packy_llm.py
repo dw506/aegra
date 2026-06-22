@@ -12,7 +12,7 @@ import os
 import time
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -121,13 +121,79 @@ def load_llm_env_file(path: str | Path = ".env") -> None:
         os.environ[key] = value
 
 
+class ToolSpec(BaseModel):
+    """A function tool the model may call (one OpenAI ``tools`` entry)."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    name: str = Field(min_length=1)
+    description: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)  # JSON Schema
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters or {"type": "object", "properties": {}},
+            },
+        }
+
+
+class ToolCall(BaseModel):
+    """A function call requested by the model, or echoed in an assistant turn."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    id: str = ""
+    name: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id or self.name,
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "arguments": json.dumps(self.arguments, ensure_ascii=False),
+            },
+        }
+
+
+class Message(BaseModel):
+    """One message in an OpenAI-style chat conversation (multi-turn capable)."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None  # assistant turn requesting tools
+    tool_call_id: str | None = None  # tool turn: which call this answers
+    name: str | None = None  # tool/function name for tool-role turns
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"role": self.role}
+        # OpenAI requires the content key present (may be null) even on
+        # assistant turns that only carry tool_calls.
+        wire["content"] = self.content
+        if self.tool_calls:
+            wire["tool_calls"] = [call.to_wire() for call in self.tool_calls]
+        if self.tool_call_id is not None:
+            wire["tool_call_id"] = self.tool_call_id
+        if self.name is not None:
+            wire["name"] = self.name
+        return wire
+
+
 class PackyLLMResponse(BaseModel):
-    """Normalized text response returned by the low-level Packy client."""
+    """Normalized response returned by the low-level Packy client."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     model: str = Field(min_length=1)
     text: str = Field(default="")
+    tool_calls: list[ToolCall] = Field(default_factory=list)
     usage: dict[str, int] | None = None
     cost_usd: float | None = None
     raw_payload: dict[str, Any] | None = None
@@ -232,6 +298,46 @@ def _extract_text_from_completion_payload(payload: dict[str, Any]) -> tuple[str,
     return "".join(parts), finish_reason
 
 
+def _extract_tool_calls_from_completion_payload(payload: dict[str, Any]) -> list[ToolCall]:
+    """Extract OpenAI-style ``message.tool_calls`` from a completion payload."""
+
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return []
+    calls: list[ToolCall] = []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        raw_calls = message.get("tool_calls")
+        if not isinstance(raw_calls, list):
+            continue
+        for raw_call in raw_calls:
+            if not isinstance(raw_call, dict):
+                continue
+            function = raw_call.get("function")
+            if not isinstance(function, dict):
+                continue
+            name = function.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            raw_args = function.get("arguments")
+            arguments: dict[str, Any] = {}
+            if isinstance(raw_args, dict):
+                arguments = raw_args
+            elif isinstance(raw_args, str) and raw_args.strip():
+                try:
+                    parsed = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    arguments = parsed
+            calls.append(ToolCall(id=str(raw_call.get("id") or name), name=name, arguments=arguments))
+    return calls
+
+
 def _extract_text_from_sse_blob(raw_text: str) -> tuple[str, str | None]:
     """Parse an SSE-like chunk stream returned by non-standard gateways.
 
@@ -305,33 +411,36 @@ class PackyLLMClient:
                 model_ids.append(item["id"])
         return model_ids
 
-    def complete_chat(
+    def chat(
         self,
         *,
-        user_prompt: str,
-        system_prompt: str | None = None,
+        messages: list[Message],
+        tools: list[ToolSpec] | None = None,
+        response_format: dict[str, Any] | None = None,
         model: str | None = None,
         temperature: float | None = None,
     ) -> PackyLLMResponse:
-        """Call `/chat/completions` and normalize text output.
+        """Call `/chat/completions` with a full multi-turn message array.
 
-        中文注释：
-        第一阶段只支持 chat completions，因为我们已经验证过 PackyAPI 的
-        `responses` 接口不稳定，而 `chat/completions` 至少能稳定返回内容。
+        Supports assistant + tool roles, optional function `tools`, and
+        `response_format` (JSON mode). Shares retry/backoff, usage accounting and
+        the SSE-blob tolerance with the rest of the client. `tools` and
+        `response_format` are passed through ONLY when provided; the gateway may
+        ignore them, so callers must verify native support rather than assume it
+        (there is no prompted-tools fallback here yet).
         """
-
-        messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
 
         payload: dict[str, Any] = {
             "model": model or self._config.model,
-            "messages": messages,
+            "messages": [message.to_wire() for message in messages],
             "stream": False,
         }
         if temperature is not None:
             payload["temperature"] = temperature
+        if tools:
+            payload["tools"] = [tool.to_wire() for tool in tools]
+        if response_format is not None:
+            payload["response_format"] = response_format
 
         response = self._post_with_retry("/chat/completions", payload)
         self._raise_for_status(response)
@@ -340,12 +449,14 @@ class PackyLLMClient:
         json_payload = self._try_parse_json(raw_text)
         text = ""
         finish_reason: str | None = None
+        tool_calls: list[ToolCall] = []
         if json_payload is not None:
             text, finish_reason = _extract_text_from_completion_payload(json_payload)
-        if not text:
+            tool_calls = _extract_tool_calls_from_completion_payload(json_payload)
+        if not text and not tool_calls:
             text, finish_reason = _extract_text_from_sse_blob(raw_text)
-        if not text:
-            raise PackyLLMError("gateway returned no assistant text in JSON or SSE-compatible form")
+        if not text and not tool_calls:
+            raise PackyLLMError("gateway returned no assistant text or tool_calls in JSON or SSE-compatible form")
         usage = _extract_usage_payload(json_payload)
         cost_usd = self._estimate_cost_usd(usage)
         if usage is not None or cost_usd is not None:
@@ -362,12 +473,34 @@ class PackyLLMClient:
         return PackyLLMResponse(
             model=str(payload["model"]),
             text=text,
+            tool_calls=tool_calls,
             usage=usage,
             cost_usd=cost_usd,
             raw_payload=json_payload,
             raw_text=raw_text,
             finish_reason=finish_reason,
         )
+
+    def complete_chat(
+        self,
+        *,
+        user_prompt: str,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+    ) -> PackyLLMResponse:
+        """Single-turn convenience wrapper over `chat()`.
+
+        Kept for existing callers (planner advisor, executor) that pass plain
+        system/user strings. New agentic loops should call `chat()` with a real
+        message array instead of flattening history into one user string.
+        """
+
+        messages: list[Message] = []
+        if system_prompt:
+            messages.append(Message(role="system", content=system_prompt))
+        messages.append(Message(role="user", content=user_prompt))
+        return self.chat(messages=messages, model=model, temperature=temperature)
 
     def _post_with_retry(self, path: str, payload: dict[str, Any]) -> httpx.Response:
         attempts = int(self._config.max_retries) + 1
@@ -486,10 +619,13 @@ def _coerce_token_count(value: Any) -> int | None:
 __all__ = [
     "DEFAULT_PACKY_BASE_URL",
     "DEFAULT_PACKY_MODEL",
+    "Message",
     "PackyLLMClient",
     "PackyLLMConfig",
     "PackyLLMError",
     "PackyLLMResponse",
+    "ToolCall",
+    "ToolSpec",
     "get_llm_usage_ledger",
     "load_llm_env_file",
     "reset_llm_usage_ledger",
