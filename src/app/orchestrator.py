@@ -581,22 +581,7 @@ class AppOrchestrator:
             self._log_operation_event(state, event_type="operation_resumed", **resume_summary)
 
         cycle_index = self._next_cycle_index(state)
-        txt_logger = TxtTraceLogger(operation_id)
         operation_trace_logger = TxtTraceLogger.operation_trace(operation_id)
-        txt_logger.write_block(
-            "SYSTEM",
-            "operation cycle started",
-            {
-                "operation_id": operation_id,
-                "cycle": cycle_index,
-                "policy_gate": "audit_only_non_blocking",
-                "json_run_file": "disabled_or_secondary",
-                "txt_trace": True,
-                "graph_write": True,
-                "result_applier": "enabled",
-                "ag_write": "result_tier_single_step",
-            },
-        )
         operation_trace_logger.write_block(
             "CYCLE_START",
             "operation cycle started",
@@ -604,7 +589,9 @@ class AppOrchestrator:
                 "operation_id": operation_id,
                 "cycle_index": cycle_index,
                 "policy_gate": "audit_only_non_blocking",
-                "txt_trace": True,
+                "graph_write": True,
+                "result_applier": "enabled",
+                "ag_write": "result_tier_single_step",
             },
         )
         state.execution.metadata["graph_memory"] = {
@@ -618,7 +605,7 @@ class AppOrchestrator:
         state.execution.status = RuntimeStatus.RUNNING
         mark_unclean_shutdown(state, cycle_index=cycle_index)
         self._log_operation_event(state, event_type="cycle_started", cycle_index=cycle_index)
-        txt_logger.write("CYCLE", f"cycle={cycle_index} started")
+        operation_trace_logger.write("CYCLE", f"cycle={cycle_index} started")
         self._checkpoint_phase(state, cycle_index=cycle_index, phase="cycle_started", status="running")
 
         goal = self._mission_goal(planner_payload=planner_payload, context=context)
@@ -629,7 +616,7 @@ class AppOrchestrator:
         blackbox_policy_context = self._blackbox_policy_context(policy_context, state)
         tool_catalog = self._load_tool_catalog()
         state.execution.metadata["tool_catalog"] = tool_catalog
-        txt_logger.write_block(
+        operation_trace_logger.write_block(
             "MISSION",
             "mission context",
             {
@@ -685,6 +672,10 @@ class AppOrchestrator:
                     "capability": outcome.directive.capability if outcome.directive else None,
                     "objective": outcome.directive.objective if outcome.directive else goal,
                     "max_tools": outcome.directive.max_tools if outcome.directive else None,
+                    "risk_level": outcome.directive.risk_level if outcome.directive else "medium",
+                    "confidence": outcome.confidence,
+                    "reason": outcome.reason,
+                    "target_refs": list(outcome.directive.target_refs if outcome.directive else []),
                 },
             )
         except Exception as exc:
@@ -696,7 +687,7 @@ class AppOrchestrator:
                 ag=ag,
                 phase="planning",
                 exc=exc,
-                txt_logger=txt_logger,
+                trace_logger=operation_trace_logger,
             )
         if outcome.operation_id != operation_id:
             original_operation_id = outcome.operation_id
@@ -713,20 +704,6 @@ class AppOrchestrator:
         outcome.cycle_index = cycle_index
         if outcome.directive is not None:
             outcome.directive.cycle_index = cycle_index
-        txt_logger.write_block(
-            "PLANNER",
-            "planner outcome",
-            {
-                "cycle": cycle_index,
-                "action": outcome.action,
-                "capability": outcome.directive.capability if outcome.directive else None,
-                "objective": outcome.directive.objective if outcome.directive else goal,
-                "risk_level": outcome.directive.risk_level if outcome.directive else "medium",
-                "confidence": outcome.confidence,
-                "reason": outcome.reason,
-                "target_refs": list(outcome.directive.target_refs if outcome.directive else []),
-            },
-        )
         planning_apply = self.result_applier.apply_planner_outcome(outcome, state, kg, ag)
         for delta in planning_apply.visual_graph_deltas:
             graph_delta_publisher.publish_nowait(delta)
@@ -829,7 +806,7 @@ class AppOrchestrator:
                     ag=ag,
                     phase="execution_round",
                     exc=exc,
-                    txt_logger=txt_logger,
+                    trace_logger=operation_trace_logger,
                     planning=planning,
                     apply_results=apply_results,
                 )
@@ -846,7 +823,6 @@ class AppOrchestrator:
                 "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
                 "evidence_refs": list(stage_result.evidence_refs),
             }
-            txt_logger.write_block("GRAPH_WRITE", "graph write completed", stage_graph_write_payload)
             operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
             for delta in stage_apply.visual_graph_deltas:
                 graph_delta_publisher.publish_nowait(delta)
@@ -937,17 +913,6 @@ class AppOrchestrator:
             cycle_index=cycle_index,
             stopped=stopped,
             stop_reason=stop_reason,
-        )
-        txt_logger.write_block(
-            "CYCLE",
-            "cycle completed",
-            {
-                "cycle": cycle_index,
-                "planner_action": outcome.action,
-                "capability": outcome.directive.capability if outcome.directive else None,
-                "status": state.operation_status.value,
-                "stop_reason": stop_reason,
-            },
         )
         operation_trace_logger.write_block(
             "CYCLE_END",
@@ -1903,7 +1868,7 @@ class AppOrchestrator:
         ag: AttackGraph,
         phase: str,
         exc: Exception,
-        txt_logger: TxtTraceLogger | None = None,
+        trace_logger: TxtTraceLogger | None = None,
         planning: PipelineCycleResult | None = None,
         apply_results: list[PhaseTwoApplyResult] | None = None,
     ) -> OperationCycleResult:
@@ -1970,9 +1935,9 @@ class AppOrchestrator:
                     "cycle_status": "cycle_failed",
                 }
             )
-        if txt_logger is not None:
-            txt_logger.write_block(
-                "CYCLE",
+        if trace_logger is not None:
+            trace_logger.write_block(
+                "CYCLE_FAILED",
                 "cycle failed",
                 {
                     "cycle": cycle_index,
