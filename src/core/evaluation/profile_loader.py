@@ -49,6 +49,7 @@ class ProfileLoader:
         return self._parse(data)
 
     def _parse(self, data: dict[str, Any]) -> OperationProfile:
+        data = dict(data)  # defensive copy: never mutate the caller's dict
         zone_bindings_raw: dict[str, Any] = data.pop("zone_bindings", {})
         zone_bindings: dict[str, ZoneBinding] = {}
         for ref, zone_data in zone_bindings_raw.items():

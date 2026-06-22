@@ -131,16 +131,21 @@ class GoalOracle:
         structural_ok = len(missing_categories) == 0
         proof_ok = all(proof_checks)
 
-        # In lab mode without env vars set, structural check alone is sufficient
-        # (allows testing without setting up real secrets)
+        # Real hash verification requires the marker/token secret in env vars.
         marker_env_set = bool(os.environ.get(private_cfg.get("marker_env", ""), "").strip())
         token_env_set = bool(os.environ.get(private_cfg.get("token_env", ""), "").strip())
         env_configured = marker_env_set or token_env_set
 
         if not env_configured:
-            # No secrets configured → oracle in structural-only mode
-            proof_ok = True
-            satisfied_conditions.append("oracle_structural_only")
+            # No secret to verify against. Only accept a structural-only proof when
+            # the config explicitly opts in; otherwise a missing secret must fail
+            # closed rather than silently rubber-stamp the goal.
+            if validation_cfg.get("allow_structural_only"):
+                proof_ok = True
+                satisfied_conditions.append("oracle_structural_only")
+            else:
+                proof_ok = False
+                missing_categories.append("oracle_secret_not_configured")
 
         passed = structural_ok and proof_ok
 

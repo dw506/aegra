@@ -296,7 +296,9 @@ class SuccessConditionTracker:
             if len(chain_pair) < 2:
                 continue
             a, b = chain_pair[0], chain_pair[-1]
-            # Both must be satisfied for the chain link to be intact
-            if a in satisfied_set and b not in satisfied_set:
+            # Skip-ahead detection: a later step satisfied without its prerequisite
+            # means the chain was bypassed -> broken. (Prerequisite satisfied while
+            # the later step is still pending is acceptable: in progress.)
+            if b in satisfied_set and a not in satisfied_set:
                 return False
         return True

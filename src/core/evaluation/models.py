@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ZoneBinding(BaseModel):
@@ -83,6 +83,21 @@ class SuccessContract(BaseModel):
     levels: dict[str, list[str]] = Field(default_factory=dict)
     target_level: str | None = None
     condition_bindings: dict[str, ConditionBinding] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_target_level_superset(self) -> "SuccessContract":
+        # eligible_for_stop gates on target_level; if the target level omits any
+        # require_all condition, reaching it would bypass require_all. Forbid that
+        # divergence so the stop bar can never skip a required condition.
+        if self.target_level and self.target_level in self.levels:
+            level_set = set(self.levels[self.target_level])
+            missing = [name for name in self.require_all if name not in level_set]
+            if missing:
+                raise ValueError(
+                    f"target_level '{self.target_level}' must be a superset of require_all; "
+                    f"missing conditions: {missing}"
+                )
+        return self
 
 
 class ConditionResult(BaseModel):
