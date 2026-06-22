@@ -13,7 +13,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.agents.agent_protocol import (
-    AgentExecutionResult,
     AgentInput,
     AgentKind,
     AgentOutput,
@@ -34,26 +33,6 @@ class PipelineStepResult(BaseModel):
     started_at: datetime
     finished_at: datetime
     duration_ms: int = Field(ge=0)
-
-    @classmethod
-    def from_execution(
-        cls,
-        *,
-        step_name: str,
-        agent_input: AgentInput,
-        execution: AgentExecutionResult,
-    ) -> "PipelineStepResult":
-        return cls(
-            step_name=step_name,
-            agent_name=execution.agent_name,
-            agent_kind=execution.agent_kind,
-            success=execution.success,
-            agent_input=agent_input,
-            agent_output=execution.output,
-            started_at=execution.started_at,
-            finished_at=execution.finished_at,
-            duration_ms=execution.duration_ms,
-        )
 
 
 class PipelineCycleResult(BaseModel):
