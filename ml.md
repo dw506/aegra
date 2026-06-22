@@ -1,6 +1,6 @@
 # Aegra 代码结构与框架流程分析
 
-> 生成日期：2026-06-17 · 对应当前 working tree（PEV v3 重构进行中）
+> 生成日期：2026-06-22 · 对应当前 working tree（PEV v3 重构进行中）
 > 关联设计文档：`docs/aegra_agentic_planner_graph_refactor.md`（v3 权威设计）
 
 ---
@@ -23,15 +23,15 @@ Aegra 是一个**自动化授权渗透测试框架**。给定一个授权目标 
 
 ```
 Aegra/
-├── src/                     # 全部源码（134 个 .py）
+├── src/                     # 全部源码（115 个 .py）
 │   ├── app/                 # 应用层：编排入口 + HTTP API + 配置
 │   ├── core/                # 领域核心（图/规划/执行/评估/运行时/模型…）
 │   └── integrations/        # 外部集成（目前：mcp_lab 实验靶场工具服务）
-├── tests/                   # 60 个测试文件（pytest）
+├── tests/                   # 49 个测试文件（pytest）
 ├── configs/                 # 运行策略 / exploit profile / 成功契约样例
 ├── lab/                     # 靶场环境（full_chain_lab、Dockerfile、success_contract）
 ├── docs/                    # 设计文档（agentic_planner_graph_refactor 等）
-├── runs/                    # e2e 测试夹具 run 日志（临时跑日志已 .gitignore）
+├── runs/                    # 历史 run 夹具目录；扁平 op-*.run.txt 已删（orchestrator 不再写 runs/）
 ├── scripts/                 # 运维 / 跑批脚本
 ├── web/                     # 可视化 dashboard 前端
 ├── var/ , tmp-runtime/      # 运行时产物（图快照、round log、artifacts）
@@ -55,7 +55,7 @@ Aegra/
         ┌────────────────────────────┐  RoundDirective   ┌─────────────────────────┐
         │  MissionPlannerAgent.decide │ ────────────────▶ │  ExecutionAgent.run     │
         │  (唯一 LLM 决策点)          │                   │  (单执行器/单目标一轮)   │
-        │  读: kg_query/ag_timeline.. │ ◀──────────────── │  ExecutionStageAgent    │
+        │  输入: min_summary(push)    │ ◀──────────────── │  ExecutionStageAgent    │
         │  写: record_finding /        │   RoundResult     │  内部有界多工具 ReAct    │
         │      record_attack_step /    │                   └─────────────────────────┘
         │      link_evidence (typed)   │                          │ 工具调用
@@ -64,7 +64,7 @@ Aegra/
             ▼                                         │  ToolGateway          │ ← 单一执行边界
    ┌──────────────────────────────────┐              │  无 pivot → MCP 透传   │
    │  PhaseTwoResultApplier            │              │  有 direct 路由 → A 适配器│
-   │  apply_planner_decision (runtime) │              └───────────────────────┘
+   │  apply_planner_outcome (runtime)  │              └───────────────────────┘
    │  apply_stage_result:              │                          │
    │   · KG: _fact_state_deltas        │              ┌───────────────────────┐
    │     → ToolTraceFactExtractor      │              │ ConfiguredMCPClient    │
@@ -103,10 +103,10 @@ Aegra/
 
 | 模块 | 职责 |
 |---|---|
-| `mission_planner_agent.py` | `MissionPlannerAgent.decide()`：唯一 LLM 决策点。输出 `PlannerOutcome`（action ∈ execute/stop_success/stop_failed/pause_for_review + `RoundDirective`）。在 decide 内通过 `graph_tools.apply_tool_calls(planner_tool_calls)` 调用写工具。 |
-| `graph_tools.py` | **P3 typed 图工具** `PlannerGraphTools`：读（`kg_query`/`kg_get_node`/`kg_neighbors`/`ag_get_timeline`/`ag_get_step`/`get_round_log`）+ 写（`record_finding`/`link_evidence` 经 `kg.apply_patch_batch` 真写 KG；`record_attack_step` 记录语义意图）+ `build_min_summary`（常驻极小摘要）。LLM 只填叶子语义，ID/连边/脱敏/持久化由工具做。 |
-| `llm_mission_planner_advisor.py` | `LLMMissionPlannerAdvisor`：把 planner 上下文 + 图工具摘要喂给 LLM，拿回决策 JSON。prompt 指示使用 graph_tools。 |
-| `models.py` | `PlannerDecision` / `PlannerOutcome` / `RoundDirective` 互转模型。 |
+| `mission_planner_agent.py` | `MissionPlannerAgent.decide()`：唯一 LLM 决策点（无硬编码 stage 序列/关键词规划）。输出 `PlannerOutcome`（action ∈ execute/replan/pause_for_review/stop_success/stop_failed + 仅 execute 时携带 `RoundDirective`）。在 decide 内通过 `graph_tools.apply_tool_calls(planner_tool_calls)` 调用写工具。advisor=None 时无硬编码兜底，直接回 replan。 |
+| `graph_tools.py` | **P3 图工具** `PlannerGraphTools`：写（`record_finding`/`link_evidence` 经 `kg.apply_patch_batch` 真写 KG；`record_attack_step` 只记语义意图，AG 节点归 ResultApplier，经 `apply_tool_calls` dispatch）+ `build_min_summary`（常驻极小摘要）。**注（push 模型）**：`kg_query`/`kg_get_node`/`kg_neighbors`/`ag_get_timeline`/`ag_get_step`/`get_round_log` 等 read 方法**仅供编排层 push 上下文用,不对 LLM 暴露/不可被 advisor 调用**（advisor 是单次调用、无 tool-call loop）；`tool_manifest()` 只宣传 write。 |
+| `llm_mission_planner_advisor.py` | `LLMMissionPlannerAdvisor`：建 prompt（SYSTEM=`planner_global_control.md` + PlannerOutcome 契约 + **预计算 push context**）→ **单次** `complete_chat`（无 function-calling/无工具回合）→ `_extract_json_object` 容三种 JSON 形态 → 校验成 `PlannerOutcome`；任何 LLM/JSON/schema 失败均降级为 `replan` fallback（绝不崩溃）。 |
+| `models.py` | `PlannerOutcome`（`extra=forbid`，model_validator 强制 execute↔directive 绑定）+ `RoundDirective`。**`PlannerDecision` 已删**（P3 收敛到单一 PlannerOutcome 契约）。 |
 | `prompts/planner_global_control.md` | planner 系统 prompt：驱动图工具、输出 directive、读 `eligible_for_stop`/`achieved_level` 自判 stop。 |
 
 ### 3.3 `src/core/stage/` + `src/core/execution/` —— 执行（单执行器 + 单一工具边界）
@@ -131,9 +131,9 @@ Aegra/
 
 | 模块 | 职责 |
 |---|---|
-| `result_applier.py` | **核心写回** `PhaseTwoResultApplier`。`apply_planner_decision`（只写 runtime meta + 审计，不写 AG）；`apply_stage_result`（① KG：`_fact_state_deltas`→唯一机器事实源；② AG：单 `ATTACK_STEP` + `NEXT` 边；③ Runtime：会话/路由/凭证/证据/findings）。写图与控制流解耦、逐条容错。 |
+| `result_applier.py` | **核心写回** `PhaseTwoResultApplier`。`apply_planner_outcome`（只写 runtime meta + 审计，不写 AG）；`apply_stage_result`（① KG：`_fact_state_deltas`→唯一机器事实源；② AG：单 `ATTACK_STEP` + `NEXT` 边；③ Runtime：会话/路由/凭证/证据/findings；审计仅 `_audit_stage_result` 表头 + `_audit_stage_tool_trace` 逐工具）。写图与控制流解耦、逐条容错。**已删** test-only 的 `apply()`/`_run_state_writer` 孤岛 + 双记账 `_audit_tool_invocations`/`_audit_tool_execution_from_result`（围绕废弃的 `tool_execution` 形状）。 |
 | `tool_trace_fact_extractor.py` | `ToolTraceFactExtractor`：从成功 ToolTrace 确定性抽取 KG 实体/关系（**唯一机器事实源**）。 |
-| `txt_trace_logger.py` | `TxtTraceLogger`：append-only 分类文本轨迹（operation trace + 每轮 round log）。 |
+| `txt_trace_logger.py` | `TxtTraceLogger`：append-only 分类文本轨迹。canonical 轨迹 = `var/runtime/{op}/operation-trace.txt`（orchestrator + executor 共同追加，有 REST 消费 `GET /operations/{id}/trace`）+ 每轮 round log。旧 `runs/{op}.run.txt` 死 sink 已废弃不再写。 |
 | `store.py` | `RuntimeStore`（`InMemory`/`File`）：runtime state 持久化抽象。 |
 | `reducer.py` | 把 runtime 事件 reduce 到 RuntimeState。 |
 | `session_manager.py` / `lease_manager.py` / `pivot_route_manager.py` / `credential_manager.py` / `locks.py` / `reachability.py` | 运行时资源管理：会话/租约/中转路由/凭证/锁/可达性传播。 |
@@ -165,16 +165,15 @@ Aegra/
 | `models/scope.py` | `Engagement`/`Asset`/`RiskPolicy`/`DenylistRule`（授权边界 + 风险策略默认值）。 |
 | `models/finding.py` / `vulnerability_candidate.py` / `fingerprint.py` / `events.py` / `task_types.py` | findings / 漏洞候选 / 指纹 / 事件 / 任务类型模型。 |
 
-### 3.7 感知 / 工具 / 漏洞候选 / 校验 / 反馈
+### 3.7 漏洞候选 / 校验 / 能力
 
 | 模块 | 职责 |
 |---|---|
-| `perception/parser_registry.py` 等 | 工具结果解析插件（`tool_execution_parser` + `generic_parser`），把原始工具输出归一化。 |
-| `tools/recipe.py` / `tool_runner.py` / `runner.py` / `registry.py` | 把 planner 任务提示转成安全工具配方并执行。 |
 | `vuln_candidates/matcher.py` / `rules.py` | 指纹 → 漏洞候选匹配（Struts/Tomcat/Redis/Spring 等内置规则）。 |
 | `validation/*` | 漏洞 profile / 验证计划 / 证据归一 / 验证结果模型。 |
-| `feedback/result_verifier.py` / `evidence_extractor.py` | 受控工具结果的首轮校验 + 证据抽取。 |
 | `capabilities/model.py` | stage 级能力模型。 |
+
+> **已删（2026-06-22，v3 单执行器重构后的死代码）**：`perception/`（GenericParser/ToolExecutionParser/ParserRegistry，活路径改用 `tool_trace_fact_extractor`）、`tools/`（recipe/runner/registry/tool_runner，pre-MCP 本地执行引擎，已被 MCP/ToolGateway 取代）、`feedback/`（ResultVerifier/EvidenceExtractor，主循环 feedback 阶段已禁用）、`runtime/worker_result_adapter.py`（零引用）。
 
 ### 3.8 `src/core/agents/` —— LLM 客户端与写回辅助
 
@@ -209,10 +208,10 @@ Aegra/
         → success_condition_progress（eligible_for_stop / achieved_level / missing）
 ③ PlannerGraphTools.build_min_summary()  → 极小常驻摘要
 ④ PLAN：MissionPlannerAgent.decide(goal, summary, graph_tools)   ← 唯一 LLM 决策点
-        · planner 可按需调读工具下钻 KG/AG
+        · planner 决策基于预计算 push 上下文（min_summary 等）；单次 LLM 调用，无法中途下钻 KG/AG
         · planner 在 decide 内调写工具（record_finding/link_evidence 真写 KG；record_attack_step 记意图）
         · 产出 PlannerOutcome：action + RoundDirective
-⑤ apply_planner_decision → 写 runtime meta + 审计（不写 AG 节点）
+⑤ apply_planner_outcome → 写 runtime meta + 审计（不写 AG 节点）
 ⑥ 若 action == execute：
      ExecutionAgent.run(directive, pivot_routes, sessions, …)
         → ExecutionStageAgent 有界多工具 ReAct：
@@ -248,17 +247,22 @@ Aegra/
 
 ---
 
-## 6. 当前重构状态（2026-06-17）
+## 6. 当前重构状态（2026-06-22）
 - **P1 图瘦身 + 写图收敛**：✅ AG 砍 2 节点 2 边；KG 单一机器事实源；死的 `_structured_stage_state_deltas` 旁路已删。
 - **P2 单执行器**：✅ 5 个 stage agent 合并成 1 个 `ExecutionStageAgent`；registry 持单 agent。
-- **P3 planner 写工具**：✅ 已接入（record_finding/link_evidence 真写 KG，apply_tool_calls 在 decide 内调用）。
+- **P3 planner 写工具 + 单契约**：✅ 已接入（record_finding/link_evidence 真写 KG，apply_tool_calls 在 decide 内调用）；`PlannerDecision` 已删，收敛到单一 `PlannerOutcome`。
 - **P4 契约分级**：✅ levels/achieved_level/require_chain/count_nodes_at_least 已实现。
 - **单一执行边界 ToolGateway**：✅ B 接口 + A 传输合一（无 pivot 透传 MCP，direct 路由走适配器）。
 
-**已知遗留 / 未接入**：
-- gap 路由子系统（`gap_report`/`gap_router`/`plan_models`/`projection`）+ 旧 `src/core/prompts/` + 其他靶场环境（full_pentest/docker_lab/open_lab）+ runs/var 日志输出：**已于 2026-06-17 清理删除**，仅保留 `full_chain_lab` 测试环境。
-- `result_applier.apply()` + `_run_state_writer`（obs→KG）：**仅测试用**，不在 live 路径。
-- 测试：12 个 pre-existing 失败（`test_mcp_lab.py`×8 + `test_pivot_planning_context.py`×4），lab/contract 那块仍在迭代，与上述主链路改动无关。
+**死代码清理（2026-06-22，4 轮，suite 224 passed / 2 fail / 1 skip，零回归）**：
+- 删 4 个孤儿包 `feedback/`、`perception/`、`tools/`、`runtime/worker_result_adapter.py`（v3 单执行器重构后零引用残留，src .py 134→115）。
+- `result_applier`：删 test-only 的 `apply()`/`_run_state_writer` 孤岛（围绕废弃 `tool_execution`/`ToolExecutionResult` 形状，且 `apply()` 本就半残——调用不存在的 `_kg_events_from_state_deltas`）+ 活路径双记账 `_audit_tool_invocations`/`_audit_tool_execution_from_result`。活审计 = `_audit_stage_result` + `_audit_stage_tool_trace`。
+- orchestrator：双 logger 收敛到 canonical `operation-trace.txt`（有 REST 消费 + executor 共写），弃 `runs/` 死 sink，独有块（MISSION/CYCLE_FAILED/富 PLANNER 字段）迁入 canonical 轨迹；删孤儿夹具 `runs/op-*.run.txt`。
+- **注**：`state_writer.py` 保留——其 `build_store_apply_request`/`apply_to_store` 仍是活路径 KG 落盘机制（仅 `.run()` 失去最后调用方）。
+
+**已知遗留**：
+- gap 路由子系统 + 旧 `src/core/prompts/` + 其他靶场环境（full_pentest/docker_lab/open_lab）：**已于 2026-06-17 清理删除**，仅保留 `full_chain_lab` 测试环境。
+- 测试：2 个 pre-existing 失败（`test_mcp_lab.py`：`test_lab_authorized_exploit_returns_post_access_observable_capability` + `test_thinkphp_lab_exploit_can_read_dmz_loot_file`），确定性 exploit-execute 改造 + host→dmz 可达性问题，**已决定保留红灯延后**，与上述主链路改动无关。
 
 ---
 
@@ -297,9 +301,9 @@ src/
 │   │
 │   ├── planning/                       # 规划（thick agentic planner）
 │   │   ├── mission_planner_agent.py    ★ MissionPlannerAgent.decide：唯一 LLM 决策点
-│   │   ├── graph_tools.py              ★▲ PlannerGraphTools：typed 读/写图工具（P3）
-│   │   ├── llm_mission_planner_advisor.py LLM 决策 advisor
-│   │   ├── models.py                     PlannerDecision/Outcome/RoundDirective
+│   │   ├── graph_tools.py              ★▲ PlannerGraphTools：write 工具(LLM 可用)+ read 方法(仅编排 push)+ min_summary
+│   │   ├── llm_mission_planner_advisor.py LLM 决策 advisor（失败降级 replan）
+│   │   ├── models.py                     PlannerOutcome + RoundDirective（PlannerDecision 已删）
 │   │   ├── __init__.py
 │   │   └── prompts/planner_global_control.md  planner 系统 prompt
 │   │
@@ -329,7 +333,7 @@ src/
 │   │       └── mcp_adapter.py             MCP 适配器（Option 1 下冗余，暂留）
 │   │
 │   ├── runtime/                        # 写回 / 管理器 / 审计 / 策略
-│   │   ├── result_applier.py           ★▲ PhaseTwoResultApplier：KG/AG/Runtime 写回
+│   │   ├── result_applier.py           ★▲ PhaseTwoResultApplier：KG/AG/Runtime 写回（已删 test-only apply() 孤岛 + 双记账）
 │   │   ├── tool_trace_fact_extractor.py ★ ToolTraceFactExtractor：唯一机器事实源
 │   │   ├── txt_trace_logger.py         ★ TxtTraceLogger：operation/round log
 │   │   ├── policy_engine.py            ★ PolicyEngine：scope 硬闸 + 风险闸
@@ -344,7 +348,7 @@ src/
 │   │   ├── budgets.py / risk_scoring.py / approvals.py  预算/风险/审批
 │   │   ├── checkpoint_store.py / observability.py  检查点/可观测
 │   │   ├── llm_history.py / audit_report.py / report_generator.py  LLM 历史/审计/报告
-│   │   ├── events.py / runtime_queries.py / worker_result_adapter.py
+│   │   ├── events.py / runtime_queries.py
 │   │
 │   ├── evaluation/                     # 成功判定（契约 + 确定性评估）
 │   │   ├── success_condition_tracker.py ★ SuccessConditionTracker：契约求值 + 分级(P4)
@@ -369,17 +373,6 @@ src/
 │   │   ├── finding.py / vulnerability_candidate.py / fingerprint.py  findings/漏洞/指纹
 │   │   ├── events.py / task_types.py / graph_common.py
 │   │
-│   ├── perception/                     # 工具结果解析
-│   │   ├── parser_registry.py            解析插件注册
-│   │   ├── tool_execution_parser.py      工具执行解析（优先）
-│   │   ├── generic_parser.py / parser_protocol.py
-│   │   └── __init__.py
-│   │
-│   ├── tools/                          # 安全工具配方/执行
-│   │   ├── recipe.py                     planner 提示 → 安全工具配方
-│   │   ├── tool_runner.py / runner.py / registry.py
-│   │   └── __init__.py
-│   │
 │   ├── vuln_candidates/                # 漏洞候选匹配
 │   │   ├── matcher.py                    指纹 → 漏洞候选
 │   │   ├── rules.py                      内置规则（Struts/Tomcat/Redis/Spring…）
@@ -389,9 +382,7 @@ src/
 │   │   ├── vulnerability_profile.py / validation_plan.py / validation_result.py / evidence_normalizer.py
 │   │   └── __init__.py
 │   │
-│   ├── feedback/                       # 结果校验/证据抽取
-│   │   ├── result_verifier.py / evidence_extractor.py
-│   │   └── __init__.py
+│   │   # 已删（2026-06-22 死代码清理）：perception/ · tools/ · feedback/ · runtime/worker_result_adapter.py
 │   │
 │   ├── visualization/                  # 可视化
 │   │   ├── unified_visualization.py      运行可视化只读适配器

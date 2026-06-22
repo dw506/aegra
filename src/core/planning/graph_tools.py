@@ -86,8 +86,12 @@ class PlannerGraphTools:
 
     @staticmethod
     def tool_manifest() -> dict[str, list[str]]:
+        # Push model: the planner advisor is a single-shot LLM call with no
+        # tool-call loop, so the LLM cannot invoke read tools mid-decision. The
+        # read methods on this class are used by the orchestrator to BUILD the
+        # precomputed context (e.g. build_min_summary); only the write tools are
+        # advertised to the LLM, dispatched via apply_tool_calls after the turn.
         return {
-            "read": ["kg_query", "kg_get_node", "kg_neighbors", "ag_get_timeline", "ag_get_step", "get_round_log"],
             "write": ["record_finding", "record_attack_step", "link_evidence"],
         }
 
