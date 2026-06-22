@@ -17,10 +17,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.agents.agent_models import EvidenceRecord, ObservationRecord, StateDeltaRecord
+from src.core.agents.agent_models import StateDeltaRecord
 from src.core.agents.agent_protocol import (
     AgentContext,
-    AgentExecutionResult,
     AgentInput,
     GraphRef,
     GraphScope,
@@ -88,7 +87,6 @@ class PhaseTwoApplyResult(BaseModel):
     kg_write_diagnostics: dict[str, Any] = Field(default_factory=dict)
     ag_graph: dict[str, Any] | None = None
     kg_event_batch: KGEventBatch | None = None
-    state_writer_result: AgentExecutionResult | None = None
     visual_graph_deltas: list[VisualGraphDelta] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
 
@@ -118,59 +116,6 @@ class PhaseTwoResultApplier:
         self._budget_manager = budget_manager or RuntimeBudgetManager()
         self._checkpoint_manager = checkpoint_manager or RuntimeCheckpointManager()
         self._lock_manager = lock_manager or RuntimeLockManager()
-
-    def apply(
-        self,
-        result: AgentTaskResult,
-        state: RuntimeState,
-        kg_store: KnowledgeGraph | None = None,
-        attack_graph: AttackGraph | None = None,
-    ) -> PhaseTwoApplyResult:
-        """Compatibility entry point for applying canonical AgentTaskResult output."""
-
-        if result.operation_id != state.operation_id:
-            raise ValueError("result.operation_id must match RuntimeState.operation_id")
-
-        apply_result = PhaseTwoApplyResult()
-        runtime_event_refs = self._apply_runtime_effects(result=result, state=state)
-        apply_result.runtime_event_refs.extend(runtime_event_refs)
-        self._sync_runtime_views_from_result(state=state, result=result)
-        self._apply_stage_runtime_hints(state=state, result=result)
-        self._apply_capability_hints(state=state, result=result)
-        self._apply_failed_hypotheses(state=state, result=result)
-        self._record_recent_outcome(state=state, result=result)
-        self._audit_stage_result(state=state, result=result)
-        self._audit_tool_invocations(state=state, result=result)
-        self._audit_tool_execution_from_result(state=state, result=result)
-        self._audit_stage_tool_trace(state=state, result=result)
-        self._record_evidence_and_findings(state=state, result=result)
-        if kg_store is not None:
-            kg_ref = self._resolve_kg_ref(result)
-            state_writer_result, _ = self._run_state_writer(
-                result=result,
-                state=state,
-                kg_ref=kg_ref,
-            )
-            if state_writer_result is not None:
-                apply_result.state_writer_result = state_writer_result
-                apply_result.kg_state_deltas.extend(list(state_writer_result.state_deltas))
-                kg_event_batch = self._kg_events_from_state_deltas(state_writer_result.state_deltas)
-                if kg_event_batch.events:
-                    apply_result.kg_event_batch = kg_event_batch
-                    apply_result.kg_apply_result = kg_store.apply_events(kg_event_batch).model_dump(mode="json")
-        if attack_graph is not None:
-            apply_result.ag_graph = attack_graph.to_dict()
-        apply_result.visual_graph_deltas.extend(
-            self._visual_graph_deltas(
-                operation_id=state.operation_id,
-                state=state,
-                kg_store=kg_store,
-                ag_graph=apply_result.ag_graph,
-                include_kg=kg_store is not None,
-                include_runtime=True,
-            )
-        )
-        return apply_result
 
     def apply_planner_outcome(
         self,
@@ -230,8 +175,6 @@ class PhaseTwoResultApplier:
         self._apply_failed_hypotheses(state=state, result=canonical_result)
         self._record_recent_outcome(state=state, result=canonical_result)
         self._audit_stage_result(state=state, result=canonical_result)
-        self._audit_tool_invocations(state=state, result=canonical_result)
-        self._audit_tool_execution_from_result(state=state, result=canonical_result)
         self._audit_stage_tool_trace(state=state, result=canonical_result)
         self._record_evidence_and_findings(state=state, result=canonical_result)
         self._record_direct_stage_findings(state=state, stage_result=stage_result)
@@ -594,53 +537,6 @@ class PhaseTwoResultApplier:
                 "parsed_output to extract KG facts from"
             )
         return "tool calls returned parsed_output but no host/service/finding/evidence shapes matched"
-
-    def _run_state_writer(
-        self,
-        *,
-        result: AgentTaskResult,
-        state: RuntimeState,
-        kg_ref: GraphRef,
-    ) -> tuple[AgentExecutionResult | None, AgentInput | None]:
-        observations = [
-            ObservationRecord(
-                id=record.observation_id,
-                source_agent=result.agent_role.value,
-                confidence=record.confidence,
-                summary=record.summary,
-                refs=[self._to_protocol_ref(ref) for ref in record.refs],
-                payload=dict(record.payload),
-            )
-            for record in result.observations
-        ]
-        evidence = [
-            EvidenceRecord(
-                id=record.evidence_id,
-                source_agent=result.agent_role.value,
-                confidence=1.0,
-                summary=record.summary,
-                refs=[self._to_protocol_ref(ref) for ref in record.refs],
-                payload=dict(record.metadata),
-                payload_ref=record.payload_ref,
-            )
-            for record in result.evidence
-        ]
-        if not observations and not evidence:
-            return None, None
-        graph_refs = [] if kg_ref.ref_id == "kg-root" else [kg_ref]
-        agent_input = AgentInput(
-            graph_refs=graph_refs,
-            task_ref=result.task_id,
-            context=AgentContext(
-                operation_id=state.operation_id,
-                runtime_state_ref=state.operation_id,
-            ),
-            raw_payload={
-                "observations": [item.model_dump(mode="json") for item in observations],
-                "evidences": [item.model_dump(mode="json") for item in evidence],
-            },
-        )
-        return self._state_writer.run(agent_input), agent_input
 
     def _apply_kg_deltas_to_store(
         self,
@@ -2344,91 +2240,6 @@ class PhaseTwoResultApplier:
 
     # 中文注释：
     # 工具调用审计统一写入 runtime metadata，不让 worker 直接操作审计存储。
-    def _audit_tool_invocations(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
-        for evidence in result.evidence:
-            metadata = dict(evidence.metadata)
-            tool = metadata.get("tool")
-            command = metadata.get("command") or metadata.get("tool_command")
-            adapter = metadata.get("adapter")
-            if tool is None and command is None and adapter is None:
-                continue
-            self._append_audit_log(
-                state,
-                {
-                    "event_type": "tool_invocation",
-                    "source_task_id": result.task_id,
-                    "worker_result_id": result.result_id,
-                    "evidence_id": evidence.evidence_id,
-                    "tool": tool,
-                    "command": command,
-                    "adapter": adapter,
-                    "payload_ref": evidence.payload_ref,
-                },
-            )
-
-    def _audit_tool_execution_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
-        seen: set[tuple[tuple[str, str], ...]] = set()
-        for tool_execution in self._tool_execution_candidates(result):
-            normalized = self._normalize_tool_execution(tool_execution)
-            if not normalized:
-                continue
-            fingerprint = tuple(sorted((key, str(value)) for key, value in normalized.items() if value is not None))
-            if fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-            success = bool(normalized.get("success", False))
-            self._append_audit_log(
-                state,
-                {
-                    "event_type": "tool_execution_recorded" if success else "tool_execution_failed",
-                    "source_task_id": result.task_id,
-                    "worker_result_id": result.result_id,
-                    "adapter": normalized.get("adapter"),
-                    "tool": normalized.get("tool"),
-                    "success": success,
-                    "exit_code": normalized.get("exit_code"),
-                    "command_id": normalized.get("command_id"),
-                    "payload_ref": normalized.get("payload_ref"),
-                    "stdout_excerpt": normalized.get("stdout_excerpt"),
-                    "stderr_excerpt": normalized.get("stderr_excerpt"),
-                },
-            )
-
-    @staticmethod
-    def _tool_execution_candidates(result: AgentTaskResult) -> list[Any]:
-        candidates: list[Any] = [
-            result.outcome_payload.get("tool_execution"),
-            result.metadata.get("tool_execution"),
-        ]
-        for evidence in result.evidence:
-            candidates.append(evidence.metadata.get("tool_execution"))
-        return [candidate for candidate in candidates if candidate is not None]
-
-    @classmethod
-    def _normalize_tool_execution(cls, tool_execution: Any) -> dict[str, Any]:
-        if isinstance(tool_execution, BaseModel):
-            data = tool_execution.model_dump(mode="json")
-        elif isinstance(tool_execution, dict):
-            data = dict(tool_execution)
-        else:
-            return {}
-        return {
-            "adapter": cls._string(data.get("adapter")) or "unknown_adapter",
-            "tool": cls._string(data.get("tool")) or "unknown_tool",
-            "success": bool(data.get("success", False)),
-            "exit_code": data.get("exit_code"),
-            "command_id": cls._string(data.get("command_id")),
-            "payload_ref": cls._string(data.get("payload_ref")),
-            "stdout_excerpt": cls._excerpt(data.get("stdout")),
-            "stderr_excerpt": cls._excerpt(data.get("stderr")),
-        }
-
-    @staticmethod
-    def _excerpt(value: Any, limit: int = 500) -> str:
-        if value is None:
-            return ""
-        return str(value)[:limit]
-
     def _audit_fact_writes(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         for request in result.fact_write_requests:
             evidence_chain = self._evidence_chain(result=result, request=request)
