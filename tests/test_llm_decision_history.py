@@ -62,7 +62,6 @@ def test_llm_decision_history_records_planner_decision(tmp_path) -> None:
         tmp_path,
         llm_api_key="secret-key",
         llm_model="gpt-5.4",
-        enable_planner_llm_advisor=True,
     )
     orchestrator.create_operation("op-history")
     output = AgentOutput(
@@ -94,7 +93,7 @@ def test_llm_decision_history_records_planner_decision(tmp_path) -> None:
 
 
 def test_llm_decision_history_keeps_distinct_targets_in_same_cycle(tmp_path) -> None:
-    orchestrator = _orchestrator(tmp_path, enable_planner_rank_llm_advisor=True, llm_api_key="secret-key")
+    orchestrator = _orchestrator(tmp_path, llm_api_key="secret-key")
     orchestrator.create_operation("op-history")
     output = AgentOutput(
         decisions=[
@@ -141,7 +140,7 @@ def test_llm_decision_history_keeps_distinct_targets_in_same_cycle(tmp_path) -> 
 
 
 def test_llm_decision_history_records_critic_decision(tmp_path) -> None:
-    orchestrator = _orchestrator(tmp_path, enable_critic_llm_advisor=False)
+    orchestrator = _orchestrator(tmp_path)
     orchestrator.create_operation("op-history")
     output = AgentOutput(
         decisions=[

@@ -28,9 +28,6 @@ class AppSettings(BaseModel):
             "http://localhost:5173",
         ]
     )
-    max_concurrent_workers: int = Field(default=4, ge=1)
-    default_operation_budget: int = Field(default=100, ge=1)
-    default_scan_timeout_sec: int = Field(default=300, ge=1)
     audit_enabled: bool = True
     audit_dir: Path = Field(default_factory=lambda: Path("var/audit"))
     audit_persist_enabled: bool = True
@@ -48,18 +45,10 @@ class AppSettings(BaseModel):
     llm_timeout_sec: float | None = Field(default=None, gt=0.0, le=300.0)
     llm_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
     llm_output_cost_per_1m_tokens: float | None = Field(default=None, ge=0.0)
-    enable_planner_rank_llm_advisor: bool = False
-    enable_planner_llm_advisor: bool = False
-    enable_critic_llm_advisor: bool = False
-    enable_supervisor_llm_advisor: bool = False
-    tool_nmap_path: str = "nmap"
-    tool_python_path: str = "python"
     mcp_enabled: bool = False
-    mcp_first: bool = True
     mcp_config_path: Path | None = None
     mcp_config_json: dict[str, Any] = Field(default_factory=dict)
     mcp_default_timeout_seconds: int = Field(default=60, ge=1)
-    allow_local_fallback: bool = True
 
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
@@ -157,12 +146,6 @@ class AppSettings(BaseModel):
                 if raw_origins.startswith("[")
                 else [item.strip() for item in raw_origins.split(",") if item.strip()]
             )
-        if "AEGRA_MAX_CONCURRENT_WORKERS" in environ:
-            values["max_concurrent_workers"] = int(environ["AEGRA_MAX_CONCURRENT_WORKERS"])
-        if "AEGRA_DEFAULT_OPERATION_BUDGET" in environ:
-            values["default_operation_budget"] = int(environ["AEGRA_DEFAULT_OPERATION_BUDGET"])
-        if "AEGRA_DEFAULT_SCAN_TIMEOUT_SEC" in environ:
-            values["default_scan_timeout_sec"] = int(environ["AEGRA_DEFAULT_SCAN_TIMEOUT_SEC"])
         if "AEGRA_AUDIT_ENABLED" in environ:
             values["audit_enabled"] = environ["AEGRA_AUDIT_ENABLED"].strip().lower() in {
                 "1",
@@ -217,51 +200,8 @@ class AppSettings(BaseModel):
             values["llm_input_cost_per_1m_tokens"] = float(environ["AEGRA_LLM_INPUT_COST_PER_1M_TOKENS"])
         if "AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS" in environ:
             values["llm_output_cost_per_1m_tokens"] = float(environ["AEGRA_LLM_OUTPUT_COST_PER_1M_TOKENS"])
-        if "AEGRA_ENABLE_PLANNER_LLM_ADVISOR" in environ:
-            legacy_planner_enabled = environ["AEGRA_ENABLE_PLANNER_LLM_ADVISOR"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-            values["enable_planner_llm_advisor"] = legacy_planner_enabled
-            values.setdefault("enable_planner_rank_llm_advisor", legacy_planner_enabled)
-        if "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR" in environ:
-            values["enable_planner_rank_llm_advisor"] = environ[
-                "AEGRA_ENABLE_PLANNER_RANK_LLM_ADVISOR"
-            ].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_ENABLE_CRITIC_LLM_ADVISOR" in environ:
-            values["enable_critic_llm_advisor"] = environ["AEGRA_ENABLE_CRITIC_LLM_ADVISOR"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_ENABLE_SUPERVISOR_LLM_ADVISOR" in environ:
-            values["enable_supervisor_llm_advisor"] = environ["AEGRA_ENABLE_SUPERVISOR_LLM_ADVISOR"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_TOOL_NMAP_PATH" in environ:
-            values["tool_nmap_path"] = environ["AEGRA_TOOL_NMAP_PATH"]
-        if "AEGRA_TOOL_PYTHON_PATH" in environ:
-            values["tool_python_path"] = environ["AEGRA_TOOL_PYTHON_PATH"]
         if "AEGRA_MCP_ENABLED" in environ:
             values["mcp_enabled"] = environ["AEGRA_MCP_ENABLED"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_MCP_FIRST" in environ:
-            values["mcp_first"] = environ["AEGRA_MCP_FIRST"].strip().lower() in {
                 "1",
                 "true",
                 "yes",
@@ -273,13 +213,6 @@ class AppSettings(BaseModel):
             values["mcp_config_json"] = json.loads(environ["AEGRA_MCP_CONFIG_JSON"])
         if "AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS" in environ:
             values["mcp_default_timeout_seconds"] = int(environ["AEGRA_MCP_DEFAULT_TIMEOUT_SECONDS"])
-        if "AEGRA_ALLOW_LOCAL_FALLBACK" in environ:
-            values["allow_local_fallback"] = environ["AEGRA_ALLOW_LOCAL_FALLBACK"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
         return cls.model_validate(values)
 
 

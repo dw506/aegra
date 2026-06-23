@@ -89,8 +89,8 @@ class LLMDecisionObserver:
         return LLMDecisionHistoryRecord(
             cycle_index=cycle_index,
             agent_kind=agent_kind.value,
-            advisor_type=self._advisor_type(agent_kind, observed=True),
-            enabled=self._llm_advisor_enabled(agent_kind, observed=True),
+            advisor_type=self._advisor_type(observed=True),
+            enabled=self._llm_advisor_enabled(observed=True),
             configured=self._settings.to_packy_llm_config() is not None,
             decision_type=decision_type,
             decision_id=self._optional_text(decision.get("decision_id")),
@@ -128,8 +128,8 @@ class LLMDecisionObserver:
                 LLMDecisionHistoryRecord(
                     cycle_index=cycle_index,
                     agent_kind=agent_kind.value,
-                    advisor_type=self._advisor_type(agent_kind, observed=True),
-                    enabled=self._llm_advisor_enabled(agent_kind, observed=True),
+                    advisor_type=self._advisor_type(observed=True),
+                    enabled=self._llm_advisor_enabled(observed=True),
                     configured=self._settings.to_packy_llm_config() is not None,
                     decision_type=self._default_llm_decision_type(agent_kind),
                     accepted=False,
@@ -139,25 +139,15 @@ class LLMDecisionObserver:
             )
         return records
 
-    def _llm_advisor_enabled(self, agent_kind: AgentKind, *, observed: bool = False) -> bool:
-        if agent_kind == AgentKind.PLANNER:
-            return self._planner_llm_enabled() or observed
-        if agent_kind == AgentKind.CRITIC:
-            return self._settings.enable_critic_llm_advisor or observed
-        if agent_kind == AgentKind.SUPERVISOR:
-            return self._settings.enable_supervisor_llm_advisor or observed
-        return observed
+    def _llm_advisor_enabled(self, *, observed: bool = False) -> bool:
+        # An LLM advisor is active whenever an LLM client is configured (or a
+        # decision was actually observed via an injected client in tests).
+        return self._settings.to_packy_llm_config() is not None or observed
 
-    def _advisor_type(self, agent_kind: AgentKind, *, observed: bool = False) -> str:
-        if not self._llm_advisor_enabled(agent_kind, observed=observed):
+    def _advisor_type(self, *, observed: bool = False) -> str:
+        if not self._llm_advisor_enabled(observed=observed):
             return "none"
         return "packy" if self._settings.to_packy_llm_config() is not None else "injected"
-
-    def _planner_llm_enabled(self) -> bool:
-        return (
-            self._settings.enable_planner_llm_advisor
-            or self._settings.enable_planner_rank_llm_advisor
-        )
 
     def _llm_model(self) -> str | None:
         config = self._settings.to_packy_llm_config()

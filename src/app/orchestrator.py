@@ -211,10 +211,7 @@ class AppOrchestrator:
                 "operation_log_max_entries": self.settings.operation_log_max_entries,  #operation 普通运行日志最多保留多少条
                 "audit_redaction_enabled": self.settings.audit_redaction_enabled,      #是否开启审计脱敏
                 "recovery_enabled": self.settings.recovery_enabled,
-                "max_concurrent_workers": self.settings.max_concurrent_workers,        #最大并发 worker 数
-                "default_operation_budget": self.settings.default_operation_budget,
-                "default_scan_timeout_sec": self.settings.default_scan_timeout_sec,
-                "llm_advisors": self._llm_advisor_status(self.settings),  
+                "llm_advisors": self._llm_advisor_status(self.settings),
                 "agent_architecture": self._agent_architecture_metadata(self.settings),            #当前 agent 架构信息
             },
           
@@ -1033,7 +1030,7 @@ class AppOrchestrator:
                     )
                     self.runtime_store.save_state(state)
                     break
-            elif planner_decision in {"dispatch_agent"}:
+            elif planner_decision == "execute":
                 planner_replan_count = 0
             supervisor_control = self._apply_supervisor_control_strategy(
                 operation_id=operation_id,
@@ -1504,10 +1501,10 @@ class AppOrchestrator:
         if cycle_result.planning is None:
             return None
         for item in cycle_result.planning.final_output.decisions:
-            payload = item.get("planner_decision") if isinstance(item, dict) else None
+            payload = item.get("planner_outcome") if isinstance(item, dict) else None
             if isinstance(payload, dict):
-                decision = payload.get("decision")
-                return str(decision) if decision is not None else None
+                action = payload.get("action")
+                return str(action) if action is not None else None
         return None
 
     def _update_success_condition_progress(
@@ -2016,12 +2013,11 @@ class AppOrchestrator:
 
     @staticmethod
     def _llm_advisor_status(settings: AppSettings) -> dict[str, Any]:
+        # The planner advisor is active whenever an LLM client is configured;
+        # there are no separate planner/critic/supervisor enable toggles in v3.
         config = settings.to_packy_llm_config()
         return {
-            "planner_enabled": AppOrchestrator._planner_llm_enabled(settings),
-            "planner_rank_enabled": AppOrchestrator._planner_rank_llm_enabled(settings),
-            "critic_enabled": settings.enable_critic_llm_advisor,
-            "supervisor_enabled": settings.enable_supervisor_llm_advisor,
+            "planner_enabled": config is not None,
             "configured": config is not None,
             "model": config.model if config is not None else None,
             "base_url": config.base_url if config is not None else None,
@@ -2053,17 +2049,6 @@ class AppOrchestrator:
                 "GraphMemoryStore",
             ],
         }
-
-    @staticmethod
-    def _planner_rank_llm_enabled(settings: AppSettings) -> bool:
-        return settings.enable_planner_rank_llm_advisor or settings.enable_planner_llm_advisor
-
-    @staticmethod
-    def _planner_llm_enabled(settings: AppSettings) -> bool:
-        return (
-            settings.enable_planner_llm_advisor
-            or settings.enable_planner_rank_llm_advisor
-        )
 
     @staticmethod
     def _build_runtime_store(settings: AppSettings) -> RuntimeStore:
