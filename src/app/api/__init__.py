@@ -14,7 +14,6 @@ from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.agent_protocol import GraphRef, GraphScope
 from src.core.models.runtime import RuntimeStatus
-from src.core.runtime.approvals import ApprovalManager, ApprovalRequest
 from src.core.runtime.policy import policy_from_runtime_state
 
 try:  # pragma: no cover - exercised only when FastAPI is installed
@@ -193,7 +192,6 @@ def _operation_policy_summary(orchestrator: AppOrchestrator, operation_id: str) 
             "targets": list(state.execution.metadata.get("target_inventory", [])),
         },
         "policy": policy.to_runtime_metadata(),
-        "approval_count": len(ApprovalManager().list_approvals(state)),
         "audit_link": f"/operations/{operation_id}/audit-report",
     }
 
@@ -456,24 +454,6 @@ def create_app(
             return Response(content=str(payload), media_type="text/markdown")
         return payload
 
-    @app.get("/operations/{operation_id}/approvals")
-    def list_approvals(operation_id: str) -> list[dict[str, Any]]:
-        try:
-            state = resolved_orchestrator.get_operation_state(operation_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return ApprovalManager().list_approvals(state)
-
-    @app.post("/operations/{operation_id}/approve")
-    def approve_operation(operation_id: str, request: ApprovalRequest) -> dict[str, Any]:
-        try:
-            state = resolved_orchestrator.runtime_store.snapshot(operation_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        record = ApprovalManager().apply(state, request)
-        resolved_orchestrator.runtime_store.save_state(state)
-        return record
-
     @app.get("/operations/{operation_id}/llm-decisions")
     def get_llm_decisions(
         operation_id: str,
@@ -529,7 +509,6 @@ app = create_app() if FastAPI is not None else None
 __all__ = [
     "FASTAPI_UNAVAILABLE_MESSAGE",
     "AUDIT_REPORT_QUERY_LIMIT_MAX",
-    "ApprovalRequest",
     "CONTROL_CYCLE_QUERY_LIMIT_MAX",
     "ImportTargetsRequest",
     "LLM_DECISION_QUERY_LIMIT_MAX",

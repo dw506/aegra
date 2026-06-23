@@ -61,15 +61,15 @@ Aegra/
         │      link_evidence (typed)   │                          │ 工具调用
         └────────────────────────────┘                          ▼
             │ stop/replan/execute                    ┌───────────────────────┐
-            ▼                                         │  ToolGateway          │ ← 单一执行边界
-   ┌──────────────────────────────────┐              │  无 pivot → MCP 透传   │
-   │  PhaseTwoResultApplier            │              │  有 direct 路由 → A 适配器│
-   │  apply_planner_outcome (runtime)  │              └───────────────────────┘
-   │  apply_stage_result:              │                          │
-   │   · KG: _fact_state_deltas        │              ┌───────────────────────┐
-   │     → ToolTraceFactExtractor      │              │ ConfiguredMCPClient    │
-   │   · AG: 单 ATTACK_STEP + NEXT 边  │              │ → mcp_lab 工具(真发包)  │
-   │   · Runtime: 会话/路由/凭证       │              └───────────────────────┘
+            ▼                                         │ ConfiguredMCPClient    │ ← 直调 MCP
+   ┌──────────────────────────────────┐              │ call_tool → mcp_lab     │
+   │  PhaseTwoResultApplier            │              │ 工具(真发包)            │
+   │  apply_planner_outcome (runtime)  │              │ pivot 在 mcp_lab 服务端 │
+   │  apply_stage_result:              │              │ (SSH→pivot-ssh)         │
+   │   · KG: _fact_state_deltas        │              └───────────────────────┘
+   │     → ToolTraceFactExtractor      │
+   │   · AG: 单 ATTACK_STEP + NEXT 边  │
+   │   · Runtime: 会话/路由/凭证       │
    └──────────────────────────────────┘
             │                  │                 │
             ▼                  ▼                 ▼
@@ -81,7 +81,7 @@ Aegra/
                               ▼ round-N.txt（过程明细，AG 只存指针）
 ```
 
-**一句话流程**：planner（带图读写工具）→ 一个 ExecutionAgent 跑完一个 capability 轮（经 ToolGateway 调真实工具）
+**一句话流程**：planner（带图读写工具）→ 一个 ExecutionAgent 跑完一个 capability 轮（经 ConfiguredMCPClient 直调 mcp_lab 真实工具）
 → 确定性抽事实写 KG / 单 step 写 AG / round log 落文件 → SuccessConditionTracker 刷新成功门 → planner 据判决决定 stop/继续。
 
 ---
@@ -92,7 +92,7 @@ Aegra/
 
 | 模块 | 职责 |
 |---|---|
-| `orchestrator.py` | **核心**。`AppOrchestrator`：operation 生命周期（create/import_targets/start/run）+ 主循环 `run_operation_cycle`（第 4 节详述）+ 多轮 `run_until_quiescent` + 成功汇总 `get_operation_run_summary`。装配 planner、ExecutionAgent、ToolGateway、result_applier、图存储。 |
+| `orchestrator.py` | **核心**。`AppOrchestrator`：operation 生命周期（create/import_targets/start/run）+ 主循环 `run_operation_cycle`（第 4 节详述）+ 多轮 `run_until_quiescent` + 成功汇总 `get_operation_run_summary`。装配 planner、ExecutionAgent、ConfiguredMCPClient、result_applier、图存储。 |
 | `settings.py` | `AppSettings`：从环境/文件加载配置（MCP、LLM、runtime policy、lab profile、store 后端、审计/日志治理参数）。 |
 | `llm_decision_observer.py` | LLM 决策观测/记录（审计 LLM 决策历史）。 |
 | `api/operation_routes.py` | operation 生命周期 HTTP 路由（创建/导入目标/启动/运行/查询/findings/evidence/audit）。 |
@@ -109,23 +109,17 @@ Aegra/
 | `models.py` | `PlannerOutcome`（`extra=forbid`，model_validator 强制 execute↔directive 绑定）+ `RoundDirective`。**`PlannerDecision` 已删**（P3 收敛到单一 PlannerOutcome 契约）。 |
 | `prompts/planner_global_control.md` | planner 系统 prompt：驱动图工具、输出 directive、读 `eligible_for_stop`/`achieved_level` 自判 stop。 |
 
-### 3.3 `src/core/stage/` + `src/core/execution/` —— 执行（单执行器 + 单一工具边界）
+### 3.3 `src/core/stage/` + `src/core/execution/` —— 执行（单执行器 + 直调 MCP）
 
 | 模块 | 职责 |
 |---|---|
-| `stage/agents/__init__.py` | **`ExecutionStageAgent`**：P2 合并后的**唯一**执行器（`accepts_any_request=True`，服务所有 capability 轮）。共享 `EXECUTION_AGENT_ROLE_PROMPT`（真实攻击姿态）。 |
-| `stage/llm_driven_stage_agent.py` | `LLMDrivenStageAgent`：有界多工具 ReAct 循环——调 LLM 决定下一个工具 → 经 ToolGateway 调用 → 分析输出 → 直到 finish/max_steps，产出 `StageResult`（含 tool_trace/evidence/findings/会话/路由）。`accepts_any_request` 控制是否跳过 stage 绑定校验。 |
-| `stage/registry.py` | `StageAgentRegistry`：现在持有**单个** ExecutionStageAgent；`resolve`/`resolve_agent` 对任意 stage/name 返回它；`validate_assignment` 单 agent 时 no-op。 |
-| `stage/models.py` | `StageName`/`RoundDirective`/`RoundResult`/`StageExecutionRequest`/`StageResult`/`ToolTrace`/`ExtractedFact`/`CapabilityName`。 |
-| `stage/adapters.py` | `StageResultAdapter`：`StageResult` → 规范 `AgentTaskResult`（供 ResultApplier 消费）。 |
-| `execution/execution_agent.py` | `ExecutionAgent`：P2 门面。`RoundDirective` → `StageExecutionRequest`（capability→stage 映射 + `CAPABILITY_TOOLS` 工具表）→ 调单执行器 → 包成 `RoundResult` + 写 round-N.txt log。 |
-| `execution/tool_gateway.py` | **`ToolGateway`**：单一执行边界，drop-in `MCPClient`。无 pivot → 透传底层 MCP（与直连等价）；路由声明 direct 传输(netns/tunnel/proxy) → 转 `ToolPlan` 走 A 适配器，结果适配回 `MCPToolCallResult`。 |
-| `execution/configured_mcp_client.py` | `ConfiguredMCPClient`：JSON-RPC MCP 客户端（stdio/http），管理会话、tools 缓存、真实调用 mcp_lab 工具。 |
+| `stage/agents/__init__.py` | **`ExecutionStageAgent`**：P2 合并后的**唯一**执行器，**capability-agnostic**（无 stage 绑定，一个实例服务所有 capability 轮）。共享 `EXECUTION_AGENT_ROLE_PROMPT`（真实攻击姿态）。 |
+| `stage/llm_driven_stage_agent.py` | `LLMDrivenStageAgent`：有界多工具 ReAct 循环——调 LLM 决定下一个工具 → 经 `ConfiguredMCPClient` 直调 → 分析输出 → 直到 finish/max_steps，产出 `StageResult`（含 tool_trace/evidence/findings/会话/路由）。**无 stage 绑定校验**（capability 是 `request.capability` 上的每轮标签，固定 system prompt 对所有 capability 一致）。 |
+| `stage/models.py` | `CapabilityName`/`RoundDirective`/`RoundResult`/`StageExecutionRequest`/`StageResult`/`StageHandoffSuggestion`/`ToolTrace`/`ExtractedFact`。**stage_type 旧词汇已全删**（`StageName`/`StageType`/`normalize_stage_name`），请求/结果/handoff 一律用 `capability`。 |
+| `stage/adapters.py` | `StageResultAdapter`：`StageResult` → 规范 `AgentTaskResult`（供 ResultApplier 消费）；`agent_role` 恒为 `AgentRole.EXECUTION_AGENT`。 |
+| `execution/execution_agent.py` | `ExecutionAgent`：P2 门面，直接持单执行器（`from_clients` 工厂 + `capability_summary()`，无 registry）。`RoundDirective` → `StageExecutionRequest`（带 `capability`）→ 调执行器 → 盖章 `stage_result.capability` → 包成 `RoundResult` + 写 round-N.txt log。 |
+| `execution/configured_mcp_client.py` | `ConfiguredMCPClient`：JSON-RPC MCP 客户端（stdio/http），管理会话、tools 缓存、真实调用 mcp_lab 工具。**执行器直接调它**（ToolGateway/adapter 引擎已删）。 |
 | `execution/mcp_client.py` | `MCPClient` 协议 + `MCPToolCallResult` + `UnavailableMCPClient`。 |
-| `execution/pivot_context.py` | `PivotExecutionContextResolver`：把路由解析成代理 env / netns wrapper / 隧道端点（真实中转传输的基础件）。 |
-| `execution/adapters/*` | A 的传输适配器：`netns_shell` / `tunnel` / `proxy_shell` / `local_shell` / `http_request` / `mcp`（`base.py` 定义 `ExecutionAdapter` 协议）。经 ToolGateway 在直接传输时调用。 |
-| `execution/adapter_resolver.py` | `ToolAdapterResolver`：MCP-first 的 adapter 选择策略。 |
-| `execution/tool_plan.py` / `tool_result.py` / `tool_policy.py` | `ToolPlan` / `ToolExecutionResult` / `ToolPolicy`：adapter 执行的输入/输出/策略模型。 |
 
 ### 3.4 `src/core/runtime/` —— 运行时（写回 / 管理器 / 审计）
 
@@ -136,10 +130,9 @@ Aegra/
 | `txt_trace_logger.py` | `TxtTraceLogger`：append-only 分类文本轨迹。canonical 轨迹 = `var/runtime/{op}/operation-trace.txt`（orchestrator + executor 共同追加，有 REST 消费 `GET /operations/{id}/trace`）+ 每轮 round log。旧 `runs/{op}.run.txt` 死 sink 已废弃不再写。 |
 | `store.py` | `RuntimeStore`（`InMemory`/`File`）：runtime state 持久化抽象。 |
 | `reducer.py` | 把 runtime 事件 reduce 到 RuntimeState。 |
-| `session_manager.py` / `lease_manager.py` / `pivot_route_manager.py` / `credential_manager.py` / `locks.py` / `reachability.py` | 运行时资源管理：会话/租约/中转路由/凭证/锁/可达性传播。 |
-| `budgets.py` / `risk_scoring.py` / `approvals.py` | 预算守卫 / 风险打分 / 审批。 |
-| `checkpoint_store.py` / `observability.py` / `llm_history.py` / `audit_report.py` / `report_generator.py` | 检查点/可恢复 / 可观测 / LLM 决策历史 / 审计报告 / findings 报告。 |
-| `policy_engine.py` / `policy.py` | **`PolicyEngine`**：授权 scope 硬闸（`evaluate_target_scope`，唯一不可绕过的安全闸）+ task/tool/validator 风险闸（`RiskPolicy` 默认全放行，真实渗透姿态）。 |
+| `session_manager.py` / `pivot_route_manager.py` / `credential_manager.py` / `reachability.py` | 运行时资源管理：会话/中转路由/凭证/可达性传播（v3 活路径写回的运行时对象）。 |
+| `risk_scoring.py` / `observability.py` / `llm_history.py` / `audit_report.py` / `report_generator.py` | 风险打分 / 可观测+可恢复 / LLM 决策历史 / 审计报告 / findings 报告。 |
+| `policy.py` | `RuntimePolicy`/`PolicyDecision`：scope/risk 策略模型（`authorized_hosts` 等）。**注**：真正的 scope 边界由 **mcp_lab 服务端 `authorized_hosts`** 强制（进程外）；executor 的 `policy_check` 是 audit-only（恒放行、只记录）。曾经的客户端 `PolicyEngine` 硬闸**从未接线到活路径,已删除**。 |
 
 ### 3.5 `src/core/evaluation/` —— 成功判定（声明式契约 + 确定性评估）
 
@@ -173,7 +166,7 @@ Aegra/
 | `validation/*` | 漏洞 profile / 验证计划 / 证据归一 / 验证结果模型。 |
 | `capabilities/model.py` | stage 级能力模型。 |
 
-> **已删（2026-06-22，v3 单执行器重构后的死代码）**：`perception/`（GenericParser/ToolExecutionParser/ParserRegistry，活路径改用 `tool_trace_fact_extractor`）、`tools/`（recipe/runner/registry/tool_runner，pre-MCP 本地执行引擎，已被 MCP/ToolGateway 取代）、`feedback/`（ResultVerifier/EvidenceExtractor，主循环 feedback 阶段已禁用）、`runtime/worker_result_adapter.py`（零引用）。
+> **已删（2026-06-22，v3 单执行器重构后的死代码）**：`perception/`（GenericParser/ToolExecutionParser/ParserRegistry，活路径改用 `tool_trace_fact_extractor`）、`tools/`（recipe/runner/registry/tool_runner，pre-MCP 本地执行引擎，已被 MCP/ConfiguredMCPClient 取代）、`feedback/`（ResultVerifier/EvidenceExtractor，主循环 feedback 阶段已禁用）、`runtime/worker_result_adapter.py`（零引用）。
 
 ### 3.8 `src/core/agents/` —— LLM 客户端与写回辅助
 
@@ -213,11 +206,11 @@ Aegra/
         · 产出 PlannerOutcome：action + RoundDirective
 ⑤ apply_planner_outcome → 写 runtime meta + 审计（不写 AG 节点）
 ⑥ 若 action == execute：
-     ExecutionAgent.run(directive, pivot_routes, sessions, …)
+     ExecutionAgent.run(directive, …)
         → ExecutionStageAgent 有界多工具 ReAct：
-              调 LLM 选工具 → ToolGateway.call_tool（无 pivot 透传 MCP / direct 路由走适配器）
-              → mcp_lab 工具真发包 → 分析输出 → 直到 finish/max_tools
-        → 产出 StageResult + 写 round-N.txt（过程明细）
+              调 LLM 选工具 → ConfiguredMCPClient.call_tool 直调 mcp_lab
+              → 工具真发包（pivot 在 mcp_lab 服务端 SSH 到 pivot-ssh）→ 分析输出 → 直到 finish/max_tools
+        → 产出 StageResult（盖章 capability）+ 写 round-N.txt（过程明细）
 ⑦ VERIFY + WRITE：apply_stage_result
         · KG：_fact_state_deltas → ToolTraceFactExtractor（唯一机器事实源）→ apply_patch_batch
         · AG：单 ATTACK_STEP 节点（capability/status/summary/kg_node_refs/log_ref）+ NEXT 边
@@ -239,7 +232,7 @@ Aegra/
 ---
 
 ## 5. 关键不变量（五条）
-1. **授权 scope 边界**：`PolicyEngine.evaluate_target_scope` 硬闸，越界即拒（唯一不可绕过）。
+1. **授权 scope 边界**：由 **mcp_lab 服务端 `authorized_hosts`** 强制（工具进程外校验目标，越界即拒）。客户端 executor 的 `policy_check` 仅 audit-only。（注：旧设计里的客户端 `PolicyEngine.evaluate_target_scope` 硬闸从未接线，已删除；如需客户端二次硬闸需另行接线。）
 2. **密钥不落地**：secrets 只在 GoalOracle 内 HMAC，永不进 KG/AG/Log/审计/LLM。
 3. **成功权威在契约**：确定性追踪器算 `eligible_for_stop`/`achieved_level`，planner 只读不改。
 4. **写图非控制闸门**：任何写图失败都不阻断下一步（`apply_patch_batch` 逐条容错）。
@@ -247,12 +240,13 @@ Aegra/
 
 ---
 
-## 6. 当前重构状态（2026-06-22）
+## 6. 当前重构状态（2026-06-23）
 - **P1 图瘦身 + 写图收敛**：✅ AG 砍 2 节点 2 边；KG 单一机器事实源；死的 `_structured_stage_state_deltas` 旁路已删。
-- **P2 单执行器**：✅ 5 个 stage agent 合并成 1 个 `ExecutionStageAgent`；registry 持单 agent。
+- **P2 单执行器**：✅ 5 个 stage agent 合并成 1 个 `ExecutionStageAgent`（E2：`StageAgentRegistry` 已删，`ExecutionAgent` 直接持 agent）。
 - **P3 planner 写工具 + 单契约**：✅ 已接入（record_finding/link_evidence 真写 KG，apply_tool_calls 在 decide 内调用）；`PlannerDecision` 已删，收敛到单一 `PlannerOutcome`。
 - **P4 契约分级**：✅ levels/achieved_level/require_chain/count_nodes_at_least 已实现。
-- **单一执行边界 ToolGateway**：✅ B 接口 + A 传输合一（无 pivot 透传 MCP，direct 路由走适配器）。
+- **执行边界直调 MCP**：✅ `ExecutionAgent → ConfiguredMCPClient → mcp_lab` 直链；客户端 adapter 引擎 + `ToolGateway` 已删（无配置声明 direct adapter，pivot 一律在 mcp_lab 服务端 SSH 中转）。
+- **stage_type 旧壳全铲（E3 + 全量，`7380a90`）**：✅ v3 路径端到端只讲 `capability`。删 `StageName`/`StageType`/`normalize_stage_name`/`CAPABILITY_TO_STAGE`/`ROLE_BY_STAGE`/请求·结果·AG 节点的 `stage_type` 字段 + agent stage 守卫；`AgentRole` 5 个 `*_STAGE_AGENT` 收敛成 `EXECUTION_AGENT`。保留：`AgentRole` 枚举本身 + `*StageAgent` 类名（纯命名）。
 
 **死代码清理（2026-06-22，4 轮，suite 224 passed / 2 fail / 1 skip，零回归）**：
 - 删 4 个孤儿包 `feedback/`、`perception/`、`tools/`、`runtime/worker_result_adapter.py`（v3 单执行器重构后零引用残留，src .py 134→115）。
@@ -307,48 +301,34 @@ src/
 │   │   ├── __init__.py
 │   │   └── prompts/planner_global_control.md  planner 系统 prompt
 │   │
-│   ├── stage/                          # 单执行器
+│   ├── stage/                          # 单执行器（capability-agnostic）
 │   │   ├── agents/__init__.py          ★▲ ExecutionStageAgent：合并后唯一执行器（P2）
-│   │   ├── llm_driven_stage_agent.py   ★▲ 有界多工具 ReAct 循环
-│   │   ├── registry.py                 ★▲ StageAgentRegistry：持单 agent
-│   │   ├── models.py                     RoundDirective/RoundResult/StageExecutionRequest/StageResult/ToolTrace
+│   │   ├── llm_driven_stage_agent.py   ★▲ 有界多工具 ReAct 循环（无 stage 绑定）
+│   │   ├── models.py                     RoundDirective/RoundResult/StageExecutionRequest/StageResult/CapabilityName（无 stage_type）
 │   │   ├── adapters.py                    StageResultAdapter → AgentTaskResult
 │   │   └── __init__.py
 │   │
-│   ├── execution/                      # 单一工具边界 + 传输
-│   │   ├── tool_gateway.py             ★▲ ToolGateway：唯一执行边界（B 接口+A 传输）
-│   │   ├── execution_agent.py          ★▲ ExecutionAgent：directive→request 门面 + round log
-│   │   ├── configured_mcp_client.py    ★ ConfiguredMCPClient：JSON-RPC MCP 客户端
-│   │   ├── mcp_client.py                 MCPClient 协议 + MCPToolCallResult
-│   │   ├── pivot_context.py              PivotExecutionContextResolver：中转传输解析
-│   │   ├── adapter_resolver.py           ToolAdapterResolver：MCP-first 选择
-│   │   ├── tool_plan.py / tool_result.py / tool_policy.py  adapter 输入/输出/策略
-│   │   └── adapters/
-│   │       ├── base.py                    ExecutionAdapter 协议
-│   │       ├── netns_shell_adapter.py     netns 中转执行
-│   │       ├── tunnel_adapter.py          隧道端点执行
-│   │       ├── proxy_shell_adapter.py     代理(SOCKS/HTTP)执行
-│   │       ├── local_shell_adapter.py     本地 shell
-│   │       ├── http_request_adapter.py    HTTP 请求
-│   │       └── mcp_adapter.py             MCP 适配器（Option 1 下冗余，暂留）
+│   ├── execution/                      # 直调 MCP（ToolGateway/adapter 引擎已删）
+│   │   ├── execution_agent.py          ★▲ ExecutionAgent：directive→request 门面（直持 agent）+ round log
+│   │   ├── configured_mcp_client.py    ★ ConfiguredMCPClient：JSON-RPC MCP 客户端（执行器直调）
+│   │   ├── mcp_client.py                 MCPClient 协议 + MCPToolCallResult + UnavailableMCPClient
+│   │   └── __init__.py
 │   │
 │   ├── runtime/                        # 写回 / 管理器 / 审计 / 策略
 │   │   ├── result_applier.py           ★▲ PhaseTwoResultApplier：KG/AG/Runtime 写回（已删 test-only apply() 孤岛 + 双记账）
 │   │   ├── tool_trace_fact_extractor.py ★ ToolTraceFactExtractor：唯一机器事实源
 │   │   ├── txt_trace_logger.py         ★ TxtTraceLogger：operation/round log
-│   │   ├── policy_engine.py            ★ PolicyEngine：scope 硬闸 + 风险闸
-│   │   ├── policy.py                     RuntimePolicy/PolicyDecision
+│   │   ├── policy.py                     RuntimePolicy/PolicyDecision（scope 由 mcp_lab 服务端强制）
 │   │   ├── store.py                    ★ RuntimeStore（InMemory/File）
-│   │   ├── reducer.py                    runtime 事件 reduce
+│   │   ├── reducer.py                    runtime 事件 reduce（事件源,test-only）
 │   │   ├── session_manager.py            会话管理
-│   │   ├── lease_manager.py              租约管理
 │   │   ├── pivot_route_manager.py        中转路由管理
 │   │   ├── credential_manager.py         凭证管理
-│   │   ├── locks.py / reachability.py     锁 / 可达性传播
-│   │   ├── budgets.py / risk_scoring.py / approvals.py  预算/风险/审批
-│   │   ├── checkpoint_store.py / observability.py  检查点/可观测
+│   │   ├── reachability.py                可达性传播
+│   │   ├── risk_scoring.py                风险打分
+│   │   ├── observability.py               可观测 / 可恢复
 │   │   ├── llm_history.py / audit_report.py / report_generator.py  LLM 历史/审计/报告
-│   │   ├── events.py / runtime_queries.py
+│   │   ├── events.py
 │   │
 │   ├── evaluation/                     # 成功判定（契约 + 确定性评估）
 │   │   ├── success_condition_tracker.py ★ SuccessConditionTracker：契约求值 + 分级(P4)

@@ -45,25 +45,15 @@ from src.core.models.events import (
 )
 from src.core.models.finding import EvidenceArtifactRecord, Finding
 from src.core.models.kg_enums import EdgeType, NodeType
-from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, TaskRuntimeStatus, WorkerStatus
+from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState
 from src.core.models.runtime import utc_now
 from src.core.planning.models import PlannerOutcome
-from src.core.runtime.budgets import RuntimeBudgetManager
-from src.core.runtime.checkpoint_store import RuntimeCheckpointManager
 from src.core.runtime.credential_manager import RuntimeCredentialManager
 from src.core.runtime.events import (
-    BudgetConsumedEvent,
-    CheckpointCreatedEvent,
-    LockAcquiredEvent,
-    LockReleasedEvent,
     ReplanRequestedEvent,
-    SessionExpiredEvent,
-    SessionHeartbeatEvent,
     SessionOpenedEvent,
     event_to_ref,
 )
-from src.core.runtime.lease_manager import RuntimeLeaseManager
-from src.core.runtime.locks import RuntimeLockManager
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.reachability import ReachabilityPropagator
@@ -100,22 +90,14 @@ class PhaseTwoResultApplier:
         state_writer: StateWriterAgent | None = None,
         session_manager: RuntimeSessionManager | None = None,
         credential_manager: RuntimeCredentialManager | None = None,
-        lease_manager: RuntimeLeaseManager | None = None,
         pivot_route_manager: RuntimePivotRouteManager | None = None,
-        budget_manager: RuntimeBudgetManager | None = None,
-        checkpoint_manager: RuntimeCheckpointManager | None = None,
-        lock_manager: RuntimeLockManager | None = None,
         reachability_propagator: ReachabilityPropagator | None = None,
     ) -> None:
         self._state_writer = state_writer or StateWriterAgent()
         self._session_manager = session_manager or RuntimeSessionManager()
         self._credential_manager = credential_manager or RuntimeCredentialManager()
-        self._lease_manager = lease_manager or RuntimeLeaseManager()
         self._pivot_route_manager = pivot_route_manager or RuntimePivotRouteManager()
         self._reachability_propagator = reachability_propagator or ReachabilityPropagator(self._pivot_route_manager)
-        self._budget_manager = budget_manager or RuntimeBudgetManager()
-        self._checkpoint_manager = checkpoint_manager or RuntimeCheckpointManager()
-        self._lock_manager = lock_manager or RuntimeLockManager()
 
     def apply_planner_outcome(
         self,
@@ -560,36 +542,7 @@ class PhaseTwoResultApplier:
         refs: list[RuntimeEventRef] = []
         for request in result.runtime_requests:
             refs.extend(self._apply_runtime_request(state=state, request=request))
-        for hint in result.checkpoint_hints:
-            checkpoint = self._checkpoint_manager.create_checkpoint(
-                state=state,
-                checkpoint_id=hint.checkpoint_id,
-                created_after_tasks=list(hint.created_after_tasks or [result.task_id]),
-                summary=hint.summary,
-            )
-            refs.append(
-                self._push_runtime_event(
-                    state,
-                    CheckpointCreatedEvent(
-                        operation_id=state.operation_id,
-                        checkpoint_id=checkpoint.checkpoint_id,
-                        created_after_tasks=list(checkpoint.created_after_tasks),
-                        summary=checkpoint.summary,
-                    ),
-                )
-            )
         for hint in result.replan_hints:
-            self._checkpoint_manager.add_replan_marker(
-                state,
-                {
-                    "source_task_id": hint.source_task_id,
-                    "scope": hint.scope.value,
-                    "reason": hint.reason,
-                    "task_ids": list(hint.task_ids),
-                    "invalidated_ref_keys": list(hint.invalidated_ref_keys),
-                    "metadata": dict(hint.metadata),
-                },
-            )
             request = ReplanRequest(
                 request_id=f"replan-hint-{hint.hint_id}",
                 reason=hint.reason,
@@ -637,22 +590,6 @@ class PhaseTwoResultApplier:
                 reusability=str(request.reuse_policy or "exclusive"),
             )
             self._session_manager.bind_task_to_session(state, request.source_task_id, session.session_id)
-            lease_id = self._lease_id(session.session_id, request.source_task_id)
-            lease = self._lease_manager.create_lease(
-                state=state,
-                lease_id=lease_id,
-                session_id=session.session_id,
-                owner_task_id=request.source_task_id,
-                lease_seconds=int(request.lease_seconds or 300),
-                reuse_policy=str(request.reuse_policy or "exclusive"),
-                metadata={"created_by": "result_applier", "request_id": request.request_id},
-            )
-            self._lease_manager.bind_lease_to_task_or_session(
-                state,
-                lease.lease_id,
-                task_id=request.source_task_id,
-                session_id=session.session_id,
-            )
             execution_endpoint = self._mapping(request.metadata.get("execution_endpoint"))
             if execution_endpoint:
                 session.metadata["execution_endpoint"] = execution_endpoint
@@ -700,322 +637,7 @@ class PhaseTwoResultApplier:
             if bool(request.metadata.get("active", False)):
                 route = self._pivot_route_manager.activate_route(state, route.route_id)
             return [self._runtime_control_event(state, request, summary=f"registered pivot route {route.route_id}")]
-        if request.request_type == RuntimeControlType.VERIFY_PIVOT_ROUTE:
-            route_id = self._string(request.metadata.get("route_id")) or self._string(request.session_id)
-            if route_id is None:
-                raise ValueError("verify_pivot_route runtime request requires metadata.route_id")
-            reachable = bool(request.metadata.get("reachable", True))
-            if reachable:
-                self._pivot_route_manager.activate_route(state, route_id)
-            else:
-                self._pivot_route_manager.fail_route(state, route_id, reason=request.reason or "pivot_verification_failed")
-            return [self._runtime_control_event(state, request, summary=f"verified pivot route {route_id}")]
-        if request.request_type == RuntimeControlType.OPEN_TUNNEL:
-            route_id = self._string(request.metadata.get("route_id"))
-            if route_id is not None and route_id in state.pivot_routes:
-                route = state.pivot_routes[route_id]
-                transport = dict(route.metadata.get("transport", {})) if isinstance(route.metadata.get("transport"), dict) else {}
-                transport.update(
-                    {
-                        "kind": "tcp_tunnel",
-                        "tunnel_endpoint": self._string(request.metadata.get("tunnel_endpoint") or request.metadata.get("endpoint")),
-                        "health": "ready",
-                    }
-                )
-                route.metadata["transport"] = {key: value for key, value in transport.items() if value is not None}
-            session_id = request.session_id or self._string(request.metadata.get("session_id"))
-            if session_id is not None and session_id in state.sessions:
-                endpoint = dict(state.sessions[session_id].metadata.get("execution_endpoint", {})) if isinstance(state.sessions[session_id].metadata.get("execution_endpoint"), dict) else {}
-                endpoint.update({"kind": "tunnel", "adapter": "tcp_tunnel", "tunnel_endpoint": self._string(request.metadata.get("tunnel_endpoint") or request.metadata.get("endpoint"))})
-                state.sessions[session_id].metadata["execution_endpoint"] = {key: value for key, value in endpoint.items() if value is not None}
-            return [self._runtime_control_event(state, request, summary="opened tunnel")]
-        if request.request_type == RuntimeControlType.CLOSE_TUNNEL:
-            route_id = self._string(request.metadata.get("route_id"))
-            if route_id is not None and route_id in state.pivot_routes:
-                route = state.pivot_routes[route_id]
-                transport = dict(route.metadata.get("transport", {})) if isinstance(route.metadata.get("transport"), dict) else {}
-                transport["health"] = "closed"
-                route.metadata["transport"] = transport
-            return [self._runtime_control_event(state, request, summary="closed tunnel")]
-        if request.request_type == RuntimeControlType.ATTACH_NETWORK_NAMESPACE:
-            namespace = self._string(request.metadata.get("network_namespace") or request.metadata.get("namespace"))
-            if namespace is None:
-                raise ValueError("attach_network_namespace runtime request requires metadata.network_namespace")
-            for session_id in [request.session_id, self._string(request.metadata.get("session_id"))]:
-                if session_id is not None and session_id in state.sessions:
-                    endpoint = dict(state.sessions[session_id].metadata.get("execution_endpoint", {})) if isinstance(state.sessions[session_id].metadata.get("execution_endpoint"), dict) else {}
-                    endpoint.update({"adapter": "netns_shell", "namespace": namespace})
-                    state.sessions[session_id].metadata["execution_endpoint"] = endpoint
-            route_id = self._string(request.metadata.get("route_id"))
-            if route_id is not None and route_id in state.pivot_routes:
-                transport = dict(state.pivot_routes[route_id].metadata.get("transport", {})) if isinstance(state.pivot_routes[route_id].metadata.get("transport"), dict) else {}
-                transport.update({"kind": "netns", "namespace": namespace, "health": "ready"})
-                state.pivot_routes[route_id].metadata["transport"] = transport
-            return [self._runtime_control_event(state, request, summary=f"attached network namespace {namespace}")]
-        if request.request_type == RuntimeControlType.DETACH_NETWORK_NAMESPACE:
-            route_id = self._string(request.metadata.get("route_id"))
-            if route_id is not None and route_id in state.pivot_routes:
-                transport = dict(state.pivot_routes[route_id].metadata.get("transport", {})) if isinstance(state.pivot_routes[route_id].metadata.get("transport"), dict) else {}
-                transport.pop("namespace", None)
-                if transport.get("kind") == "netns":
-                    transport["health"] = "closed"
-                state.pivot_routes[route_id].metadata["transport"] = transport
-            return [self._runtime_control_event(state, request, summary="detached network namespace")]
-        if request.request_type == RuntimeControlType.EXTEND_SESSION:
-            if not request.session_id:
-                raise ValueError("extend_session runtime request requires session_id")
-            session = self._session_manager.extend_lease(
-                state=state,
-                session_id=request.session_id,
-                extra_seconds=int(request.lease_seconds or 60),
-            )
-            for lease in self._lease_manager.list_leases_for_session(state, request.session_id, active_only=True):
-                self._lease_manager.extend_lease(
-                    state,
-                    lease.lease_id,
-                    extra_seconds=int(request.lease_seconds or 60),
-                )
-            return [
-                self._push_runtime_event(
-                    state,
-                    SessionHeartbeatEvent(
-                        operation_id=state.operation_id,
-                        session_id=session.session_id,
-                        heartbeat_at=session.heartbeat_at,
-                        lease_expiry=session.lease_expiry,
-                    ),
-                )
-            ]
-        if request.request_type == RuntimeControlType.EXPIRE_SESSION:
-            if not request.session_id:
-                raise ValueError("expire_session runtime request requires session_id")
-            session = self._session_manager.expire_session(
-                state=state,
-                session_id=request.session_id,
-                reason=request.reason,
-            )
-            self._cleanup_session_family(
-                state,
-                session_id=session.session_id,
-                reason=request.reason or "runtime_request_expire_session",
-                close_routes=False,
-            )
-            return [
-                self._push_runtime_event(
-                    state,
-                    SessionExpiredEvent(
-                        operation_id=state.operation_id,
-                        session_id=session.session_id,
-                        reason=request.reason,
-                        failure_count=session.failure_count,
-                    ),
-                )
-            ]
-        if request.request_type == RuntimeControlType.ACQUIRE_LOCKS:
-            owner_type = str(request.metadata.get("owner_type", "task"))
-            owner_id = self._string(request.metadata.get("owner_id")) or request.source_task_id
-            results = self._lock_manager.acquire_many(
-                state=state,
-                lock_keys=list(request.lock_keys),
-                owner_type=owner_type,
-                owner_id=owner_id,
-                ttl_seconds=request.lease_seconds,
-            )
-            return [
-                self._push_runtime_event(
-                    state,
-                    LockAcquiredEvent(
-                        operation_id=state.operation_id,
-                        lock_key=item.lock_key,
-                        owner_type=item.owner_type,
-                        owner_id=item.owner_id,
-                        expires_at=item.expires_at,
-                    ),
-                )
-                for item in results
-            ]
-        if request.request_type == RuntimeControlType.RELEASE_LOCKS:
-            owner_id = self._string(request.metadata.get("owner_id"))
-            refs: list[RuntimeEventRef] = []
-            for lock_key in request.lock_keys:
-                if self._lock_manager.release_lock(state=state, lock_key=lock_key, owner_id=owner_id):
-                    refs.append(
-                        self._push_runtime_event(
-                            state,
-                            LockReleasedEvent(
-                                operation_id=state.operation_id,
-                                lock_key=lock_key,
-                                owner_id=owner_id or request.source_task_id,
-                                reason=request.reason,
-                            ),
-                        )
-                    )
-            return refs
-        if request.request_type == RuntimeControlType.CONSUME_BUDGET:
-            delta = request.budget_delta
-            if delta.time_sec:
-                self._budget_manager.consume_time(state, delta.time_sec)
-            if delta.tokens:
-                self._budget_manager.consume_tokens(state, delta.tokens)
-            if delta.operations:
-                self._budget_manager.consume_operations(state, delta.operations)
-            if delta.noise:
-                self._budget_manager.consume_noise(state, delta.noise)
-            if delta.risk:
-                self._budget_manager.consume_risk(state, delta.risk)
-            approval_updates = {
-                str(key): bool(value)
-                for key, value in dict(request.metadata.get("approval_updates", {})).items()
-            }
-            for key, value in approval_updates.items():
-                self._budget_manager.set_approval(state, key, value)
-            policy_updates = {
-                str(key): value
-                for key, value in dict(request.metadata.get("policy_flag_updates", {})).items()
-            }
-            for key, value in policy_updates.items():
-                self._budget_manager.set_policy_flag(state, key, value)
-            return [
-                self._push_runtime_event(
-                    state,
-                    BudgetConsumedEvent(
-                        operation_id=state.operation_id,
-                        time_budget_used_sec_delta=delta.time_sec,
-                        token_budget_used_delta=delta.tokens,
-                        operation_budget_used_delta=delta.operations,
-                        noise_budget_used_delta=delta.noise,
-                        risk_budget_used_delta=delta.risk,
-                        approval_updates=approval_updates,
-                        policy_flag_updates=policy_updates,
-                    ),
-                )
-            ]
-        if request.request_type == RuntimeControlType.CREATE_CHECKPOINT:
-            checkpoint_id = request.checkpoint_id or f"checkpoint-{request.request_id}"
-            checkpoint = self._checkpoint_manager.create_checkpoint(
-                state=state,
-                checkpoint_id=checkpoint_id,
-                created_after_tasks=[request.source_task_id],
-                summary=request.reason,
-            )
-            return [
-                self._push_runtime_event(
-                    state,
-                    CheckpointCreatedEvent(
-                        operation_id=state.operation_id,
-                        checkpoint_id=checkpoint.checkpoint_id,
-                        created_after_tasks=list(checkpoint.created_after_tasks),
-                        summary=checkpoint.summary,
-                    ),
-                )
-            ]
-        if request.request_type == RuntimeControlType.REQUEST_REPLAN:
-            replan_request = ReplanRequest(
-                request_id=f"runtime-replan-{request.request_id}",
-                reason=request.reason or "runtime control requested replanning",
-                task_ids=[request.source_task_id],
-                scope=str(request.metadata.get("scope", "local")),
-                metadata=dict(request.metadata),
-            )
-            state.request_replan(replan_request)
-            self._checkpoint_manager.add_replan_marker(
-                state,
-                {
-                    "request_id": replan_request.request_id,
-                    "reason": replan_request.reason,
-                    "scope": replan_request.scope,
-                    "task_ids": list(replan_request.task_ids),
-                },
-            )
-            return [
-                self._push_runtime_event(
-                    state,
-                    ReplanRequestedEvent(
-                        operation_id=state.operation_id,
-                        request_id=replan_request.request_id,
-                        reason=replan_request.reason,
-                        task_ids=list(replan_request.task_ids),
-                        scope=replan_request.scope,
-                        payload={"metadata": dict(replan_request.metadata)},
-                    ),
-                )
-            ]
         raise ValueError(f"unsupported runtime request type: {request.request_type.value}")
-
-    # 中文注释：
-    # worker 只给出结果和线索，真正写回 RuntimeState 的生命周期转移统一在这里完成。
-    def _apply_task_lifecycle(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
-        task = state.execution.tasks.get(result.task_id)
-        if task is None:
-            return
-        now = utc_now()
-        runtime_setup_block = self._is_runtime_setup_block(result)
-        if not runtime_setup_block:
-            task.attempt_count = min(task.attempt_count + 1, task.max_attempts)
-        task.last_outcome_ref = f"runtime://results/{result.result_id}"
-        task.metadata["last_result_status"] = result.status.value
-        task.metadata["last_result_summary"] = result.summary
-        task.metadata["last_result_at"] = now.isoformat()
-        if result.error_message is not None:
-            task.last_error = result.error_message
-        elif result.status.value in {"failed", "blocked", "needs_replan"}:
-            task.last_error = result.summary
-        else:
-            task.last_error = None
-
-        if runtime_setup_block:
-            task.status = TaskRuntimeStatus.PENDING
-            task.finished_at = None
-            task.started_at = None
-            task.deadline = None
-            task.metadata["runtime_blocked_reason"] = self._string(result.outcome_payload.get("blocked_on")) or result.summary
-        elif result.status.value == "succeeded":
-            task.status = TaskRuntimeStatus.SUCCEEDED
-            task.finished_at = now
-            task.metadata.pop("runtime_blocked_reason", None)
-        elif result.status.value == "noop":
-            task.status = TaskRuntimeStatus.SKIPPED
-            task.finished_at = now
-            task.metadata.pop("runtime_blocked_reason", None)
-        elif result.status.value == "needs_replan":
-            task.status = TaskRuntimeStatus.BLOCKED
-            task.finished_at = now
-            task.metadata["requires_replan"] = True
-        elif result.status.value == "blocked":
-            task.status = TaskRuntimeStatus.BLOCKED
-            task.finished_at = now
-            task.metadata["runtime_blocked_reason"] = self._string(result.outcome_payload.get("blocked_on")) or result.summary
-        else:
-            task.status = TaskRuntimeStatus.FAILED
-            task.finished_at = now
-
-        self._release_task_execution_resources(state=state, task_id=result.task_id)
-        if runtime_setup_block:
-            return
-
-        lease_cleanup_reason = result.error_message or result.summary or f"task_{task.status.value}"
-        self._lease_manager.release_leases_for_task(state, result.task_id, reason=lease_cleanup_reason)
-        session_id = self._result_session_id(result=result, task=task)
-        if task.status == TaskRuntimeStatus.SUCCEEDED:
-            self._close_single_use_session(state=state, session_id=session_id, task_id=result.task_id)
-            return
-        if task.status in {TaskRuntimeStatus.FAILED, TaskRuntimeStatus.TIMED_OUT, TaskRuntimeStatus.BLOCKED}:
-            if session_id is not None and (
-                task.status == TaskRuntimeStatus.FAILED
-                or result.status.value == "needs_replan"
-                or self._string(result.outcome_payload.get("blocked_on")) == "reachability"
-            ):
-                self._session_manager.fail_session(
-                    state,
-                    session_id,
-                    reason=result.error_message or result.summary,
-                )
-                self._cleanup_session_family(
-                    state,
-                    session_id=session_id,
-                    reason=result.error_message or result.summary or f"task_{task.status.value}",
-                    close_routes=False,
-                )
 
     def _sync_runtime_views_from_result(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         self._sync_credential_view(state=state, result=result)
@@ -1461,22 +1083,6 @@ class PhaseTwoResultApplier:
                 reusability=reuse_policy,
             )
             self._session_manager.bind_task_to_session(state, result.task_id, session.session_id)
-            lease_id = self._lease_id(session.session_id, result.task_id)
-            lease = self._lease_manager.create_lease(
-                state,
-                lease_id=lease_id,
-                session_id=session.session_id,
-                owner_task_id=result.task_id,
-                lease_seconds=lease_seconds,
-                reuse_policy=reuse_policy,
-                metadata={"created_by": "runtime_hints", "source_task_id": result.task_id},
-            )
-            self._lease_manager.bind_lease_to_task_or_session(
-                state,
-                lease.lease_id,
-                task_id=result.task_id,
-                session_id=session.session_id,
-            )
 
     def _apply_pivot_route_hints(self, *, state: RuntimeState, result: AgentTaskResult) -> None:
         for hints in self._runtime_hints(result):
@@ -1551,48 +1157,8 @@ class PhaseTwoResultApplier:
                 },
             )
 
-    def _release_task_execution_resources(self, *, state: RuntimeState, task_id: str) -> None:
-        task = state.execution.tasks.get(task_id)
-        if task is None:
-            return
-        self._lock_manager.release_all_for_owner(state, task_id)
-        worker_id = task.assigned_worker
-        if worker_id is not None and worker_id in state.workers:
-            worker = state.workers[worker_id]
-            worker.current_task_id = None
-            if worker.status not in {WorkerStatus.LOST, WorkerStatus.UNAVAILABLE}:
-                worker.status = WorkerStatus.IDLE
-        task.assigned_worker = None
 
-    def _cleanup_session_family(
-        self,
-        state: RuntimeState,
-        *,
-        session_id: str,
-        reason: str,
-        close_routes: bool,
-    ) -> None:
-        self._lease_manager.release_leases_for_session(state, session_id, reason=reason)
-        self._credential_manager.expire_credentials_for_session(state, session_id, reason=reason)
-        if close_routes:
-            self._pivot_route_manager.close_routes_for_session(state, session_id, reason=reason)
-        else:
-            self._pivot_route_manager.fail_routes_for_session(state, session_id, reason=reason)
 
-    def _close_single_use_session(self, *, state: RuntimeState, session_id: str | None, task_id: str) -> None:
-        if session_id is None or session_id not in state.sessions:
-            return
-        session = state.sessions[session_id]
-        if session.reusability != "single_use":
-            self._session_manager.unbind_task_from_session(state, task_id, session_id)
-            return
-        self._session_manager.close_session(state, session_id, reason="single_use_session_completed")
-        self._cleanup_session_family(
-            state,
-            session_id=session_id,
-            reason="single_use_session_completed",
-            close_routes=True,
-        )
 
     @staticmethod
     def _is_runtime_setup_block(result: AgentTaskResult) -> bool:
@@ -1600,9 +1166,6 @@ class PhaseTwoResultApplier:
             return False
         return any(request.request_type == RuntimeControlType.OPEN_SESSION for request in result.runtime_requests)
 
-    @staticmethod
-    def _lease_id(session_id: str, task_id: str) -> str:
-        return f"lease::{session_id}::{task_id}"
 
     @staticmethod
     def _ref_id_for_type(result: AgentTaskResult, ref_type: str) -> str | None:
