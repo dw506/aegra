@@ -8,7 +8,6 @@ from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
 from src.core.stage.agents import ExecutionStageAgent
 from src.core.stage.models import StageExecutionRequest, StageResult
-from src.core.stage.registry import StageAgentRegistry
 
 
 class RecordingMCP:
@@ -36,24 +35,6 @@ class FakeStageLLM:
         self.calls.append(kwargs)
         payload = self.decisions.pop(0)
         return PackyLLMResponse(model="gpt-test", text=json.dumps(payload), usage=None)
-
-
-def test_stage_agent_registry_resolves_single_execution_agent() -> None:
-    registry = StageAgentRegistry.default()
-
-    for stage in ("RECON_STAGE", "VULN_ANALYSIS_STAGE", "EXPLOIT_STAGE", "ACCESS_PIVOT_STAGE", "GOAL_STAGE"):
-        assert registry.resolve(stage).agent_name == "execution_agent"
-    # P2: one executor instance serves every capability/stage round.
-    assert registry.resolve("RECON_STAGE") is registry.resolve("GOAL_STAGE")
-
-
-def test_planner_selected_agent_resolves_to_single_executor() -> None:
-    registry = StageAgentRegistry.default()
-    agent = registry.resolve("EXPLOIT_STAGE")
-
-    assert agent.agent_name == "execution_agent"
-    # Legacy planner agent names still resolve — to the single executor.
-    assert registry.resolve_agent("exploit_validation_agent") is agent
 
 
 def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None:

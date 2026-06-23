@@ -6,7 +6,7 @@ from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerOutcome
 from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
-from src.core.stage.registry import StageAgentRegistry
+from src.core.execution.execution_agent import ExecutionAgent
 
 
 class GoalSatisfiedAgent:
@@ -82,7 +82,7 @@ class SequencedPlanner:
 def test_goal_agent_hint_does_not_complete_until_planner_stop_success(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path)
     orchestrator = AppOrchestrator(settings=settings, graph_memory_store=GraphMemoryStore(tmp_path / "graphs"))
-    orchestrator.stage_registry = StageAgentRegistry([GoalSatisfiedAgent()])  # type: ignore[list-item]
+    orchestrator.execution_agent = ExecutionAgent(GoalSatisfiedAgent())  # type: ignore[arg-type]
     orchestrator.mission_planner = SequencedPlanner()  # type: ignore[assignment]
     orchestrator.create_operation("op-goal-stop")
 
@@ -102,7 +102,7 @@ def test_goal_agent_hint_does_not_complete_until_planner_stop_success(tmp_path) 
 def test_goal_stage_success_without_explicit_hint_does_not_mark_goal_satisfied(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path)
     orchestrator = AppOrchestrator(settings=settings, graph_memory_store=GraphMemoryStore(tmp_path / "graphs"))
-    orchestrator.stage_registry = StageAgentRegistry([GoalWithoutExplicitSatisfiedHintAgent()])  # type: ignore[list-item]
+    orchestrator.execution_agent = ExecutionAgent(GoalWithoutExplicitSatisfiedHintAgent())  # type: ignore[arg-type]
     orchestrator.mission_planner = SequencedPlanner()  # type: ignore[assignment]
     orchestrator.create_operation("op-goal-no-hint")
 

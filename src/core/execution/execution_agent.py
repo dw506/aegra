@@ -6,6 +6,8 @@ from typing import Any
 
 from src.core.runtime.tool_trace_fact_extractor import ToolTraceFactExtractor
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
+from src.core.stage.agents import ExecutionStageAgent
+from src.core.stage.llm_driven_stage_agent import LLMDrivenStageAgent
 from src.core.stage.models import (
     ExtractedFact,
     RoundDirective,
@@ -14,13 +16,14 @@ from src.core.stage.models import (
     StageResult,
     normalize_stage_name,
 )
-from src.core.stage.registry import StageAgentRegistry
 
 
-# Capability -> legacy stage tag. Load-bearing: the result tier still derives the
-# round capability from ``StageResult.stage_type`` (see PhaseTwoResultApplier).
-# This is the inverse of that map; ``lateral`` folds into pivot and ``evidence``
-# into goal, matching the result tier's 5 known capabilities.
+# Capability -> legacy stage vocabulary. The agent and result adapter still speak
+# the 5 canonical stage names (see LLMDrivenStageAgent guard + StageResultAdapter
+# ROLE_BY_STAGE), so the request still carries a stage_type. The round capability
+# itself is now propagated explicitly on StageResult.capability (stamped below),
+# NOT reconstructed from stage_type. ``lateral`` folds into pivot, ``evidence``
+# into goal, matching the 5 stage names.
 CAPABILITY_TO_STAGE: dict[str, str] = {
     "recon": "RECON_STAGE",
     "analysis": "VULN_ANALYSIS_STAGE",
@@ -39,12 +42,42 @@ class ExecutionAgent:
 
     def __init__(
         self,
-        registry: StageAgentRegistry,
+        agent: LLMDrivenStageAgent,
         *,
         trace_logger_factory: type[TxtTraceLogger] = TxtTraceLogger,
     ) -> None:
-        self._registry = registry
+        self._agent = agent
         self._trace_logger_factory = trace_logger_factory
+
+    @classmethod
+    def from_clients(
+        cls,
+        *,
+        llm_client: Any = None,
+        mcp_client: Any = None,
+        default_timeout_seconds: int = 120,
+        trace_logger_factory: type[TxtTraceLogger] = TxtTraceLogger,
+    ) -> "ExecutionAgent":
+        """Build the default single executor and wrap it."""
+
+        return cls(
+            ExecutionStageAgent(
+                llm_client=llm_client,
+                mcp_client=mcp_client,
+                default_timeout_seconds=default_timeout_seconds,
+            ),
+            trace_logger_factory=trace_logger_factory,
+        )
+
+    def capability_summary(self) -> list[dict[str, str]]:
+        agent = self._agent
+        return [
+            {
+                "agent_name": agent.agent_name,
+                "stage_type": normalize_stage_name(agent.stage_type),
+                "context_builder": getattr(agent, "context_builder_name", "stage_context_builder"),
+            }
+        ]
 
     def run(
         self,
@@ -61,8 +94,7 @@ class ExecutionAgent:
         """Execute one capability round through the single execution agent."""
 
         stage_type = normalize_stage_name(CAPABILITY_TO_STAGE[directive.capability])
-        agent = self._registry.resolve(stage_type)
-        self._registry.validate_assignment(agent_name=agent.agent_name, stage_type=stage_type)
+        agent = self._agent
         # Pass the FULL catalog (every in-scope tool stays callable); the planner's
         # allowed_tools are attached only as a focus hint. The real authorization
         # boundary is scope policy, not this list.
@@ -94,6 +126,9 @@ class ExecutionAgent:
             sessions=list(sessions or []),
         )
         stage_result = agent.run(request)
+        # Capability is authoritative from the directive; stamp it on the result so
+        # the result tier reads it directly instead of reconstructing it from stage_type.
+        stage_result.capability = directive.capability
         round_result = self._round_result(directive=directive, stage_result=stage_result)
         self._write_round_log(directive=directive, stage_result=stage_result, round_result=round_result)
         if round_result.log_ref:

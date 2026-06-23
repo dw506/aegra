@@ -4,7 +4,7 @@ from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
 from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, StageType, ToolTrace
-from src.core.stage.registry import StageAgentRegistry
+from src.core.execution.execution_agent import ExecutionAgent
 
 
 class FixedPlanner:
@@ -48,7 +48,7 @@ def test_two_graph_runtime_flow_creates_operation_imports_target_and_publishes_a
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     orchestrator = AppOrchestrator(settings=settings)
     orchestrator.mission_planner = FixedPlanner()  # type: ignore[assignment]
-    orchestrator.stage_registry = StageAgentRegistry([FixedReconAgent()])  # type: ignore[list-item]
+    orchestrator.execution_agent = ExecutionAgent(FixedReconAgent())  # type: ignore[arg-type]
 
     orchestrator.create_operation("op-flow")
     orchestrator.import_targets("op-flow", [TargetHost(address="127.0.0.1")])

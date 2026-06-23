@@ -280,17 +280,6 @@ class PhaseTwoResultApplier:
             return
         attack_graph.add_edge(parsed)
 
-    # v3 capability tag derived from the legacy stage_type. The 5-agent merge
-    # turns these into a single ExecutionAgent + capability tag; until then we
-    # map stage_type -> capability so the result tier already speaks capability.
-    _STAGE_TO_CAPABILITY = {
-        "RECON_STAGE": "recon",
-        "VULN_ANALYSIS_STAGE": "analysis",
-        "EXPLOIT_STAGE": "exploit",
-        "ACCESS_PIVOT_STAGE": "pivot",
-        "GOAL_STAGE": "goal",
-    }
-
     def _record_stage_result_in_ag(
         self,
         *,
@@ -309,7 +298,7 @@ class PhaseTwoResultApplier:
 
         cycle_index = self._stage_result_cycle_index(stage_result)
         step_id = self._attack_step_id(stage_result.operation_id, cycle_index)
-        capability = self._STAGE_TO_CAPABILITY.get(str(stage_result.stage_type), "evidence")
+        capability = stage_result.capability
         resolved_kg_node_refs = self._merge_refs(
             list(kg_node_refs or []),
             self._stage_result_kg_node_refs(stage_result),

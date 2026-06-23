@@ -11,12 +11,10 @@ from src.core.stage.models import (
     ToolTrace,
     normalize_stage_name,
 )
-from src.core.stage.registry import StageAgentRegistry
 
 __all__ = [
     "GraphUpdateIntent",
     "LLMDrivenStageAgent",
-    "StageAgentRegistry",
     "StageExecutionRequest",
     "StageHandoffSuggestion",
     "StageName",

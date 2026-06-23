@@ -15,8 +15,8 @@ from typing import Any
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
-from src.core.stage.registry import StageAgentRegistry
+from src.core.execution.execution_agent import ExecutionAgent
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, normalize_stage_name
 
 _STAGE_CAP = {
     "RECON_STAGE": "recon",
@@ -44,6 +44,23 @@ def _agent(agent_name: str, stage_type: str, **result_kwargs: Any):
             )
 
     return _StubAgent()
+
+
+def _executor(agents):
+    """Wrap per-stage stub agents into the single ExecutionAgent, routing each
+    round to the stub matching request.stage_type (replaces the old multi-agent
+    StageAgentRegistry dispatch)."""
+
+    by_stage = {normalize_stage_name(agent.stage_type): agent for agent in agents}
+
+    class _Dispatch:
+        agent_name = "execution_agent"
+        stage_type = agents[0].stage_type
+
+        def run(self, request: StageExecutionRequest) -> StageResult:
+            return by_stage[normalize_stage_name(request.stage_type)].run(request)
+
+    return ExecutionAgent(_Dispatch())  # type: ignore[arg-type]
 
 
 _CHAIN = [
@@ -156,7 +173,7 @@ def test_success_contract_loop_terminates_only_when_eligible_for_stop(tmp_path) 
     orch = AppOrchestrator(settings=settings)
     planner = _GateAwarePlanner()
     orch.mission_planner = planner  # type: ignore[assignment]
-    orch.stage_registry = StageAgentRegistry(  # type: ignore[list-item]
+    orch.execution_agent = _executor(  # type: ignore[arg-type]
         [
             _agent(
                 "recon_agent",
@@ -237,7 +254,7 @@ def test_success_contract_loop_does_not_stop_while_conditions_missing(tmp_path) 
     planner = _GateAwarePlanner()
     orch.mission_planner = planner  # type: ignore[assignment]
     # Only recon is available: vuln/goal conditions can never be satisfied.
-    orch.stage_registry = StageAgentRegistry(  # type: ignore[list-item]
+    orch.execution_agent = _executor(  # type: ignore[arg-type]
         [
             _agent(
                 "recon_agent",
@@ -287,7 +304,7 @@ def test_profile_custom_condition_signal_can_satisfy_database_file_read_goal(tmp
     orch = AppOrchestrator(settings=settings)
     planner = _ProfileDrivenPlanner(_DB_READ_CHAIN)
     orch.mission_planner = planner  # type: ignore[assignment]
-    orch.stage_registry = StageAgentRegistry(  # type: ignore[list-item]
+    orch.execution_agent = _executor(  # type: ignore[arg-type]
         [
             _agent(
                 "access_pivot_agent",

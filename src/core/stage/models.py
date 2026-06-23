@@ -222,6 +222,10 @@ class StageResult(BaseModel):
     operation_id: str = Field(default="operation", min_length=1)
     stage_task_id: str = Field(min_length=1)
     stage_type: StageName
+    # v3 capability tag, authoritative from the planner directive. ExecutionAgent
+    # stamps it from RoundDirective.capability; the result tier reads it directly
+    # (no longer reconstructs capability from the legacy stage_type).
+    capability: CapabilityName = "evidence"
     agent_name: str = Field(min_length=1)
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
     summary: str = Field(min_length=1)

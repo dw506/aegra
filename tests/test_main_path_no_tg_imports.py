@@ -7,7 +7,6 @@ def test_main_path_does_not_import_legacy_tg_components() -> None:
     files = [
         "src/app/orchestrator.py",
         "src/core/execution/execution_agent.py",
-        "src/core/stage/registry.py",
         "src/core/runtime/result_applier.py",
     ]
     forbidden = [

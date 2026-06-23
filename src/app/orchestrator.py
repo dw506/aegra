@@ -45,7 +45,6 @@ from src.core.runtime.llm_history import (
 )
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
-from src.core.stage.registry import StageAgentRegistry
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
 from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
@@ -183,12 +182,11 @@ class AppOrchestrator:
         # Tools are called over MCP only; the executor talks to the MCP client
         # directly. Pivot transport is resolved server-side by the mcp_lab tools
         # (route_id in tool arguments / runtime policy), not a client-side adapter.
-        self.stage_registry = StageAgentRegistry.default(
+        self.execution_agent = ExecutionAgent.from_clients(
             llm_client=stage_llm_client,
             mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
-        self.execution_agent = ExecutionAgent(self.stage_registry)
         mission_advisor = (
             LLMMissionPlannerAdvisor(client=stage_llm_client)
             if stage_llm_client is not None
@@ -650,7 +648,7 @@ class AppOrchestrator:
             "min_summary": min_summary,
             "success_condition_progress": success_progress,
             "graph_tools": PlannerGraphTools.tool_manifest(),
-            "agent_capabilities": self.stage_registry.capability_summary(),
+            "agent_capabilities": self.execution_agent.capability_summary(),
             "mcp_tool_catalog": tool_catalog,
         }
         #调用 Planner 做决策
@@ -754,7 +752,7 @@ class AppOrchestrator:
         if outcome.action == "execute" and outcome.directive is not None:
             started_at = utc_now()
             try:
-                round_result = ExecutionAgent(self.stage_registry).run(
+                round_result = self.execution_agent.run(
                     outcome.directive,
                     graph_summary={
                         "operation_id": operation_id,

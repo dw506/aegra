@@ -1,5 +1,5 @@
 """Network topology query helpers built from KG reachability facts."""
-
+#KG 查询层 / 网络拓扑读模型层，基于 KG 中已经沉淀的边和节点，提供“哪些主机可达、哪些服务需要 pivot、有哪些 route 候选”的查询能力
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -48,7 +48,7 @@ class RouteCandidate(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-
+#只读拓扑查询器
 class NetworkTopology:
     """Read-only reachability and pivot queries over the knowledge graph."""
 
