@@ -28,7 +28,7 @@ export function NodeDetailPanel({ node, onClose }: Props) {
             <div><dt>Status</dt><dd>{node.status || "n/a"}</dd></div>
             <div><dt>Cycle</dt><dd>{String(readValue(node, "cycle_index") || "n/a")}</dd></div>
             <div><dt>Step</dt><dd>{node.graph === "ag" ? inferStepOrder(node) : "n/a"}</dd></div>
-            <div><dt>Stage</dt><dd>{String(readValue(node, "selected_stage") || readValue(node, "stage") || readValue(node, "stage_type") || "n/a")}</dd></div>
+            <div><dt>Stage</dt><dd>{String(readValue(node, "selected_stage") || readValue(node, "stage") || readValue(node, "capability") || "n/a")}</dd></div>
             <div><dt>Agent</dt><dd>{String(readValue(node, "selected_agent") || readValue(node, "agent_name") || "n/a")}</dd></div>
             <div><dt>Tool</dt><dd>{String(readValue(node, "tool_name") || "n/a")}</dd></div>
             <div><dt>Summary</dt><dd>{String(readValue(node, "summary") || "n/a")}</dd></div>

@@ -152,7 +152,6 @@ def test_unified_visualization_contract_includes_current_dashboard_interfaces() 
                 "properties": {
                     "cycle_index": 1,
                     "agent_name": "execution_agent",
-                    "stage_type": "RECON_STAGE",
                     "capability": "recon",
                     "objective": "Discover exposed services.",
                     "status": "success",

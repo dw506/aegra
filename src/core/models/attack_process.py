@@ -37,7 +37,6 @@ class AttackProcessNode(BaseModel):
     operation_id: str = Field(min_length=1)
     cycle_index: int | None = Field(default=None, ge=0)
     agent_name: str | None = None
-    stage_type: str | None = None
     status: str | None = None
     summary: str | None = None
     refs: list[GraphRef] = Field(default_factory=list)

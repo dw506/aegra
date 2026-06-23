@@ -13,7 +13,7 @@ from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.events import utc_now
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
-from src.core.stage.models import StageExecutionRequest, StageName, StageResult, ToolTrace, normalize_stage_name
+from src.core.stage.models import StageExecutionRequest, StageResult, ToolTrace
 
 
 class LLMDrivenToolCall(BaseModel):
@@ -28,20 +28,19 @@ class LLMDrivenToolCall(BaseModel):
 
 
 class LLMDrivenStageAgent:
-    """Autonomous bounded execution loop used by the single ExecutionAgent."""
+    """Autonomous bounded execution loop used by the single ExecutionAgent.
 
-    stage_type: StageName
+    Capability-agnostic: the round capability is a per-request tag
+    (``StageExecutionRequest.capability``), not a stage binding on the agent.
+    """
+
     agent_name: str
     role_prompt: str = ""
     context_builder_name: str = "execution_agent_context"
-    # The single ExecutionStageAgent serves every capability round, so it accepts
-    # any stage_type / agent_name on the request instead of binding to one stage.
-    accepts_any_request: bool = False
 
     def __init__(
         self,
         *,
-        stage_type: StageName | str | None = None,
         agent_name: str | None = None,
         role_prompt: str | None = None,
         llm_client: PackyLLMClient | None = None,
@@ -50,11 +49,9 @@ class LLMDrivenStageAgent:
         default_timeout_seconds: int = 120,
         **_: Any,
     ) -> None:
-        resolved_stage = stage_type or getattr(self, "stage_type", None)
         resolved_name = agent_name or getattr(self, "agent_name", None)
-        if resolved_stage is None or resolved_name is None:
-            raise ValueError("LLMDrivenStageAgent requires stage_type and agent_name")
-        self.stage_type = normalize_stage_name(resolved_stage)
+        if resolved_name is None:
+            raise ValueError("LLMDrivenStageAgent requires agent_name")
         self.agent_name = str(resolved_name)
         if role_prompt is not None:
             self.role_prompt = role_prompt
@@ -64,16 +61,10 @@ class LLMDrivenStageAgent:
         self._default_timeout_seconds = default_timeout_seconds
 
     def run(self, request: StageExecutionRequest) -> StageResult:
-        if not self.accepts_any_request:
-            if normalize_stage_name(request.stage_type) != normalize_stage_name(self.stage_type):
-                raise ValueError(f"{self.agent_name} cannot execute stage type {request.stage_type}")
-            if request.agent_name != self.agent_name:
-                raise ValueError(f"{self.agent_name} cannot execute request for {request.agent_name}")
-
         logger = self._logger(request.operation_id)
         logger.write_header(
             f"Operation: {request.operation_id}",
-            {"cycle_index": request.cycle_index, "agent_name": request.agent_name, "stage_type": request.stage_type},
+            {"cycle_index": request.cycle_index, "agent_name": request.agent_name, "capability": request.capability},
         )
         logger.write_block(
             "CYCLE_START",
@@ -81,7 +72,7 @@ class LLMDrivenStageAgent:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "stage_type": request.stage_type,
+                "capability": request.capability,
                 "objective": request.objective,
                 "task_brief": request.task_brief,
                 "max_steps": request.max_steps,
@@ -119,7 +110,7 @@ class LLMDrivenStageAgent:
                 {
                     "cycle_index": request.cycle_index,
                     "agent_name": request.agent_name,
-                    "stage_type": request.stage_type,
+                    "capability": request.capability,
                     "step_index": step,
                     "action": action,
                     "reasoning_summary": decision.get("reasoning_summary") or decision.get("rationale"),
@@ -174,7 +165,7 @@ class LLMDrivenStageAgent:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=self._request_id(request),
-            stage_type=request.stage_type,
+            capability=request.capability,
             agent_name=self.agent_name,
             status="partial",
             summary=f"{self.agent_name} reached max_steps for {self._request_id(request)}",
@@ -233,7 +224,7 @@ class LLMDrivenStageAgent:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "stage_type": request.stage_type,
+                "capability": request.capability,
                 "step_index": step,
                 "server_id": call.server_id,
                 "tool_name": call.tool_name,
@@ -342,7 +333,7 @@ class LLMDrivenStageAgent:
         )
         context = {
             "agent_name": request.agent_name,
-            "stage_type": request.stage_type,
+            "capability": request.capability,
             "role_prompt": self.role_prompt,
             "planner_objective": request.objective,
             "task_brief": request.task_brief,
@@ -457,7 +448,7 @@ class LLMDrivenStageAgent:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=self._request_id(request),
-            stage_type=request.stage_type,
+            capability=request.capability,
             agent_name=self.agent_name,
             status=status,  # type: ignore[arg-type]
             summary=str(payload.get("summary") or f"{self.agent_name} finished"),
@@ -499,7 +490,7 @@ class LLMDrivenStageAgent:
             "If observations are strings, convert each to {\"type\":\"note\",\"detail\":\"...\"}.\n\n"
             f"operation_id={request.operation_id}\n"
             f"stage_task_id={self._request_id(request)}\n"
-            f"stage_type={request.stage_type}\n"
+            f"capability={request.capability}\n"
             f"agent_name={self.agent_name}\n"
             f"Validation error: {validation_error}\n\n"
             f"Payload:\n{json.dumps(payload, ensure_ascii=False, default=str)[:6000]}"
@@ -735,7 +726,7 @@ class LLMDrivenStageAgent:
             return StageResult(
                 operation_id=request.operation_id,
                 stage_task_id=self._request_id(request),
-                stage_type=request.stage_type,
+                capability=request.capability,
                 agent_name=self.agent_name,
                 status="partial",
                 summary=f"{self.agent_name}: tools succeeded, LLM postprocess failed - {summary}",
@@ -756,7 +747,7 @@ class LLMDrivenStageAgent:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=self._request_id(request),
-            stage_type=request.stage_type,
+            capability=request.capability,
             agent_name=self.agent_name,
             status="needs_replan",
             summary=summary,
@@ -797,7 +788,7 @@ class LLMDrivenStageAgent:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "stage_type": request.stage_type,
+                "capability": request.capability,
                 "status": result.status,
                 "summary": result.summary,
                 "findings_count": len(result.findings),

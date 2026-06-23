@@ -14,25 +14,7 @@ from src.core.stage.models import (
     RoundResult,
     StageExecutionRequest,
     StageResult,
-    normalize_stage_name,
 )
-
-
-# Capability -> legacy stage vocabulary. The agent and result adapter still speak
-# the 5 canonical stage names (see LLMDrivenStageAgent guard + StageResultAdapter
-# ROLE_BY_STAGE), so the request still carries a stage_type. The round capability
-# itself is now propagated explicitly on StageResult.capability (stamped below),
-# NOT reconstructed from stage_type. ``lateral`` folds into pivot, ``evidence``
-# into goal, matching the 5 stage names.
-CAPABILITY_TO_STAGE: dict[str, str] = {
-    "recon": "RECON_STAGE",
-    "analysis": "VULN_ANALYSIS_STAGE",
-    "exploit": "EXPLOIT_STAGE",
-    "pivot": "ACCESS_PIVOT_STAGE",
-    "lateral": "ACCESS_PIVOT_STAGE",
-    "goal": "GOAL_STAGE",
-    "evidence": "GOAL_STAGE",
-}
 
 
 class ExecutionAgent:
@@ -74,8 +56,7 @@ class ExecutionAgent:
         return [
             {
                 "agent_name": agent.agent_name,
-                "stage_type": normalize_stage_name(agent.stage_type),
-                "context_builder": getattr(agent, "context_builder_name", "stage_context_builder"),
+                "context_builder": getattr(agent, "context_builder_name", "execution_agent_context"),
             }
         ]
 
@@ -93,7 +74,6 @@ class ExecutionAgent:
     ) -> RoundResult:
         """Execute one capability round through the single execution agent."""
 
-        stage_type = normalize_stage_name(CAPABILITY_TO_STAGE[directive.capability])
         agent = self._agent
         # Pass the FULL catalog (every in-scope tool stays callable); the planner's
         # allowed_tools are attached only as a focus hint. The real authorization
@@ -105,7 +85,7 @@ class ExecutionAgent:
             operation_id=directive.operation_id,
             cycle_index=directive.cycle_index,
             agent_name=agent.agent_name,
-            stage_type=stage_type,
+            capability=directive.capability,
             objective=directive.objective,
             target_refs=list(directive.target_refs),
             required_context={
@@ -126,8 +106,8 @@ class ExecutionAgent:
             sessions=list(sessions or []),
         )
         stage_result = agent.run(request)
-        # Capability is authoritative from the directive; stamp it on the result so
-        # the result tier reads it directly instead of reconstructing it from stage_type.
+        # Capability is authoritative from the directive; stamp it on the result
+        # so the result tier reads it directly.
         stage_result.capability = directive.capability
         round_result = self._round_result(directive=directive, stage_result=stage_result)
         self._write_round_log(directive=directive, stage_result=stage_result, round_result=round_result)
@@ -218,6 +198,5 @@ class ExecutionAgent:
 
 
 __all__ = [
-    "CAPABILITY_TO_STAGE",
     "ExecutionAgent",
 ]

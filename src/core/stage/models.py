@@ -2,68 +2,12 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import Any, Literal, TypeAlias, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.models.ag import GraphRef, stable_node_id
 from src.core.models.events import new_protocol_id, utc_now
-
-
-StageName: TypeAlias = Literal[
-    "RECON_STAGE",
-    "VULN_ANALYSIS_STAGE",
-    "EXPLOIT_STAGE",
-    "ACCESS_PIVOT_STAGE",
-    "GOAL_STAGE",
-]
-
-STAGE_NAMES: tuple[str, ...] = get_args(StageName)
-
-
-class StageType(str, Enum):
-    """Compatibility enum for canonical stage names."""
-
-    RECON = "RECON_STAGE"
-    RECON_STAGE = "RECON_STAGE"
-    VULN_ANALYSIS = "VULN_ANALYSIS_STAGE"
-    VULN_ANALYSIS_STAGE = "VULN_ANALYSIS_STAGE"
-    EXPLOIT = "EXPLOIT_STAGE"
-    EXPLOIT_STAGE = "EXPLOIT_STAGE"
-    ACCESS_PIVOT = "ACCESS_PIVOT_STAGE"
-    ACCESS_PIVOT_STAGE = "ACCESS_PIVOT_STAGE"
-    GOAL = "GOAL_STAGE"
-    GOAL_STAGE = "GOAL_STAGE"
-
-CANONICAL_STAGE_BY_ALIAS: dict[str, str] = {
-    "recon": "RECON_STAGE",
-    "RECON": "RECON_STAGE",
-    "RECON_STAGE": "RECON_STAGE",
-    "vuln_analysis": "VULN_ANALYSIS_STAGE",
-    "VULN_ANALYSIS": "VULN_ANALYSIS_STAGE",
-    "VULN_ANALYSIS_STAGE": "VULN_ANALYSIS_STAGE",
-    "exploit": "EXPLOIT_STAGE",
-    "EXPLOIT": "EXPLOIT_STAGE",
-    "EXPLOIT_STAGE": "EXPLOIT_STAGE",
-    "access_pivot": "ACCESS_PIVOT_STAGE",
-    "ACCESS_PIVOT": "ACCESS_PIVOT_STAGE",
-    "ACCESS_PIVOT_STAGE": "ACCESS_PIVOT_STAGE",
-    "goal": "GOAL_STAGE",
-    "GOAL": "GOAL_STAGE",
-    "GOAL_STAGE": "GOAL_STAGE",
-}
-
-
-def normalize_stage_name(value: Any) -> StageName:
-    """Return the canonical stage name accepted by the new stage pipeline."""
-
-    raw = getattr(value, "value", value)
-    text = str(raw)
-    normalized = CANONICAL_STAGE_BY_ALIAS.get(text)
-    if normalized is None:
-        raise ValueError(f"unsupported stage_type: {text}")
-    return normalized  # type: ignore[return-value]
 
 
 class GraphUpdateIntent(BaseModel):
@@ -168,7 +112,7 @@ class StageExecutionRequest(BaseModel):
     operation_id: str = Field(min_length=1)
     cycle_index: int = Field(ge=0)
     agent_name: str = Field(min_length=1)
-    stage_type: StageName
+    capability: CapabilityName
     objective: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     required_context: dict[str, Any] = Field(default_factory=dict)
@@ -190,27 +134,17 @@ class StageExecutionRequest(BaseModel):
     target_selection: str | None = None
     handoff_policy: str | None = None
 
-    @field_validator("stage_type", mode="before")
-    @classmethod
-    def normalize_stage_type(cls, value: Any) -> StageName:
-        return normalize_stage_name(value)
-
 
 class StageHandoffSuggestion(BaseModel):
-    """Suggested next agent/stage handoff emitted by a StageResult."""
+    """Suggested next-capability handoff emitted by a StageResult."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     suggested_agent: str = Field(min_length=1)
-    suggested_stage: StageName
+    suggested_capability: CapabilityName
     reason: str = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
     required_context_refs: list[Any] = Field(default_factory=list)
-
-    @field_validator("suggested_stage", mode="before")
-    @classmethod
-    def normalize_suggested_stage(cls, value: Any) -> StageName:
-        return normalize_stage_name(value)
 
 
 class StageResult(BaseModel):
@@ -221,10 +155,8 @@ class StageResult(BaseModel):
     result_id: str = Field(default_factory=lambda: new_protocol_id("stage-result"))
     operation_id: str = Field(default="operation", min_length=1)
     stage_task_id: str = Field(min_length=1)
-    stage_type: StageName
     # v3 capability tag, authoritative from the planner directive. ExecutionAgent
-    # stamps it from RoundDirective.capability; the result tier reads it directly
-    # (no longer reconstructs capability from the legacy stage_type).
+    # stamps it from RoundDirective.capability; the result tier reads it directly.
     capability: CapabilityName = "evidence"
     agent_name: str = Field(min_length=1)
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
@@ -277,11 +209,6 @@ class StageResult(BaseModel):
             }
         return payload
 
-    @field_validator("stage_type", mode="before")
-    @classmethod
-    def normalize_stage_type(cls, value: Any) -> StageName:
-        return normalize_stage_name(value)
-
     @field_validator("observations", mode="before")
     @classmethod
     def normalize_observations(cls, value: Any) -> Any:
@@ -304,19 +231,14 @@ class StageResult(BaseModel):
 
 
 __all__ = [
-    "CANONICAL_STAGE_BY_ALIAS",
     "CAPABILITY_NAMES",
     "CapabilityName",
     "ExtractedFact",
     "GraphUpdateIntent",
     "RoundDirective",
     "RoundResult",
-    "STAGE_NAMES",
     "StageExecutionRequest",
     "StageHandoffSuggestion",
-    "StageName",
     "StageResult",
-    "StageType",
     "ToolTrace",
-    "normalize_stage_name",
 ]

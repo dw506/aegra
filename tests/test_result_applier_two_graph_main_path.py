@@ -35,7 +35,6 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     stage_result = StageResult(
         operation_id="op-two-graph",
         stage_task_id="stage-op-two-graph-1-recon_agent",
-        stage_type="RECON_STAGE",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",

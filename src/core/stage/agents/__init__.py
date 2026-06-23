@@ -20,16 +20,12 @@ EXECUTION_AGENT_ROLE_PROMPT = (
 class ExecutionStageAgent(LLMDrivenStageAgent):
     """One capability-agnostic executor that runs every round.
 
-    The capability/stage is a per-round tag on the ``RoundDirective`` /
-    ``StageExecutionRequest``, not a separate agent class. This agent accepts any
-    stage_type / agent_name on the request so the planner can dispatch any
-    capability round to the single executor (``accepts_any_request = True``).
+    The capability is a per-round tag on the ``RoundDirective`` /
+    ``StageExecutionRequest``, not a separate agent class. There is no stage
+    binding: this single executor serves every capability round.
     """
 
-    accepts_any_request = True
-
     def __init__(self, **kwargs: Any) -> None:
-        kwargs.setdefault("stage_type", "RECON_STAGE")  # identity tag only; serves all
         kwargs.setdefault("agent_name", "execution_agent")
         kwargs.setdefault("role_prompt", EXECUTION_AGENT_ROLE_PROMPT)
         super().__init__(**kwargs)

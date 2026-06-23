@@ -74,7 +74,7 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
             "success_condition_progress": {"eligible_for_stop": False, "missing": ["dmz_service_discovered"]},
             "graph_tools": {"write": ["record_finding"]},
             "mcp_tool_catalog": {"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
-            "agent_capabilities": [{"agent_name": "recon_agent", "stage_type": "RECON_STAGE"}],
+            "agent_capabilities": [{"agent_name": "recon_agent"}],
         },
         policy_context={"authorized": True},
     )

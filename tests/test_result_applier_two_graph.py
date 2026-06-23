@@ -7,7 +7,7 @@ from src.core.models.attack_process import AttackProcessNodeType
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import RoundDirective, StageResult, StageType, ToolTrace
+from src.core.stage.models import RoundDirective, StageResult, ToolTrace
 
 
 def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> None:
@@ -35,7 +35,7 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
     stage_result = StageResult(
         operation_id="op-apply",
         stage_task_id="stage-op-apply-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        capability="recon",
         agent_name="recon_agent",
         status="succeeded",
         summary="host and service observed",
@@ -76,7 +76,7 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     bare = StageResult(
         operation_id="op-proof",
         stage_task_id="stage-op-proof-1-goal_agent",
-        stage_type=StageType.GOAL_STAGE,
+        capability="goal",
         agent_name="goal_agent",
         status="succeeded",
         summary="reachability goal check passed",
@@ -89,7 +89,7 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     proof = StageResult(
         operation_id="op-proof",
         stage_task_id="stage-op-proof-2-access_pivot_agent",
-        stage_type=StageType.ACCESS_PIVOT_STAGE,
+        capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="controlled internal DB read proof recorded",
@@ -118,7 +118,7 @@ def test_result_applier_extracts_generic_stage_recon_shapes_to_kg() -> None:
     stage_result = StageResult(
         operation_id="op-structured",
         stage_task_id="stage-op-structured-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        capability="recon",
         agent_name="recon_agent",
         status="succeeded",
         summary="structured recon output",
@@ -158,7 +158,7 @@ def test_result_applier_extracts_service_fingerprints_to_kg() -> None:
     stage_result = StageResult(
         operation_id="op-fingerprint",
         stage_task_id="stage-op-fingerprint-2-vuln_analysis_agent",
-        stage_type=StageType.VULN_ANALYSIS_STAGE,
+        capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
         summary="fingerprint analysis",
@@ -202,7 +202,7 @@ def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -
     stage_result = StageResult(
         operation_id="op-toolonly",
         stage_task_id="stage-op-toolonly-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        capability="recon",
         agent_name="recon_agent",
         status="succeeded",
         summary="unstructured tool output",
@@ -235,7 +235,7 @@ def test_result_applier_reports_diagnostics_when_no_deltas() -> None:
     stage_result = StageResult(
         operation_id="op-empty",
         stage_task_id="stage-op-empty-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        capability="recon",
         agent_name="recon_agent",
         status="needs_replan",
         summary="nothing produced",
@@ -301,7 +301,7 @@ def test_result_applier_preserves_rich_host_when_service_shares_host() -> None:
     stage_result = StageResult(
         operation_id="op-merge",
         stage_task_id="stage-op-merge-1-recon_agent",
-        stage_type=StageType.RECON_STAGE,
+        capability="recon",
         agent_name="recon_agent",
         status="succeeded",
         summary="host with hostname plus a service",

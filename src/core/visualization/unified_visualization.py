@@ -454,7 +454,7 @@ def _agent_trace(*, ag_nodes: list[dict[str, Any]], runtime: dict[str, Any], too
         finding_count = sum(1 for node in nodes if node["type"] in {"AnalysisStep", "ValidationStep"} and node["status"] == "success")
         decision_summary = planner["result_summary"] if planner else "No planner decision recorded"
         selected_agent = selected_agents[0] if selected_agents else _string((planner or {}).get("metadata", {}).get("selected_agent"))
-        selected_stage = _string((planner or {}).get("metadata", {}).get("selected_stage") or (stage_result or {}).get("metadata", {}).get("stage_type"))
+        selected_stage = _string((planner or {}).get("metadata", {}).get("selected_stage") or (stage_result or {}).get("metadata", {}).get("capability"))
         objective = _string((planner or {}).get("metadata", {}).get("objective") or (stage_result or {}).get("metadata", {}).get("objective"))
         task_brief = _string((planner or {}).get("metadata", {}).get("task_brief"))
         status = _agent_trace_status(nodes)
@@ -510,7 +510,7 @@ def _tool_trace_from_ag_node(node: dict[str, Any], stage_context: dict[str, Any]
         "id": trace_id,
         "round": node["round"],
         "agent": node["agent"],
-        "stage": _string(metadata.get("stage_type") or stage_context.get("stage")),
+        "stage": _string(metadata.get("capability") or stage_context.get("stage")),
         "step": _int(metadata.get("step") or metadata.get("step_index")),
         "server_id": _string(metadata.get("server_id")),
         "tool_name": _string(metadata.get("tool_name") or node.get("display_name")) or "tool",
@@ -536,7 +536,7 @@ def _tool_trace_from_audit_event(event: dict[str, Any], stage_context: dict[str,
         "id": trace_id,
         "round": _int(event.get("cycle_index") or stage_context.get("round")) or 0,
         "agent": _string(event.get("agent_name") or stage_context.get("agent")),
-        "stage": _string(event.get("stage_type") or stage_context.get("stage")),
+        "stage": _string(event.get("capability") or stage_context.get("stage")),
         "step": _int(event.get("step") or event.get("step_index")),
         "server_id": _string(event.get("server_id")),
         "tool_name": _string(event.get("tool_name")) or "tool",
@@ -564,7 +564,7 @@ def _stage_context_by_round(ag_nodes: list[dict[str, Any]]) -> dict[int, dict[st
         result[node["round"]] = {
             "round": node["round"],
             "agent": node["agent"],
-            "stage": _string(node["metadata"].get("stage_type")),
+            "stage": _string(node["metadata"].get("capability")),
         }
     return result
 
@@ -960,26 +960,9 @@ def _ag_type(raw_type: str | None, agent: str, props: dict[str, Any]) -> str:
             return "AccessStep"
         if capability in {"goal", "evidence"}:
             return "GoalCheckStep"
-        return _stage_to_ag_type(_string(props.get("stage_type"))) or "UnknownStep"
+        return "UnknownStep"
     if _string(props.get("decision")):
         return "ReplanStep"
-    return _stage_to_ag_type(_string(props.get("stage_type"))) or "UnknownStep"
-
-
-def _stage_to_ag_type(stage: str | None) -> str:
-    stage = stage or ""
-    if "RECON" in stage:
-        return "ReconStep"
-    if "VULN" in stage or "ANALYSIS" in stage:
-        return "AnalysisStep"
-    if "EXPLOIT" in stage or "VALIDATION" in stage:
-        return "ValidationStep"
-    if "ACCESS" in stage:
-        return "AccessStep"
-    if "PIVOT" in stage:
-        return "PivotStep"
-    if "GOAL" in stage:
-        return "GoalCheckStep"
     return "UnknownStep"
 
 
@@ -1277,7 +1260,6 @@ def _capability(props: dict[str, Any]) -> str | None:
         props.get("capability")
         or props.get("required_capability")
         or props.get("tool_name")
-        or props.get("stage_type")
         or props.get("selected_stage")
     )
 

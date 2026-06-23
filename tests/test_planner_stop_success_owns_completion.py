@@ -11,13 +11,12 @@ from src.core.execution.execution_agent import ExecutionAgent
 
 class GoalSatisfiedAgent:
     agent_name = "goal_agent"
-    stage_type = "GOAL_STAGE"
 
     def run(self, request: StageExecutionRequest) -> StageResult:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-goal_agent",
-            stage_type="GOAL_STAGE",
+            capability="goal",
             agent_name=self.agent_name,
             status="succeeded",
             summary="goal evidence satisfied",
@@ -33,13 +32,12 @@ class GoalSatisfiedAgent:
 
 class GoalWithoutExplicitSatisfiedHintAgent:
     agent_name = "goal_agent"
-    stage_type = "GOAL_STAGE"
 
     def run(self, request: StageExecutionRequest) -> StageResult:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-goal_agent",
-            stage_type="GOAL_STAGE",
+            capability="goal",
             agent_name=self.agent_name,
             status="succeeded",
             summary="goal stage succeeded but did not prove completion",

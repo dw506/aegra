@@ -20,19 +20,11 @@ from src.core.models.events import (
     RuntimeControlType,
     new_protocol_id,
 )
-from src.core.stage.models import StageResult, normalize_stage_name
+from src.core.stage.models import StageResult
 
 
 class StageResultAdapter:
     """Convert StageResult into the existing ResultApplier protocol."""
-
-    ROLE_BY_STAGE = {
-        "RECON_STAGE": AgentRole.RECON_STAGE_AGENT,
-        "VULN_ANALYSIS_STAGE": AgentRole.VULN_ANALYSIS_STAGE_AGENT,
-        "EXPLOIT_STAGE": AgentRole.EXPLOIT_STAGE_AGENT,
-        "ACCESS_PIVOT_STAGE": AgentRole.ACCESS_PIVOT_STAGE_AGENT,
-        "GOAL_STAGE": AgentRole.GOAL_STAGE_AGENT,
-    }
 
     STATUS_MAP = {
         "success": AgentResultStatus.SUCCEEDED,
@@ -58,12 +50,12 @@ class StageResultAdapter:
                     scope=ReplanScope.LOCAL,
                     reason=stage_result.replan_recommendation or stage_result.summary,
                     task_ids=[stage_result.stage_task_id],
-                    metadata={"stage_type": stage_result.stage_type},
+                    metadata={"capability": stage_result.capability},
                 )
             )
         return AgentTaskResult(
             request_id=f"stage-{stage_result.stage_task_id}",
-            agent_role=cls.ROLE_BY_STAGE[normalize_stage_name(stage_result.stage_type)],
+            agent_role=AgentRole.EXECUTION_AGENT,
             operation_id=stage_result.operation_id,
             task_id=stage_result.stage_task_id,
             execution_node_id=stage_result.stage_task_id,
@@ -75,7 +67,7 @@ class StageResultAdapter:
             runtime_requests=runtime_requests,
             replan_hints=replan_hints,
             outcome_payload={
-                "outcome_type": stage_result.stage_type,
+                "outcome_type": stage_result.capability,
                 "stage_result": stage_result.model_dump(mode="json"),
                 "visual_summary": cls._visual_summary(stage_result),
                 "runtime_hints": dict(stage_result.runtime_hints),
@@ -90,7 +82,7 @@ class StageResultAdapter:
             },
             metadata={
                 "adapted_from": "stage_result",
-                "stage_type": stage_result.stage_type,
+                "capability": stage_result.capability,
                 "capabilities_gained": list(stage_result.capabilities_gained),
                 "failed_hypotheses": list(stage_result.failed_hypotheses),
             },
@@ -109,7 +101,7 @@ class StageResultAdapter:
         target = cls._target_summary(stage_result)
         return {
             "title": stage_result.summary,
-            "subtitle": f"{stage_result.agent_name} / {stage_result.stage_type}",
+            "subtitle": f"{stage_result.agent_name} / {stage_result.capability}",
             "description": stage_result.summary,
             "target": target,
             "badges": badges,
@@ -136,7 +128,7 @@ class StageResultAdapter:
     def _observations(cls, stage_result: StageResult) -> list[ObservationRecord]:
         observations = [
             ObservationRecord(
-                category=str(item.get("category") or stage_result.stage_type.lower()),
+                category=str(item.get("category") or stage_result.capability),
                 summary=str(item.get("summary") or item.get("description") or stage_result.summary),
                 confidence=cls._confidence(item),
                 refs=cls._refs(item.get("refs")),
@@ -170,7 +162,7 @@ class StageResultAdapter:
         evidence = [
             EvidenceArtifact(
                 evidence_id=str(item.get("evidence_id") or new_protocol_id("evidence")),
-                kind=str(item.get("kind") or stage_result.stage_type.lower()),
+                kind=str(item.get("kind") or stage_result.capability),
                 summary=str(item.get("summary") or stage_result.summary),
                 payload_ref=str(item.get("payload_ref") or f"runtime://stage-results/{stage_result.stage_task_id}"),
                 tool_output_ref=item.get("tool_output_ref"),

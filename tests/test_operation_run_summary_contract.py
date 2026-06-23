@@ -110,7 +110,7 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
     recon_result = StageResult(
         operation_id="op-progress",
         stage_task_id="stage-recon",
-        stage_type="RECON_STAGE",
+        capability="recon",
         agent_name="recon_agent",
         status="succeeded",
         summary="service discovery completed",
@@ -120,7 +120,7 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
     vuln_result = StageResult(
         operation_id="op-progress",
         stage_task_id="stage-vuln",
-        stage_type="VULN_ANALYSIS_STAGE",
+        capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
         summary="candidate vulnerability analysis completed",
@@ -163,7 +163,7 @@ def test_success_condition_progress_does_not_match_internal_service_from_dmz_rec
     recon_result = StageResult(
         operation_id="op-progress-specific",
         stage_task_id="stage-recon",
-        stage_type="RECON_STAGE",
+        capability="recon",
         agent_name="recon_agent",
         status="needs_replan",
         summary="service discovery needs replan",

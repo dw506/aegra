@@ -1,13 +1,13 @@
 """Deterministic black-box e2e for the success-condition verification loop.
 
 Drives the public orchestrator surface (create -> import -> start ->
-run_until_quiescent) with stub stage agents and a stub planner that obeys the
-authoritative gate: it only emits stop_success when the runtime metadata says
+run_until_quiescent) with stub execution rounds and a stub planner that obeys
+the authoritative gate: it only emits stop_success when the runtime metadata says
 success_condition_progress.eligible_for_stop is true. This proves the whole
 flow end to end without needing a live LLM, MCP server, or docker lab:
 
     stage evidence -> ResultApplier/KG -> _update_success_condition_progress
-    -> eligible_for_stop -> PlannerAgent stop_success -> loop terminates
+    -> eligible_for_stop -> planner stop_success -> loop terminates
     -> get_operation_run_summary reports success.
 """
 
@@ -23,67 +23,52 @@ ensure_repo_root_on_path()
 
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.stage.models import StageExecutionRequest, StageResult
-from src.core.stage.registry import StageAgentRegistry
+from src.core.execution.execution_agent import ExecutionAgent
+from src.core.planning.models import PlannerOutcome
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
 
 
-class ReconAgent:
-    agent_name = "recon_agent"
-    stage_type = "RECON_STAGE"
+def _agent(agent_name: str, capability: str, **result_kwargs: Any):
+    """One capability-scoped stub executor returning a fixed StageResult."""
 
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
-            operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-recon",
-            stage_type="RECON_STAGE",
-            agent_name=self.agent_name,
-            status="succeeded",
-            summary="entry-zone service discovery completed",
-            findings=[{"type": "service_discovery", "summary": "http service discovered"}],
-            evidence_refs=["evidence::recon-service"],
-        )
+    class _StubAgent:
+        def __init__(self) -> None:
+            self.agent_name = agent_name
+            self.capability = capability
 
+        def run(self, request: StageExecutionRequest) -> StageResult:
+            return StageResult(
+                operation_id=request.operation_id,
+                stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-{agent_name}",
+                capability=capability,
+                agent_name=agent_name,
+                status="succeeded",
+                **result_kwargs,
+            )
 
-class VulnAgent:
-    agent_name = "vuln_analysis_agent"
-    stage_type = "VULN_ANALYSIS_STAGE"
-
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
-            operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-vuln",
-            stage_type="VULN_ANALYSIS_STAGE",
-            agent_name=self.agent_name,
-            status="succeeded",
-            summary="vulnerability candidate recorded",
-            findings=[{"kind": "candidate_finding", "summary": "candidate recorded"}],
-            evidence_refs=["evidence::vuln-candidate"],
-        )
+    return _StubAgent()
 
 
-class GoalAgent:
-    agent_name = "goal_agent"
-    stage_type = "GOAL_STAGE"
+def _executor(agents) -> ExecutionAgent:
+    """Wrap per-capability stub agents into the single ExecutionAgent, routing
+    each round to the stub matching request.capability."""
 
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
-            operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-goal",
-            stage_type="GOAL_STAGE",
-            agent_name=self.agent_name,
-            status="succeeded",
-            summary="goal proof validated",
-            findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
-            evidence_refs=["evidence::goal-proof"],
-            runtime_hints={"goal_satisfied": True, "goal_evidence_refs": ["evidence::goal-proof"]},
-        )
+    by_capability = {agent.capability: agent for agent in agents}
+
+    class _Dispatch:
+        agent_name = "execution_agent"
+
+        def run(self, request: StageExecutionRequest) -> StageResult:
+            return by_capability[request.capability].run(request)
+
+    return ExecutionAgent(_Dispatch())  # type: ignore[arg-type]
 
 
-# condition name -> (selected_agent, selected_stage) used to advance the chain
-_CONDITION_TO_STAGE = [
-    ("dmz_service_discovered", "recon_agent", "RECON_STAGE"),
-    ("vulnerability_candidate_recorded", "vuln_analysis_agent", "VULN_ANALYSIS_STAGE"),
-    ("goal_check_recorded", "goal_agent", "GOAL_STAGE"),
+# condition name -> (selected_agent, capability) used to advance the chain
+_CONDITION_CHAIN = [
+    ("dmz_service_discovered", "recon_agent", "recon"),
+    ("vulnerability_candidate_recorded", "vuln_analysis_agent", "analysis"),
+    ("goal_check_recorded", "goal_agent", "goal"),
 ]
 
 
@@ -94,16 +79,7 @@ class GateAwarePlanner:
         self.calls = 0
         self.decisions: list[str] = []
 
-    def run(
-        self,
-        *,
-        goal: str,
-        graph_context: dict[str, Any],
-        policy_context: dict[str, Any] | None = None,
-        recent_stage_results: list[dict[str, Any]] | None = None,
-    ):
-        from src.core.planning.models import PlannerDecision
-
+    def decide(self, *, goal: str, graph_context: dict[str, Any], **_: Any) -> PlannerOutcome:
         self.calls += 1
         progress = graph_context.get("success_condition_progress") or {}
         operation_id = str(graph_context["operation_id"])
@@ -111,46 +87,47 @@ class GateAwarePlanner:
 
         if progress.get("eligible_for_stop"):
             self.decisions.append("stop_success")
-            return PlannerDecision(
+            return PlannerOutcome(
                 operation_id=operation_id,
                 cycle_index=cycle_index,
-                decision="stop_success",
-                objective=goal,
-                risk_level="low",
-                max_steps=1,
+                action="stop_success",
+                reason=goal,
                 stop_condition="contract_satisfied",
-                reasoning_summary="success_condition_progress.eligible_for_stop is true",
                 confidence=1.0,
             )
 
-        missing = set(progress.get("missing") or [c for c, _, _ in _CONDITION_TO_STAGE])
-        for condition, agent, stage in _CONDITION_TO_STAGE:
+        missing = set(progress.get("missing") or [c for c, _, _ in _CONDITION_CHAIN])
+        for condition, agent, capability in _CONDITION_CHAIN:
             if condition in missing:
                 self.decisions.append(f"dispatch:{agent}")
-                return PlannerDecision(
-                    operation_id=operation_id,
-                    cycle_index=cycle_index,
-                    decision="dispatch_agent",
-                    selected_agent=agent,
-                    selected_stage=stage,
-                    objective=goal,
-                    risk_level="low",
-                    max_steps=1,
-                    confidence=0.9,
-                )
-        # Nothing missing but gate not yet set -> dispatch goal as a fallback
+                return _execute_outcome(operation_id, cycle_index, goal, capability, 0.9)
+
+        # Nothing missing but gate not yet set -> dispatch goal as a fallback.
         self.decisions.append("dispatch:goal_agent")
-        return PlannerDecision(
+        return _execute_outcome(operation_id, cycle_index, goal, "goal", 0.5)
+
+
+def _execute_outcome(
+    operation_id: str,
+    cycle_index: int,
+    goal: str,
+    capability: str,
+    confidence: float,
+) -> PlannerOutcome:
+    return PlannerOutcome(
+        operation_id=operation_id,
+        cycle_index=cycle_index,
+        action="execute",
+        directive=RoundDirective(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            decision="dispatch_agent",
-            selected_agent="goal_agent",
-            selected_stage="GOAL_STAGE",
+            capability=capability,
             objective=goal,
+            max_tools=1,
             risk_level="low",
-            max_steps=1,
-            confidence=0.5,
-        )
+        ),
+        confidence=confidence,
+    )
 
 
 def main() -> int:
@@ -174,7 +151,32 @@ def main() -> int:
         orch = AppOrchestrator(settings=settings)
         planner = GateAwarePlanner()
         orch.mission_planner = planner  # type: ignore[assignment]
-        orch.stage_registry = StageAgentRegistry([ReconAgent(), VulnAgent(), GoalAgent()])  # type: ignore[list-item]
+        orch.execution_agent = _executor(  # type: ignore[assignment]
+            [
+                _agent(
+                    "recon_agent",
+                    "recon",
+                    summary="entry-zone service discovery completed",
+                    findings=[{"type": "service_discovery", "summary": "http service discovered"}],
+                    evidence_refs=["evidence::recon-service"],
+                ),
+                _agent(
+                    "vuln_analysis_agent",
+                    "analysis",
+                    summary="vulnerability candidate recorded",
+                    findings=[{"kind": "candidate_finding", "summary": "candidate recorded"}],
+                    evidence_refs=["evidence::vuln-candidate"],
+                ),
+                _agent(
+                    "goal_agent",
+                    "goal",
+                    summary="goal proof validated",
+                    findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
+                    evidence_refs=["evidence::goal-proof"],
+                    runtime_hints={"goal_satisfied": True, "goal_evidence_refs": ["evidence::goal-proof"]},
+                ),
+            ]
+        )
 
         orch.create_operation(op_id)
         orch.import_targets(op_id, [TargetHost(address="10.20.0.20")])

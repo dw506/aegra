@@ -53,11 +53,7 @@ class AgentRole(str, Enum):
     TASK_BUILDER = "task_builder"
     PLANNER = "planner"
     CRITIC = "critic"
-    RECON_STAGE_AGENT = "recon_stage_agent"
-    VULN_ANALYSIS_STAGE_AGENT = "vuln_analysis_stage_agent"
-    EXPLOIT_STAGE_AGENT = "exploit_stage_agent"
-    ACCESS_PIVOT_STAGE_AGENT = "access_pivot_stage_agent"
-    GOAL_STAGE_AGENT = "goal_stage_agent"
+    EXECUTION_AGENT = "execution_agent"
 
 
 class AgentTaskIntent(str, Enum):

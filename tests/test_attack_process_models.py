@@ -34,7 +34,6 @@ def test_attack_process_node_records_attack_step_result() -> None:
         operation_id="op-1",
         cycle_index=1,
         agent_name="execution_agent",
-        stage_type="RECON_STAGE",
         status="succeeded",
         summary="Recon found an exposed service.",
         refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],

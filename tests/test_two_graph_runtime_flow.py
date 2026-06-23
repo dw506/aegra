@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, StageType, ToolTrace
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, ToolTrace
 from src.core.execution.execution_agent import ExecutionAgent
 
 
@@ -27,13 +27,12 @@ class FixedPlanner:
 
 class FixedReconAgent:
     agent_name = "recon_agent"
-    stage_type = StageType.RECON_STAGE
 
     def run(self, request: StageExecutionRequest) -> StageResult:
         return StageResult(
             operation_id=request.operation_id,
             stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-recon_agent",
-            stage_type=request.stage_type,
+            capability=request.capability,
             agent_name=self.agent_name,
             status="succeeded",
             summary="host discovered",

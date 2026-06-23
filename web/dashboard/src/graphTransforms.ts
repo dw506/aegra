@@ -57,7 +57,7 @@ export function buildDisplayName(node: VisualNode): string {
   const service = firstString(readValue(node, "service"), readValue(node, "service_name"), meta.service, meta.service_name);
   const cycle = firstString(readValue(node, "cycle_index"), meta.cycle_index);
   const agent = firstString(readValue(node, "agent_name"), readValue(node, "selected_agent"), meta.agent_name, meta.selected_agent);
-  const stage = firstString(readValue(node, "selected_stage"), readValue(node, "stage"), readValue(node, "stage_type"), meta.selected_stage, meta.stage, meta.stage_type);
+  const stage = firstString(readValue(node, "selected_stage"), readValue(node, "stage"), readValue(node, "capability"), meta.selected_stage, meta.stage, meta.capability);
   const tool = firstString(readValue(node, "tool_name"), meta.tool_name);
   const status = firstString(node.status, readValue(node, "status"), meta.status);
   const reason = firstString(readValue(node, "reason"), readValue(node, "stop_reason"), meta.reason, meta.stop_reason);
@@ -148,7 +148,7 @@ export function groupCycles(graph: GraphState): CycleGroup[] {
         cycleIndex,
         title: `Cycle ${cycleIndex}`,
         nodes: sorted,
-        selectedStage: firstString(merged.selected_stage, merged.stage, merged.stage_type, "n/a"),
+        selectedStage: firstString(merged.selected_stage, merged.stage, merged.capability, "n/a"),
         selectedAgent: firstString(merged.selected_agent, merged.agent_name, "n/a"),
         executionSuccess: formatBoolean(merged.execution_success ?? merged.success),
         stopped: formatBoolean(merged.stopped),

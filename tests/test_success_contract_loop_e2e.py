@@ -16,28 +16,20 @@ from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
 from src.core.execution.execution_agent import ExecutionAgent
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, normalize_stage_name
-
-_STAGE_CAP = {
-    "RECON_STAGE": "recon",
-    "VULN_ANALYSIS_STAGE": "analysis",
-    "EXPLOIT_STAGE": "exploit",
-    "ACCESS_PIVOT_STAGE": "pivot",
-    "GOAL_STAGE": "goal",
-}
+from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
 
 
-def _agent(agent_name: str, stage_type: str, **result_kwargs: Any):
+def _agent(agent_name: str, capability: str, **result_kwargs: Any):
     class _StubAgent:
         def __init__(self) -> None:
             self.agent_name = agent_name
-            self.stage_type = stage_type
+            self.capability = capability
 
         def run(self, request: StageExecutionRequest) -> StageResult:
             return StageResult(
                 operation_id=request.operation_id,
                 stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-{agent_name}",
-                stage_type=stage_type,
+                capability=capability,
                 agent_name=agent_name,
                 status="succeeded",
                 **result_kwargs,
@@ -47,31 +39,29 @@ def _agent(agent_name: str, stage_type: str, **result_kwargs: Any):
 
 
 def _executor(agents):
-    """Wrap per-stage stub agents into the single ExecutionAgent, routing each
-    round to the stub matching request.stage_type (replaces the old multi-agent
-    StageAgentRegistry dispatch)."""
+    """Wrap per-capability stub agents into the single ExecutionAgent, routing each
+    round to the stub matching request.capability."""
 
-    by_stage = {normalize_stage_name(agent.stage_type): agent for agent in agents}
+    by_capability = {agent.capability: agent for agent in agents}
 
     class _Dispatch:
         agent_name = "execution_agent"
-        stage_type = agents[0].stage_type
 
         def run(self, request: StageExecutionRequest) -> StageResult:
-            return by_stage[normalize_stage_name(request.stage_type)].run(request)
+            return by_capability[request.capability].run(request)
 
     return ExecutionAgent(_Dispatch())  # type: ignore[arg-type]
 
 
 _CHAIN = [
-    ("dmz_service_discovered", "recon_agent", "RECON_STAGE"),
-    ("vulnerability_candidate_recorded", "vuln_analysis_agent", "VULN_ANALYSIS_STAGE"),
-    ("goal_check_recorded", "goal_agent", "GOAL_STAGE"),
+    ("dmz_service_discovered", "recon_agent", "recon"),
+    ("vulnerability_candidate_recorded", "vuln_analysis_agent", "analysis"),
+    ("goal_check_recorded", "goal_agent", "goal"),
 ]
 
 _DB_READ_CHAIN = [
-    ("database_file_read", "access_pivot_agent", "ACCESS_PIVOT_STAGE"),
-    ("goal_check_recorded", "goal_agent", "GOAL_STAGE"),
+    ("database_file_read", "access_pivot_agent", "pivot"),
+    ("goal_check_recorded", "goal_agent", "goal"),
 ]
 
 
@@ -104,7 +94,7 @@ class _GateAwarePlanner:
                     directive=RoundDirective(
                         operation_id=operation_id,
                         cycle_index=cycle_index,
-                        capability=_STAGE_CAP[stage],
+                        capability=stage,
                         objective=goal,
                         max_tools=1,
                         risk_level="low",
@@ -144,7 +134,7 @@ class _ProfileDrivenPlanner:
                     directive=RoundDirective(
                         operation_id=operation_id,
                         cycle_index=cycle_index,
-                        capability=_STAGE_CAP[stage],
+                        capability=stage,
                         objective=goal,
                         max_tools=1,
                         risk_level="low",
@@ -177,21 +167,21 @@ def test_success_contract_loop_terminates_only_when_eligible_for_stop(tmp_path) 
         [
             _agent(
                 "recon_agent",
-                "RECON_STAGE",
+                "recon",
                 summary="entry-zone service discovery completed",
                 findings=[{"type": "service_discovery", "summary": "http service discovered"}],
                 evidence_refs=["evidence::recon-service"],
             ),
             _agent(
                 "vuln_analysis_agent",
-                "VULN_ANALYSIS_STAGE",
+                "analysis",
                 summary="vulnerability candidate recorded",
                 findings=[{"kind": "candidate_finding", "summary": "candidate"}],
                 evidence_refs=["evidence::vuln-candidate"],
             ),
             _agent(
                 "goal_agent",
-                "GOAL_STAGE",
+                "goal",
                 summary="goal proof validated",
                 findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
                 evidence_refs=["evidence::goal-proof"],
@@ -258,7 +248,7 @@ def test_success_contract_loop_does_not_stop_while_conditions_missing(tmp_path) 
         [
             _agent(
                 "recon_agent",
-                "RECON_STAGE",
+                "recon",
                 summary="entry-zone service discovery completed",
                 findings=[{"type": "service_discovery", "summary": "http service discovered"}],
                 evidence_refs=["evidence::recon-service"],
@@ -308,7 +298,7 @@ def test_profile_custom_condition_signal_can_satisfy_database_file_read_goal(tmp
         [
             _agent(
                 "access_pivot_agent",
-                "ACCESS_PIVOT_STAGE",
+                "pivot",
                 summary="database file read proof recorded",
                 findings=[{"kind": "PostAccessObservation", "summary": "database file artifact observed"}],
                 evidence_refs=["evidence::database-file-read"],
@@ -319,7 +309,7 @@ def test_profile_custom_condition_signal_can_satisfy_database_file_read_goal(tmp
             ),
             _agent(
                 "goal_agent",
-                "GOAL_STAGE",
+                "goal",
                 summary="goal proof validated",
                 findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
                 evidence_refs=["evidence::goal-proof"],

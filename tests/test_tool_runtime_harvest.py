@@ -47,7 +47,7 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
     stage = StageResult(
         operation_id="op-harvest",
         stage_task_id="stage-op-harvest-1-access_pivot_agent",
-        stage_type="ACCESS_PIVOT_STAGE",
+        capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="authorized pivot established",
@@ -106,7 +106,7 @@ def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
     stage = StageResult(
         operation_id="op-harvest",
         stage_task_id="stage-op-harvest-1-access_pivot_agent",
-        stage_type="ACCESS_PIVOT_STAGE",
+        capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="pivot",
@@ -140,7 +140,7 @@ def test_tool_reported_vulnerability_candidate_becomes_typed_kg_node() -> None:
     stage = StageResult(
         operation_id="op-harvest",
         stage_task_id="stage-op-harvest-1-vuln_analysis_agent",
-        stage_type="VULN_ANALYSIS_STAGE",
+        capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
         summary="vulnerability profile matched",

@@ -809,8 +809,7 @@ class AppOrchestrator:
                 )
             stage_graph_write_payload = {
                 "cycle": cycle_index,
-                "capability": outcome.directive.capability,
-                "stage": stage_result.stage_type,
+                "capability": stage_result.capability,
                 "agent": stage_result.agent_name,
                 "stage_status": stage_result.status,
                 "kg_delta_count": len(stage_apply.kg_state_deltas or []),
@@ -1342,7 +1341,7 @@ class AppOrchestrator:
             stage_result = payload.get("stage_result")
             if not isinstance(stage_result, dict):
                 continue
-            if stage_result.get("stage_type") == "GOAL_STAGE" and stage_result.get("status") == "succeeded":
+            if stage_result.get("capability") == "goal" and stage_result.get("status") == "succeeded":
                 hints = stage_result.get("runtime_hints")
                 if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
                     state.execution.metadata["goal_satisfied"] = True
