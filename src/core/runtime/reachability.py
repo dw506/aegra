@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.core.models.events import AgentTaskResult
-from src.core.models.runtime import PivotRouteRuntime, RuntimeState, TaskRuntime
+from src.core.execution.models import ExecutionResult
+from src.core.models.runtime import PivotRouteRuntime, RuntimeState
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 
 
@@ -15,21 +15,18 @@ class ReachabilityPropagator:
     def __init__(self, pivot_route_manager: RuntimePivotRouteManager | None = None) -> None:
         self._pivot_route_manager = pivot_route_manager or RuntimePivotRouteManager()
 
-    def sync_from_task_result(self, *, state: RuntimeState, result: AgentTaskResult) -> PivotRouteRuntime | None:
-        """Refresh runtime pivot routes from one worker result payload."""
+    def sync_from_execution_result(self, *, state: RuntimeState, result: ExecutionResult) -> PivotRouteRuntime | None:
+        """Refresh runtime pivot routes from one stage result."""
 
-        reachability = self._dict(result.outcome_payload.get("reachability"))
-        route_view = self._dict(result.outcome_payload.get("selected_route"))
+        reachability = self._dict(result.runtime_hints.get("reachability"))
+        route_view = self._dict(result.runtime_hints.get("selected_route"))
         route_id = self._string(route_view.get("route_id")) or self._string(reachability.get("route_id"))
         destination_host = (
             self._string(route_view.get("destination_host"))
             or self._string(reachability.get("target_id"))
-            or self._string(result.outcome_payload.get("bound_target"))
-            or self._string(result.outcome_payload.get("target_id"))
+            or self._string(result.runtime_hints.get("bound_target"))
+            or self._string(result.runtime_hints.get("target_id"))
         )
-        task = state.execution.tasks.get(result.task_id)
-        if destination_host is None:
-            destination_host = self._string((task.metadata if task is not None else {}).get("bound_target"))
         if destination_host is None:
             return None
         if self._string(reachability.get("via")) not in {"pivot", "session"} and route_id is None and not route_view:
@@ -38,10 +35,10 @@ class ReachabilityPropagator:
             state,
             route_id=route_id,
             destination_host=destination_host,
-            reachable=bool(reachability.get("reachable", result.status.value == "succeeded")),
+            reachable=bool(reachability.get("reachable", result.status in {"success", "succeeded", "partial"})),
             source_host=self._string(route_view.get("source_host")) or self._string(reachability.get("source_id")),
             via_host=self._string(route_view.get("via_host")) or self._string(reachability.get("via_host")),
-            session_id=self._string(route_view.get("session_id")) or self._result_session_id(result=result, task=task),
+            session_id=self._string(route_view.get("session_id")) or self._result_session_id(result=result),
             protocol=self._string(route_view.get("protocol")) or self._string(reachability.get("protocol")),
             destination_zone=self._string(route_view.get("destination_zone")) or self._string(reachability.get("destination_zone")),
             destination_cidr=self._string(route_view.get("destination_cidr")) or self._string(reachability.get("destination_cidr")),
@@ -50,14 +47,12 @@ class ReachabilityPropagator:
             hop_count=self._int(route_view.get("hop_count") or reachability.get("hop_count")),
             confidence=self._float(route_view.get("confidence") or reachability.get("confidence")),
             metadata={
-                "source_task_id": result.task_id,
-                "result_status": result.status.value,
+                "source_task_id": result.execution_id,
+                "result_status": result.status,
                 "reachability": reachability,
                 "selected_route": route_view,
             },
         )
-        if task is not None:
-            task.metadata["selected_route_id"] = route.route_id
         return route
 
     @staticmethod
@@ -105,13 +100,8 @@ class ReachabilityPropagator:
         return {str(item).strip().lower() for item in values if str(item).strip()}
 
     @classmethod
-    def _result_session_id(cls, *, result: AgentTaskResult, task: TaskRuntime | None) -> str | None:
-        session_id = cls._string(result.outcome_payload.get("session_id"))
-        if session_id is not None:
-            return session_id
-        if task is not None:
-            return cls._string(task.metadata.get("session_id"))
-        return None
+    def _result_session_id(cls, *, result: ExecutionResult) -> str | None:
+        return cls._string(result.runtime_hints.get("session_id"))
 
 
 __all__ = ["ReachabilityPropagator"]

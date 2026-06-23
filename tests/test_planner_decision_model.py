@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from src.core.models.ag import GraphRef
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective
+from src.core.execution.models import RoundDirective
 
 
 def test_planner_outcome_executes_round_directive() -> None:

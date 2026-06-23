@@ -14,14 +14,14 @@ they are not graphs.
 ## Operation Loop
 
 ```text
-User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> ExecutionResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
 The loop has no task-graph scheduling or task-graph merge step. `PlannerAgent`
 is the only global planning LLM and outputs `PlannerDecision`, which selects the
-next stage agent without producing commands or payloads.
+next execution agent without producing commands or payloads.
 
-`StageDispatcher` invokes exactly one of the five stage agents selected by the
+`StageDispatcher` invokes exactly one of the five execution agents selected by the
 planner:
 
 - `ReconAgent`
@@ -30,7 +30,7 @@ planner:
 - `AccessPivotAgent`
 - `GoalAgent`
 
-Stage agents call authorized MCP tools and return `StageResult`, `ToolTrace`,
+Stage agents call authorized MCP tools and return `ExecutionResult`, `ToolTrace`,
 and optional `handoff_suggestion`. They do not write graphs or runtime state.
 
 ## Write Boundary

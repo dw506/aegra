@@ -47,7 +47,7 @@ class LLMMissionPlannerAdvisor:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
     ) -> PlannerOutcome:
         """Return the next planner outcome from the LLM."""
 
@@ -57,7 +57,7 @@ class LLMMissionPlannerAdvisor:
             goal=goal,
             graph_context=graph_context,
             policy_context=policy_context,
-            recent_stage_results=recent_stage_results,
+            recent_execution_results=recent_execution_results,
         )
         try:
             response = self._client.complete_chat(
@@ -118,7 +118,7 @@ class LLMMissionPlannerAdvisor:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
     ) -> str:
         outcome_contract = {
             "operation_id": "operation id string",
@@ -153,7 +153,7 @@ class LLMMissionPlannerAdvisor:
                 "graph_tools": graph_context.get("graph_tools") or {},
                 "agent_capabilities": graph_context.get("agent_capabilities") or [],
                 "mcp_tool_catalog": graph_context.get("mcp_tool_catalog") or {},
-                "recent_results": list(recent_stage_results or []),
+                "recent_results": list(recent_execution_results or []),
                 "planner_outcome_contract": outcome_contract,
             },
             self._config.max_context_chars,
@@ -171,7 +171,7 @@ class LLMMissionPlannerAdvisor:
             "Do not use a fixed stage sequence and do not require every capability to run. "
             "Select the next capability from success_condition_progress.missing, min_summary, Policy, "
             "recent results, and ToolCatalog. "
-            "Treat recent RoundResult/StageResult control hints as hard constraints: if a recent result contains "
+            "Treat recent RoundResult/ExecutionResult control hints as hard constraints: if a recent result contains "
             "next_step_guidance or capability guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
             "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "

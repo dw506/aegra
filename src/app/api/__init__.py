@@ -9,7 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.app.api.graph_routes import register_graph_routes
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.agents.agent_protocol import GraphRef, GraphScope
@@ -498,7 +497,6 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    register_graph_routes(app, resolved_orchestrator, resolved_settings)
 
     return app
 

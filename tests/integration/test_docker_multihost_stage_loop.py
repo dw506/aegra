@@ -24,7 +24,7 @@ def test_docker_multihost_stage_loop_contract() -> None:
         "PlannerDecision",
         "AgentExecution",
         "ToolCall",
-        "StageResult",
+        "ExecutionResult",
         "GoalCheck",
         "StopDecision",
     }

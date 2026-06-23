@@ -164,14 +164,12 @@ class RuntimeSessionManager:
         return session
 
     def bind_task_to_session(self, state: RuntimeState, task_id: str, session_id: str) -> SessionRuntime:
-        """Attach one task ID to the session metadata and task runtime when present."""
+        """Attach one source task ID to the session metadata."""
 
         session = self.get_session(state, session_id)
         task_ids = session.metadata.setdefault("bound_task_ids", [])
         if task_id not in task_ids:
             task_ids.append(task_id)
-        if task_id in state.execution.tasks:
-            state.execution.tasks[task_id].metadata["session_id"] = session_id
         state.last_updated = utc_now()
         return session
 
@@ -181,15 +179,11 @@ class RuntimeSessionManager:
         task_id: str,
         session_id: str,
     ) -> SessionRuntime:
-        """Remove one task ID from the session metadata and task runtime when present."""
+        """Remove one source task ID from the session metadata."""
 
         session = self.get_session(state, session_id)
         task_ids = session.metadata.setdefault("bound_task_ids", [])
         session.metadata["bound_task_ids"] = [item for item in task_ids if item != task_id]
-        if task_id in state.execution.tasks:
-            task = state.execution.tasks[task_id]
-            if task.metadata.get("session_id") == session_id:
-                task.metadata.pop("session_id", None)
         state.last_updated = utc_now()
         return session
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.agents.agent_protocol import GraphScope
-from src.core.models.ag import AttackGraph, GraphRef
+from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import AttackProcessNodeType
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import RoundDirective, StageResult, ToolTrace
+from src.core.execution.models import RoundDirective, ExecutionResult, ToolTrace
 
 
 def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> None:
@@ -32,9 +31,9 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
     )
     planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-apply",
-        stage_task_id="stage-op-apply-1-recon_agent",
+        execution_id="stage-op-apply-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -46,13 +45,8 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         ],
         tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
     )
-    stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
+    stage_apply = applier.apply_execution_result(execution_result, state, kg, ag)
 
-    assert {delta.graph for delta in planner_apply.visual_graph_deltas + stage_apply.visual_graph_deltas} <= {
-        "kg",
-        "ag",
-        "runtime",
-    }
     # v3 result-tier AG: one ATTACK_STEP per round; legacy process nodes are gone.
     process_types = {node.node_type for node in ag.find_process_nodes()}
     assert process_types == {AttackProcessNodeType.ATTACK_STEP}
@@ -73,22 +67,22 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     applier = PhaseTwoResultApplier()
 
     # No goal_id -> no GoalProof node.
-    bare = StageResult(
+    bare = ExecutionResult(
         operation_id="op-proof",
-        stage_task_id="stage-op-proof-1-goal_agent",
+        execution_id="stage-op-proof-1-goal_agent",
         capability="goal",
         agent_name="goal_agent",
         status="succeeded",
         summary="reachability goal check passed",
         runtime_hints={"goal_satisfied": True, "goal_evidence_refs": ["evidence::reach"]},
     )
-    applier.apply_stage_result(bare, state, kg, ag)
+    applier.apply_execution_result(bare, state, kg, ag)
     assert "goal-proof::final_internal_goal" not in {node.id for node in kg.list_nodes()}
 
     # goal_satisfied + explicit goal_id -> typed GoalProof node carrying goal_id.
-    proof = StageResult(
+    proof = ExecutionResult(
         operation_id="op-proof",
-        stage_task_id="stage-op-proof-2-access_pivot_agent",
+        execution_id="stage-op-proof-2-access_pivot_agent",
         capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
@@ -100,7 +94,7 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
             "proof_token": "proof:final_internal_goal:abcdef0123456789",
         },
     )
-    applier.apply_stage_result(proof, state, kg, ag)
+    applier.apply_execution_result(proof, state, kg, ag)
     node = kg.get_node("goal-proof::final_internal_goal")
     assert node is not None
     payload = node.model_dump(mode="json")
@@ -115,9 +109,9 @@ def test_result_applier_extracts_generic_stage_recon_shapes_to_kg() -> None:
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-structured",
-        stage_task_id="stage-op-structured-1-recon_agent",
+        execution_id="stage-op-structured-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -137,7 +131,7 @@ def test_result_applier_extracts_generic_stage_recon_shapes_to_kg() -> None:
         evidence_refs=["runtime://tool-output/nmap"],
     )
 
-    apply_result = applier.apply_stage_result(stage_result, state, kg, ag)
+    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
 
     assert apply_result.kg_apply_result is not None
     assert kg.get_node("host::198.51.100.10").address == "198.51.100.10"
@@ -155,9 +149,9 @@ def test_result_applier_extracts_service_fingerprints_to_kg() -> None:
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-fingerprint",
-        stage_task_id="stage-op-fingerprint-2-vuln_analysis_agent",
+        execution_id="stage-op-fingerprint-2-vuln_analysis_agent",
         capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
@@ -183,7 +177,7 @@ def test_result_applier_extracts_service_fingerprints_to_kg() -> None:
         ],
     )
 
-    apply_result = applier.apply_stage_result(stage_result, state, kg, ag)
+    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
 
     assert apply_result.kg_apply_result is not None
     service = kg.get_node("service::198.51.100.30:8443/https")
@@ -199,9 +193,9 @@ def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-toolonly",
-        stage_task_id="stage-op-toolonly-1-recon_agent",
+        execution_id="stage-op-toolonly-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -216,7 +210,7 @@ def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -
         ],
     )
 
-    apply_result = applier.apply_stage_result(stage_result, state, kg, ag)
+    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
 
     assert apply_result.kg_apply_result is not None
     assert apply_result.kg_write_diagnostics.get("status") in {"ok", "partial_write"}
@@ -232,16 +226,16 @@ def test_result_applier_reports_diagnostics_when_no_deltas() -> None:
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-empty",
-        stage_task_id="stage-op-empty-1-recon_agent",
+        execution_id="stage-op-empty-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="needs_replan",
         summary="nothing produced",
     )
 
-    apply_result = applier.apply_stage_result(stage_result, state, kg, ag)
+    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
 
     assert apply_result.kg_write_diagnostics.get("status") == "no_deltas"
     assert apply_result.kg_write_diagnostics.get("reason")
@@ -298,9 +292,9 @@ def test_result_applier_preserves_rich_host_when_service_shares_host() -> None:
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-merge",
-        stage_task_id="stage-op-merge-1-recon_agent",
+        execution_id="stage-op-merge-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -315,19 +309,9 @@ def test_result_applier_preserves_rich_host_when_service_shares_host() -> None:
         ],
     )
 
-    applier.apply_stage_result(stage_result, state, kg, ag)
+    applier.apply_execution_result(execution_result, state, kg, ag)
 
     host = kg.get_node("host::203.0.113.7")
     # hostname 是 Host 的模型字段，富属性必须在 service 处理后仍被保留（C6）。
     assert host.hostname == "web.example.test"
     assert kg.get_node("service::203.0.113.7:443/tcp") is not None
-
-
-def test_result_applier_maps_query_refs_to_ag_protocol_refs() -> None:
-    ref = PhaseTwoResultApplier._to_protocol_ref(
-        GraphRef(graph="query", ref_id="expected-output::svc", ref_type="ExpectedEvidence")
-    )
-
-    assert ref.graph == GraphScope.AG
-    assert ref.ref_id == "expected-output::svc"
-    assert ref.metadata["original_graph"] == "query"

@@ -31,15 +31,15 @@ Plan（planner 用图工具读图+判断）
 
 ```
 KG/AG/Runtime → PlannerAgent(单选 stage) → ResultApplier → StageDispatcher
-→ 1 个 StageAgent(内部 ReAct 自判) → MCP → StageResult
+→ 1 个 StageAgent(内部 ReAct 自判) → MCP → ExecutionResult
 → AttackLogExtractor → ResultApplier → KG/AG
 ```
 
 | 症结 | 根因 | 代码证据 |
 |---|---|---|
 | **AG 记录太细 → 节点膨胀** | 每次工具调用都生成一个 `TOOL_CALL` 节点，再加 7 类过程节点 | `attack_log_extractor.py`：`extract()` 对每条 trace 造 TOOL_CALL |
-| **写图三 AG 路径 + 三 KG 路径，重叠易碎** | AG：`apply_planner_decision`/`apply_stage_result(_record_stage_result_in_ag)`/`apply_log_extraction`；KG：`StateWriter`/`_structured_stage_state_deltas`/`_fact_state_deltas` | `result_applier.py` |
-| **双层 LLM 决策反复横跳** | planner 选 agent，5 个 `LLMDrivenStageAgent` 又各自跑 max_steps 自判 finish/replan | `registry.py`（5 agent）+ `llm_driven_stage_agent.py`（内部循环） |
+| **写图三 AG 路径 + 三 KG 路径，重叠易碎** | AG：`apply_planner_decision`/`apply_execution_result(_record_execution_result_in_ag)`/`apply_log_extraction`；KG：`StateWriter`/`_structured_stage_state_deltas`/`_fact_state_deltas` | `result_applier.py` |
+| **双层 LLM 决策反复横跳** | planner 选 agent，5 个执行器又各自跑 max_steps 自判 finish/replan | 已删除的 registry/多执行器结构 |
 
 ---
 
@@ -165,7 +165,7 @@ GoalAgent 的目标校验职责回归 Verify 阶段（那里本就跑 `SuccessCo
 ### 4.3 权限与渗透姿态（真实渗透，非验证 —— 一等公民）
 
 框架定位是**自动化渗透测试**，执行器的默认姿态是**真打**，不是"安全验证"。这是 Phase H 已落的方向：
-权限引擎（`PolicyEngine.evaluate_tool_policy` / `_risk_decision`）**已不再硬编码拒绝** active_exploit /
+历史上的客户端 `PolicyEngine` 已删除；不再以未接线的客户端策略层声称阻断 active_exploit /
 command_execution / file_write / reverse_callback / destructive，而是转成风险标签交给默认放行的
 `RiskPolicy`（`block_*` 默认全 False）。**重构必须让执行器的 prompt/能力跟上引擎的放开**——
 旧 `exploit_validation_agent.md` 那一串 "must not: generate exploit code / shell payloads / destructive /
@@ -386,26 +386,26 @@ def run_operation(operation_id, goal):
 
 **删除**
 - `src/core/runtime/attack_log_extractor.py`
-- `src/core/stage/agents/{recon,vuln_analysis,exploit_validation,access_pivot,goal}_agent.py`
-- `src/core/stage/advisors/*`（5 个）
-- `src/core/stage/context/*`（5 个 builder，合成 1 个或内联）
-- `src/core/stage/prompts/{recon,vuln_analysis,exploit_validation,access_pivot,goal}_agent.md`（含其中 `exploit_validation_agent.md` 那一串 "must not …" 验证姿态约束，整体废弃）
-- `result_applier.apply_log_extraction`、`_record_stage_result_in_ag` 的 TOOL_CALL 循环
+- `src/core/execution/agents/{recon,vuln_analysis,exploit_validation,access_pivot,goal}_agent.py`
+- `src/core/execution/advisors/*`（5 个）
+- `src/core/execution/context/*`（5 个 builder，合成 1 个或内联）
+- `src/core/execution/prompts/{recon,vuln_analysis,exploit_validation,access_pivot,goal}_agent.md`（含其中 `exploit_validation_agent.md` 那一串 "must not …" 验证姿态约束，整体废弃）
+- `result_applier.apply_log_extraction`、`_record_execution_result_in_ag` 的 TOOL_CALL 循环
 
 **修改**
 - `src/core/models/ag.py` + `attack_process.py`：节点类型砍到 `ATTACK_STEP`/`GOAL_OUTCOME`，边砍到 `NEXT`/`ADVANCED`
 - `src/core/runtime/result_applier.py`：删两条多余 KG 路径（保留 `ToolTraceFactExtractor` 为唯一机器事实源），AG 写改为单 step 节点
-- `src/core/stage/{registry,dispatcher}.py`：退化为单执行器入口（或删除）
-- `src/core/stage/llm_stage_advisor.py`：去掉 `PROMPT_BY_AGENT` 5 路分支
+- `src/core/execution/{registry,dispatcher}.py`：退化为单执行器入口（或删除）
+- `src/core/execution/llm_stage_advisor.py`：去掉 `PROMPT_BY_AGENT` 5 路分支
 - `src/core/planning/mission_planner_agent.py` + `llm_mission_planner_advisor.py`：planner 改为带图工具的 agent，输出 `RoundDirective` / stop 决策
 - `src/core/planning/prompts/planner_global_control.md`：改为驱动图工具 + 输出 directive + 自判 stop（读 `eligible_for_stop`/`achieved_level`）
 - `src/app/orchestrator.py`：`run_operation_cycle` 收敛为第 9 节单循环
 - `src/core/agents/graph_context.py`：从"全量压缩"改为"极小常驻摘要"
 
 **新增**
-- `src/core/stage/execution_agent.py`：单 ExecutionAgent（单目标一轮，内部有界循环，不判 stop/success）
+- `src/core/execution/execution_agent.py`：单 ExecutionAgent（单目标一轮，内部有界循环，不判 stop/success）
 - `RoundDirective` / `RoundResult` 模型
-- `src/core/stage/prompts/execution_agent.md`
+- `src/core/execution/prompts/execution_agent.md`
 - `capability → allowed_tools` 配置表
 - planner 图工具：`kg_query`/`kg_get_node`/`kg_neighbors`/`ag_get_timeline`/`ag_get_step`/`get_round_log` + `record_finding`/`record_attack_step`/`link_evidence`
 - 成功契约 `levels` / `achieved_level` 支持（`SuccessConditionTracker` 扩展）
@@ -413,7 +413,7 @@ def run_operation(operation_id, goal):
 **保留不动**
 - KG 模型主体、`ToolTraceFactExtractor`（唯一机器事实源）
 - `SuccessConditionTracker` / `PredicateEngine` / `GoalOracle`（确定性成功门）
-- 安全不变量：`PolicyEngine` 授权 scope 边界、secrets 永不进图
+- 安全不变量：mcp_lab 服务端 `authorized_hosts` 授权 scope 边界、secrets 永不进图
 
 ---
 

@@ -16,7 +16,7 @@ from src.core.models.ag import AttackGraph
 from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import StageResult, ToolTrace
+from src.core.execution.models import ExecutionResult, ToolTrace
 
 try:
     from fastapi.testclient import TestClient
@@ -44,10 +44,10 @@ class StopSuccessPlanner:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
         **_: Any,
     ) -> PlannerOutcome:
-        del policy_context, recent_stage_results
+        del policy_context, recent_execution_results
         return PlannerOutcome(
             operation_id=str(graph_context["operation_id"]),
             cycle_index=int(graph_context["cycle_index"]),
@@ -107,9 +107,9 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
         )
     )
     state = orchestrator.create_operation("op-progress")
-    recon_result = StageResult(
+    recon_result = ExecutionResult(
         operation_id="op-progress",
-        stage_task_id="stage-recon",
+        execution_id="stage-recon",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -117,9 +117,9 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
         findings=[{"type": "service_discovery", "summary": "one service discovered"}],
         evidence_refs=["ev-recon"],
     )
-    vuln_result = StageResult(
+    vuln_result = ExecutionResult(
         operation_id="op-progress",
-        stage_task_id="stage-vuln",
+        execution_id="stage-vuln",
         capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
@@ -132,9 +132,9 @@ def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp
     kg = KnowledgeGraph()
     ag = AttackGraph()
     applier = PhaseTwoResultApplier()
-    applier.apply_stage_result(recon_result, state, kg, ag)
+    applier.apply_execution_result(recon_result, state, kg, ag)
     orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
-    applier.apply_stage_result(vuln_result, state, kg, ag)
+    applier.apply_execution_result(vuln_result, state, kg, ag)
     orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
 
     progress = state.execution.metadata["success_condition_progress"]
@@ -160,9 +160,9 @@ def test_success_condition_progress_does_not_match_internal_service_from_dmz_rec
         )
     )
     state = orchestrator.create_operation("op-progress-specific")
-    recon_result = StageResult(
+    recon_result = ExecutionResult(
         operation_id="op-progress-specific",
-        stage_task_id="stage-recon",
+        execution_id="stage-recon",
         capability="recon",
         agent_name="recon_agent",
         status="needs_replan",
@@ -173,7 +173,7 @@ def test_success_condition_progress_does_not_match_internal_service_from_dmz_rec
 
     kg = KnowledgeGraph()
     ag = AttackGraph()
-    PhaseTwoResultApplier().apply_stage_result(recon_result, state, kg, ag)
+    PhaseTwoResultApplier().apply_execution_result(recon_result, state, kg, ag)
     orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
 
     progress = state.execution.metadata["success_condition_progress"]

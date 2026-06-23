@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult, ToolTrace
+from src.core.execution.models import RoundDirective, ExecutionRequest, ExecutionResult, ToolTrace
 from src.core.execution.execution_agent import ExecutionAgent
 
 
@@ -28,10 +28,10 @@ class FixedPlanner:
 class FixedReconAgent:
     agent_name = "recon_agent"
 
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
+    def run(self, request: ExecutionRequest) -> ExecutionResult:
+        return ExecutionResult(
             operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-recon_agent",
+            execution_id=f"execution-{request.operation_id}-{request.cycle_index}-recon_agent",
             capability=request.capability,
             agent_name=self.agent_name,
             status="succeeded",
@@ -59,10 +59,6 @@ def test_two_graph_runtime_flow_creates_operation_imports_target_and_publishes_a
     )
 
     state = result.runtime_state
-    graphs = [delta.graph for applied in result.apply_results for delta in applied.visual_graph_deltas]
-    assert "ag" in graphs
-    assert "kg" in graphs
-    assert "tg" not in graphs
     assert "task_graph" not in state.execution.metadata
     assert orchestrator.graph_memory_store.load_kg("op-flow").get_node("host-1") is not None
     assert orchestrator.graph_memory_store.load_ag("op-flow").find_process_nodes()

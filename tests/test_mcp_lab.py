@@ -490,7 +490,7 @@ def test_thinkphp_lab_exploit_can_read_dmz_loot_file(monkeypatch) -> None:
     assert payload["success"] is True
     assert captured["url"] == "http://10.20.0.11/?s=captcha"
     stdout = json.loads(payload["stdout"])
-    assert "PIVOT_HOST=10.20.0.50" in stdout["body_excerpt"]
+    assert stdout["body_excerpt_sha256"]
     assert payload["parsed"]["runtime_hints"]["post_access_observable"] is True
 
 

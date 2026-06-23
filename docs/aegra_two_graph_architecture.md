@@ -7,7 +7,7 @@ context, but they are not graphs.
 ## Canonical Runtime Path
 
 ```text
-User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> ExecutionResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
 This path is the only main operation chain. It replaces the older three-graph
@@ -42,7 +42,7 @@ records one attack process event or decision, such as:
 - `PlannerDecision`
 - `AgentExecution`
 - `ToolCall`
-- `StageResult`
+- `ExecutionResult`
 - `Handoff`
 - `Blocked`
 - `GoalCheck`
@@ -82,10 +82,10 @@ The planner must not impose a fixed `recon -> vuln -> exploit -> pivot -> goal`
 sequence. It chooses the next authorized stage from current state, prior
 attack-process history, runtime constraints, and policy.
 
-## StageDispatcher And Stage Agents
+## StageDispatcher And Execution Agents
 
 `StageDispatcher` reads `PlannerDecision.selected_agent` and calls one of five
-independent LLM stage agents:
+independent LLM execution agents:
 
 - `ReconAgent`
 - `VulnAnalysisAgent`
@@ -94,12 +94,12 @@ independent LLM stage agents:
 - `GoalAgent`
 
 Each `StageAgent` can call authorized MCP tools. Stage agents do not write
-`KG`, `AG`, `Runtime`, or audit logs. They return `StageResult`, `ToolTrace`,
+`KG`, `AG`, `Runtime`, or audit logs. They return `ExecutionResult`, `ToolTrace`,
 and optional `handoff_suggestion`.
 
 ## AttackLogExtractor
 
-`AttackLogExtractor` extracts attack-process nodes from `StageResult`,
+`AttackLogExtractor` extracts attack-process nodes from `ExecutionResult`,
 `ToolTrace`, `PlannerDecision`, and audit log entries. It writes nothing
 directly. Extracted `AG` candidates are sent to `ResultApplier` for validation
 and persistence.

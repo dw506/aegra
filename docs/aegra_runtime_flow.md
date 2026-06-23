@@ -7,7 +7,7 @@ merge a `TaskGraph`.
 ## Main Path
 
 ```text
-User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> ExecutionResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
 `PlannerAgent` is the only global planning LLM. It reads `KG`, `AG`,
@@ -41,10 +41,10 @@ planner may select any authorized stage that is justified by the current
 
 Each `StageAgent` is an independent LLM execution agent. It receives bounded
 context and policy constraints, may call authorized MCP tools, and returns
-`StageResult`, `ToolTrace`, and optional `handoff_suggestion`. Stage agents do
+`ExecutionResult`, `ToolTrace`, and optional `handoff_suggestion`. Stage agents do
 not write `KG`, `AG`, `Runtime`, or audit logs directly.
 
-`AttackLogExtractor` reads `StageResult`, `ToolTrace`, `PlannerDecision`, and
+`AttackLogExtractor` reads `ExecutionResult`, `ToolTrace`, `PlannerDecision`, and
 audit log entries. It extracts attack-process records for `AG` and sends them
 to `ResultApplier`. It does not bypass validation or write directly to graph
 stores.
@@ -57,7 +57,7 @@ stores.
   `Finding`.
 - `AG`: Attack Graph. Stores attack-process nodes only. An `AG` node records
   one attack process event or decision, such as `PlannerDecision`,
-  `AgentExecution`, `ToolCall`, `StageResult`, `Handoff`, `Blocked`,
+  `AgentExecution`, `ToolCall`, `ExecutionResult`, `Handoff`, `Blocked`,
   `GoalCheck`, or `AttackCycle`.
 - `Runtime`: execution state, including active operation status, session and
   pivot managers, credential manager state, leases, locks, budgets, and current
@@ -71,7 +71,7 @@ stores.
 - Agent: LLM-owned reasoning module. The main path agents are `PlannerAgent`
   and the five `StageAgent` implementations.
 - Dispatcher: deterministic routing from `PlannerDecision.selected_agent` to a
-  stage agent. It does not plan, schedule tasks, or write state.
+  execution agent. It does not plan, schedule tasks, or write state.
 - MCP: tool capability layer. MCP tools execute authorized actions and return
   neutral tool results. They do not write graphs or runtime state.
 - Extractor: deterministic attack-log extraction from planner, stage, tool, and

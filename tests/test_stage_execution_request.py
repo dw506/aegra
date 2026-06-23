@@ -6,8 +6,8 @@ from typing import Any
 
 from src.core.agents.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
-from src.core.stage.agents import ExecutionStageAgent
-from src.core.stage.models import StageExecutionRequest, StageResult
+from src.core.execution.execution_agent import ExecutionAgent
+from src.core.execution.models import ExecutionRequest, ExecutionResult
 
 
 class RecordingMCP:
@@ -55,7 +55,7 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
             }
         ]
     )
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-1",
         cycle_index=2,
         agent_name="recon_agent",
@@ -73,10 +73,10 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
         mcp_tool_catalog={},
     )
 
-    result = ExecutionStageAgent(llm_client=llm).run(request)
+    result = ExecutionAgent(llm_client=llm).run(request)
 
-    assert isinstance(result, StageResult)
-    assert result.stage_task_id == "stage-op-1-2-recon_agent"
+    assert isinstance(result, ExecutionResult)
+    assert result.execution_id == "execution-op-1-2-recon_agent"
     assert result.summary == "finished Collect service evidence"
     assert len(llm.calls) == 1
     assert result.handoff_suggestion is not None
@@ -84,8 +84,8 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
     assert result.handoff_suggestion.required_context_refs == ["kg:svc-1"]
 
 
-def test_execution_stage_agent_main_path_has_no_task_graph_dependency() -> None:
-    source = Path("src/core/stage/llm_driven_stage_agent.py").read_text(encoding="utf-8")
+def test_execution_agent_main_path_has_no_task_graph_dependency() -> None:
+    source = Path("src/core/execution/execution_agent.py").read_text(encoding="utf-8")
 
     assert "TaskGraph" not in source
     assert "src.core.models.tg" not in source
@@ -105,7 +105,7 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
         ]
     )
     mcp = RecordingMCP()
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-validation-url",
         cycle_index=3,
         agent_name="exploit_validation_agent",
@@ -135,7 +135,7 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
         },
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
@@ -155,7 +155,7 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
         ]
     )
     mcp = RecordingMCP()
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-missing-tool",
         cycle_index=1,
         agent_name="recon_agent",
@@ -165,7 +165,7 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "http_probe"}]}},
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "partial"
     assert mcp.calls == []
@@ -185,7 +185,7 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
         ]
     )
     mcp = RecordingMCP()
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-url-tool",
         cycle_index=1,
         agent_name="recon_agent",
@@ -195,7 +195,7 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "web_fingerprint"}]}},
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["url"] == "http://10.0.0.5:8080"
@@ -215,7 +215,7 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
         ]
     )
     mcp = RecordingMCP()
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-default-server",
         cycle_index=4,
         agent_name="recon_agent",
@@ -225,7 +225,7 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["server_id"] == "pentest-tools"
@@ -250,7 +250,7 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
             }
         ]
     )
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-finish-data",
         cycle_index=3,
         agent_name="recon_agent",
@@ -259,7 +259,7 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
         max_steps=1,
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.evidence_refs == ["runtime://tool-output/nmap"]
@@ -269,12 +269,12 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
     assert structured[0]["service_discovery"][0]["port"] == 8080
 
 
-def test_stage_agent_accepts_stage_result_alias_and_string_observations() -> None:
+def test_stage_agent_accepts_execution_result_alias_and_string_observations() -> None:
     llm = FakeStageLLM(
         [
             {
                 "action": "finish",
-                "stage_result": {
+                "execution_result": {
                     "status": "completed",
                     "summary": "recon noted scope",
                     "observations": ["Target remains within authorized DMZ scope."],
@@ -282,8 +282,8 @@ def test_stage_agent_accepts_stage_result_alias_and_string_observations() -> Non
             }
         ]
     )
-    request = StageExecutionRequest(
-        operation_id="op-stage-result-alias",
+    request = ExecutionRequest(
+        operation_id="op-execution-result-alias",
         cycle_index=1,
         agent_name="recon_agent",
         capability="recon",
@@ -291,7 +291,7 @@ def test_stage_agent_accepts_stage_result_alias_and_string_observations() -> Non
         max_steps=1,
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.observations == [{"type": "note", "detail": "Target remains within authorized DMZ scope."}]
@@ -316,7 +316,7 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
             },
         ]
     )
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-repair-finish",
         cycle_index=1,
         agent_name="vuln_analysis_agent",
@@ -325,7 +325,7 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
         max_steps=1,
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert len(llm.calls) == 2
     assert result.status == "succeeded"
@@ -363,7 +363,7 @@ def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
             }
         ]
     )
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-json-summary",
         cycle_index=2,
         agent_name="vuln_analysis_agent",
@@ -372,7 +372,7 @@ def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
         max_steps=1,
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
     assert result.findings[0]["summary"] == "Example App identified from page title."
@@ -382,7 +382,7 @@ def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
 
 def test_stage_agent_empty_success_finish_requests_replan() -> None:
     llm = FakeStageLLM([{"action": "finish"}])
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-empty-finish",
         cycle_index=9,
         agent_name="goal_agent",
@@ -391,7 +391,7 @@ def test_stage_agent_empty_success_finish_requests_replan() -> None:
         max_steps=1,
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "needs_replan"
     assert "no tool results" in (result.replan_recommendation or "")
@@ -408,7 +408,7 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
         ]
     )
     mcp = RecordingMCP()
-    request = StageExecutionRequest(
+    request = ExecutionRequest(
         operation_id="op-unavailable-server",
         cycle_index=1,
         agent_name="recon_agent",
@@ -424,7 +424,7 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
         },
     )
 
-    result = ExecutionStageAgent(llm_client=llm, mcp_client=mcp).run(request)
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert mcp.calls == []
     assert result.tool_traces[0].exit_code == "tool_server_unavailable"

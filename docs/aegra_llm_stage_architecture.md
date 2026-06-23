@@ -7,7 +7,7 @@ execution chain.
 Canonical main path:
 
 ```text
-User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> StageResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
+User Goal -> KG/AG/Runtime/Policy -> PlannerAgent -> ResultApplier -> StageDispatcher -> StageAgent -> MCP -> ExecutionResult/ToolTrace -> AttackLogExtractor -> ResultApplier -> KG/AG/Runtime -> Next Cycle
 ```
 
 ```text
@@ -32,7 +32,7 @@ ReconAgent / VulnAnalysisAgent / ExploitValidationAgent / AccessPivotAgent / Goa
 MCP
         |
         v
-StageResult / ToolTrace / handoff_suggestion
+ExecutionResult / ToolTrace / handoff_suggestion
         |
         v
 AttackLogExtractor
@@ -71,7 +71,7 @@ state and policy, not from a hard-coded sequence.
 
 `PlannerAgent` is also the only global controller that may output
 `stop_success` or `stop_failed`. A `stop_success` decision requires recorded
-goal evidence: a `GoalAgent` `StageResult`, a `GoalCheck` finding, evidence
+goal evidence: a `GoalAgent` `ExecutionResult`, a `GoalCheck` finding, evidence
 refs, and AG process nodes for the goal check and stage result.
 
 ## StageDispatcher
@@ -89,10 +89,10 @@ It does not schedule task-graph nodes, merge task state, or write graphs.
 
 ## StageAgent
 
-Each `StageAgent` is an independent LLM stage executor. A stage agent can call
+Each `StageAgent` is an independent LLM stage executor. A execution agent can call
 authorized MCP tools through the policy-enforced tool boundary. It returns:
 
-- `StageResult`
+- `ExecutionResult`
 - `ToolTrace`
 - `handoff_suggestion`
 
@@ -116,13 +116,13 @@ graph or runtime state.
 `AttackLogExtractor` converts operational records into `AG` attack-process
 nodes. Its inputs are:
 
-- `StageResult`
+- `ExecutionResult`
 - `ToolTrace`
 - `PlannerDecision`
 - audit log entries
 
 The extractor emits candidate `AG` nodes such as `PlannerDecision`,
-`AgentExecution`, `ToolCall`, `StageResult`, `Handoff`, `Blocked`,
+`AgentExecution`, `ToolCall`, `ExecutionResult`, `Handoff`, `Blocked`,
 `GoalCheck`, and `AttackCycle`. Each `AG` node records one attack process event
 or decision, not an environment fact.
 

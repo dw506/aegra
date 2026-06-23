@@ -6,14 +6,11 @@ import re
 from typing import Any
 
 from src.core.models.runtime import (
-    LockStatus,
     ReplayPlanRuntime,
     ReplayPlanStatus,
     RuntimeEventRef,
     RuntimeState,
     SessionStatus,
-    TaskRuntimeStatus,
-    WorkerStatus,
     utc_now,
 )
 
@@ -96,11 +93,6 @@ def build_recovery_snapshot(state: RuntimeState) -> dict[str, Any]:
     """Build one small recovery-oriented view for persistence and resume."""
 
     recovery = _recovery_metadata(state)
-    inflight_tasks = [
-        task.task_id
-        for task in state.execution.tasks.values()
-        if task.status in {TaskRuntimeStatus.CLAIMED, TaskRuntimeStatus.RUNNING}
-    ]
     return {
         "operation_id": state.operation_id,
         "captured_at": utc_now().isoformat(),
@@ -108,7 +100,7 @@ def build_recovery_snapshot(state: RuntimeState) -> dict[str, Any]:
         "event_cursor": state.event_cursor,
         "last_updated": state.last_updated.isoformat(),
         "unclean_shutdown": bool(recovery.get("unclean_shutdown", False)),
-        "inflight_task_ids": inflight_tasks,
+        "inflight_task_ids": [],
         "recovery_metadata": dict(recovery),
         "last_phase_checkpoint": dict(recovery.get("last_phase_checkpoint", {})),
         "replay_plan": dict(state.execution.metadata.get("replay_plan", {})),
@@ -190,31 +182,6 @@ def prepare_state_for_resume(
     expired_session_ids: list[str] = []
 
     # 中文注释：
-    # crash 后 running/claimed task 的执行上下文不可信，统一退回 pending，
-    # 避免直接沿用半写入的 started/deadline/worker 绑定继续执行。
-    for task in state.execution.tasks.values():
-        if task.status not in {TaskRuntimeStatus.CLAIMED, TaskRuntimeStatus.RUNNING}:
-            continue
-        task.status = TaskRuntimeStatus.PENDING
-        task.assigned_worker = None
-        task.started_at = None
-        task.deadline = None
-        task.metadata["resume_reason"] = reason
-        task.metadata["resumed_at"] = now.isoformat()
-        resumed_task_ids.append(task.task_id)
-
-    # 中文注释：
-    # 活动锁在 crash 后已失去 owner 连通性，保守策略是直接释放，
-    # 避免后续执行因旧锁永久阻塞。
-    for lock in state.locks.values():
-        if lock.status != LockStatus.ACTIVE:
-            continue
-        lock.status = LockStatus.RELEASED
-        lock.metadata["released_by_recovery"] = True
-        lock.metadata["recovery_reason"] = reason
-        released_lock_ids.append(lock.lock_key)
-
-    # 中文注释：
     # 当前阶段不做事件重放，但先把未消费事件标记成“待恢复/可回放”结构，
     # 后续 replay 只需要消费这些 metadata，不必再倒推 crash 来源。
     for event in state.pending_events:
@@ -242,27 +209,6 @@ def prepare_state_for_resume(
         session.metadata["bound_task_ids"] = []
         expired_session_ids.append(session.session_id)
 
-    # 中文注释：
-    # lease 视图要和 session/task 恢复结果保持一致：所有仍然活动的 lease 都在恢复点收口释放，
-    # 否则后续执行会误以为 session 仍被旧 task 持有。
-    for lease in state.session_leases.values():
-        if "released_at" in lease.metadata:
-            continue
-        lease.lease_expiry = now
-        lease.metadata.setdefault("released_at", now.isoformat())
-        lease.metadata["release_reason"] = reason
-        lease.metadata["released_by_recovery"] = True
-
-    for worker in state.workers.values():
-        if worker.status in {WorkerStatus.LOST, WorkerStatus.UNAVAILABLE}:
-            continue
-        if worker.current_task_id is not None or worker.status == WorkerStatus.BUSY:
-            worker.current_task_id = None
-            worker.status = WorkerStatus.IDLE
-            worker.current_load = 0
-            worker.metadata["resume_reason"] = reason
-            worker.metadata["resumed_at"] = now.isoformat()
-            resumed_worker_ids.append(worker.worker_id)
     metadata = _recovery_metadata(state)
     metadata["last_resume_at"] = now.isoformat()
     metadata["last_resume_reason"] = reason

@@ -21,10 +21,10 @@ class CapturingMissionPlanner:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
         **_: Any,
     ) -> PlannerOutcome:
-        del recent_stage_results
+        del recent_execution_results
         self.graph_context = graph_context
         self.policy_context = policy_context
         return PlannerOutcome(
@@ -52,10 +52,10 @@ class SequenceMissionPlanner:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
         **_: Any,
     ) -> PlannerOutcome:
-        del policy_context, recent_stage_results
+        del policy_context, recent_execution_results
         self.calls += 1
         action = self.decisions.pop(0) if self.decisions else "stop_failed"
         return PlannerOutcome(

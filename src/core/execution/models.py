@@ -7,7 +7,8 @@ from typing import Any, Literal, TypeAlias, get_args
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.models.ag import GraphRef, stable_node_id
-from src.core.models.events import new_protocol_id, utc_now
+from src.core.models.graph_common import utc_now
+from uuid import uuid4
 
 
 class GraphUpdateIntent(BaseModel):
@@ -101,10 +102,10 @@ class RoundResult(BaseModel):
     raw_summary: str = Field(min_length=1)
     log_ref: str | None = None
     objective_met: bool = False
-    stage_result: "StageResult | None" = None
+    execution_result: "ExecutionResult | None" = None
 
 
-class StageExecutionRequest(BaseModel):
+class ExecutionRequest(BaseModel):
     """RoundDirective-derived request consumed by the execution agent."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
@@ -135,8 +136,8 @@ class StageExecutionRequest(BaseModel):
     handoff_policy: str | None = None
 
 
-class StageHandoffSuggestion(BaseModel):
-    """Suggested next-capability handoff emitted by a StageResult."""
+class NextRoundSuggestion(BaseModel):
+    """Suggested next-capability handoff emitted by a ExecutionResult."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -147,14 +148,14 @@ class StageHandoffSuggestion(BaseModel):
     required_context_refs: list[Any] = Field(default_factory=list)
 
 
-class StageResult(BaseModel):
-    """Stage Agent output consumed by ResultApplier through an adapter."""
+class ExecutionResult(BaseModel):
+    """Execution Agent output consumed directly by ResultApplier."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    result_id: str = Field(default_factory=lambda: new_protocol_id("stage-result"))
+    result_id: str = Field(default_factory=lambda: f"execution-result-{uuid4().hex}")
     operation_id: str = Field(default="operation", min_length=1)
-    stage_task_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
     # v3 capability tag, authoritative from the planner directive. ExecutionAgent
     # stamps it from RoundDirective.capability; the result tier reads it directly.
     capability: CapabilityName = "evidence"
@@ -175,7 +176,7 @@ class StageResult(BaseModel):
     pivot_routes: list[dict[str, Any]] = Field(default_factory=list)
     privilege_contexts: list[dict[str, Any]] = Field(default_factory=list)
 
-    next_stage_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    next_capability_candidates: list[dict[str, Any]] = Field(default_factory=list)
     failed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     graph_update_intents: list[GraphUpdateIntent] = Field(default_factory=list)
@@ -186,8 +187,8 @@ class StageResult(BaseModel):
     policy_notes: list[str] = Field(default_factory=list)
     retry_recommendation: str | None = None
     replan_recommendation: str | None = None
-    next_stage_suggestion: dict[str, Any] | None = None
-    handoff_suggestion: StageHandoffSuggestion | None = None
+    next_capability_suggestion: dict[str, Any] | None = None
+    handoff_suggestion: NextRoundSuggestion | None = None
     visual_summary: dict[str, Any] = Field(default_factory=dict)
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
@@ -195,16 +196,16 @@ class StageResult(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_stage_result_payload(cls, value: Any) -> Any:
-        """Accept common finish payload wrappers before strict StageResult validation."""
+    def normalize_execution_result_payload(cls, value: Any) -> Any:
+        """Accept common finish payload wrappers before strict ExecutionResult validation."""
 
         if not isinstance(value, dict):
             return value
         payload = dict(value)
-        nested = payload.get("stage_result") or payload.get("result")
+        nested = payload.get("execution_result") or payload.get("result")
         if isinstance(nested, dict):
             payload = {
-                **{key: item for key, item in payload.items() if key not in {"stage_result", "result"}},
+                **{key: item for key, item in payload.items() if key not in {"execution_result", "result"}},
                 **nested,
             }
         return payload
@@ -237,8 +238,8 @@ __all__ = [
     "GraphUpdateIntent",
     "RoundDirective",
     "RoundResult",
-    "StageExecutionRequest",
-    "StageHandoffSuggestion",
-    "StageResult",
+    "ExecutionRequest",
+    "NextRoundSuggestion",
+    "ExecutionResult",
     "ToolTrace",
 ]

@@ -1,4 +1,4 @@
-"""Capability model for stage-level graph-driven operations."""
+"""Capability model for execution-level graph-driven operations."""
 
 from __future__ import annotations
 

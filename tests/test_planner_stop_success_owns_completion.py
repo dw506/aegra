@@ -5,17 +5,17 @@ from src.app.settings import AppSettings
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
+from src.core.execution.models import RoundDirective, ExecutionRequest, ExecutionResult
 from src.core.execution.execution_agent import ExecutionAgent
 
 
 class GoalSatisfiedAgent:
     agent_name = "goal_agent"
 
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
+    def run(self, request: ExecutionRequest) -> ExecutionResult:
+        return ExecutionResult(
             operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-goal_agent",
+            execution_id=f"execution-{request.operation_id}-{request.cycle_index}-goal_agent",
             capability="goal",
             agent_name=self.agent_name,
             status="succeeded",
@@ -33,10 +33,10 @@ class GoalSatisfiedAgent:
 class GoalWithoutExplicitSatisfiedHintAgent:
     agent_name = "goal_agent"
 
-    def run(self, request: StageExecutionRequest) -> StageResult:
-        return StageResult(
+    def run(self, request: ExecutionRequest) -> ExecutionResult:
+        return ExecutionResult(
             operation_id=request.operation_id,
-            stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-goal_agent",
+            execution_id=f"execution-{request.operation_id}-{request.cycle_index}-goal_agent",
             capability="goal",
             agent_name=self.agent_name,
             status="succeeded",

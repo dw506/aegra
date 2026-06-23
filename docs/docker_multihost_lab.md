@@ -119,7 +119,7 @@ and KG evidence deltas work against three Docker-hosted targets and one
 internal-only Docker service.
 
 Graph-driven smoke tests should verify the Planner-centered loop:
-`PlannerAgent` dispatches stage agents, `ResultApplier` records KG/AG/Runtime
+`PlannerAgent` dispatches execution agents, `ResultApplier` records KG/AG/Runtime
 facts, `AccessPivotAgent` records sessions and pivot routes, `GoalAgent` records
 `goal_satisfied=true`, and only the next `PlannerAgent` `stop_success` completes
 the operation. Tests that require this lab must be skipped by default unless

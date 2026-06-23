@@ -22,7 +22,7 @@ from src.core.models.runtime import OperationRuntime, PivotRouteStatus, RuntimeS
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import StageResult, ToolTrace
+from src.core.execution.models import ExecutionResult, ToolTrace
 
 
 def _state() -> RuntimeState:
@@ -44,9 +44,9 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
     """A stage whose LLM finish payload omitted sessions/pivot_routes still
     materializes real runtime objects from the deterministic tool hints."""
 
-    stage = StageResult(
+    stage = ExecutionResult(
         operation_id="op-harvest",
-        stage_task_id="stage-op-harvest-1-access_pivot_agent",
+        execution_id="stage-op-harvest-1-access_pivot_agent",
         capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
@@ -91,7 +91,7 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_stage_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
 
     assert "sess-pivot-1" in state.sessions
     assert "route::pivot::10.30.0.12:8080" in state.pivot_routes
@@ -103,9 +103,9 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
 def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
     """If the LLM already supplied the route, the harvest does not duplicate it."""
 
-    stage = StageResult(
+    stage = ExecutionResult(
         operation_id="op-harvest",
-        stage_task_id="stage-op-harvest-1-access_pivot_agent",
+        execution_id="stage-op-harvest-1-access_pivot_agent",
         capability="pivot",
         agent_name="access_pivot_agent",
         status="succeeded",
@@ -128,7 +128,7 @@ def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_stage_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
     assert list(state.pivot_routes.keys()) == ["route-x"]
 
 
@@ -137,9 +137,9 @@ def test_tool_reported_vulnerability_candidate_becomes_typed_kg_node() -> None:
     node (not flattened into a generic Finding), satisfying the strongly-typed
     ``vulnerability_candidate_recorded`` contract condition."""
 
-    stage = StageResult(
+    stage = ExecutionResult(
         operation_id="op-harvest",
-        stage_task_id="stage-op-harvest-1-vuln_analysis_agent",
+        execution_id="stage-op-harvest-1-vuln_analysis_agent",
         capability="analysis",
         agent_name="vuln_analysis_agent",
         status="succeeded",
@@ -164,7 +164,7 @@ def test_tool_reported_vulnerability_candidate_becomes_typed_kg_node() -> None:
 
     state = _state()
     kg = KnowledgeGraph()
-    PhaseTwoResultApplier().apply_stage_result(stage, state, kg, AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(stage, state, kg, AttackGraph())
 
     types = {node.model_dump(mode="json").get("type") for node in kg.list_nodes()}
     assert "VulnerabilityCandidate" in types

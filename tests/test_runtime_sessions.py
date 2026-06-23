@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from src.core.models.runtime import OperationRuntime, RuntimeState, TaskRuntime
+from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.runtime.session_manager import RuntimeSessionManager
 
 
@@ -23,16 +23,14 @@ def test_extend_lease_updates_expiry() -> None:
     assert updated.lease_expiry > original_expiry
 
 
-def test_bind_task_to_session_updates_metadata_and_task_runtime() -> None:
+def test_bind_task_to_session_updates_session_metadata() -> None:
     state = build_state()
-    state.execution.tasks["task-1"] = TaskRuntime(task_id="task-1", execution_node_id="exec-1")
     manager = RuntimeSessionManager()
     manager.open_session(state, "sess-1", "alice", "host-1", lease_seconds=30, reusability="shared")
 
     session = manager.bind_task_to_session(state, "task-1", "sess-1")
 
     assert "task-1" in session.metadata["bound_task_ids"]
-    assert state.execution.tasks["task-1"].metadata["session_id"] == "sess-1"
 
 
 def test_cleanup_expired_sessions_marks_elapsed_sessions_expired() -> None:
@@ -55,5 +53,4 @@ def test_extend_lease_on_expired_session_raises() -> None:
 
     with pytest.raises(ValueError):
         manager.extend_lease(state, "sess-1", extra_seconds=60)
-
 

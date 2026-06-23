@@ -17,7 +17,7 @@ class MissionPlannerAdvisor(Protocol):
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
     ) -> PlannerOutcome | dict[str, Any]:
         """Return the next PlannerOutcome (or a dict validated into one)."""
 
@@ -39,7 +39,7 @@ class MissionPlannerAgent:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any] | None = None,
-        recent_stage_results: list[dict[str, Any]] | None = None,
+        recent_execution_results: list[dict[str, Any]] | None = None,
         graph_tools: PlannerGraphTools | None = None,
     ) -> PlannerOutcome:
         """Return a P3 planner outcome: execute one directive or stop/pause."""
@@ -66,7 +66,7 @@ class MissionPlannerAgent:
             goal=goal,
             graph_context=planner_context,
             policy_context=dict(policy_context or {}),
-            recent_stage_results=list(recent_stage_results or []),
+            recent_execution_results=list(recent_execution_results or []),
         )
         outcome = _outcome_from_payload(raw, operation_id=operation_id, cycle_index=cycle_index)
         if graph_tools is not None and isinstance(raw, dict):

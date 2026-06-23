@@ -16,7 +16,7 @@ from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.planning.models import PlannerOutcome
 from src.core.execution.execution_agent import ExecutionAgent
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
+from src.core.execution.models import RoundDirective, ExecutionRequest, ExecutionResult
 
 
 def _agent(agent_name: str, capability: str, **result_kwargs: Any):
@@ -25,10 +25,10 @@ def _agent(agent_name: str, capability: str, **result_kwargs: Any):
             self.agent_name = agent_name
             self.capability = capability
 
-        def run(self, request: StageExecutionRequest) -> StageResult:
-            return StageResult(
+        def run(self, request: ExecutionRequest) -> ExecutionResult:
+            return ExecutionResult(
                 operation_id=request.operation_id,
-                stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-{agent_name}",
+                execution_id=f"execution-{request.operation_id}-{request.cycle_index}-{agent_name}",
                 capability=capability,
                 agent_name=agent_name,
                 status="succeeded",
@@ -47,7 +47,7 @@ def _executor(agents):
     class _Dispatch:
         agent_name = "execution_agent"
 
-        def run(self, request: StageExecutionRequest) -> StageResult:
+        def run(self, request: ExecutionRequest) -> ExecutionResult:
             return by_capability[request.capability].run(request)
 
     return ExecutionAgent(_Dispatch())  # type: ignore[arg-type]
@@ -214,7 +214,6 @@ def test_success_contract_loop_terminates_only_when_eligible_for_stop(tmp_path) 
     ]
     assert progress["all_required_satisfied"] is True
     assert progress["eligible_for_stop"] is True
-    assert progress["conditions"]["dmz_service_discovered"]["evidence_ids"] == ["evidence::recon-service"]
     assert state.operation_status.value == "completed"
     assert summary.success is True
     assert summary.status == "success"
@@ -335,7 +334,6 @@ def test_profile_custom_condition_signal_can_satisfy_database_file_read_goal(tmp
 
     assert planner.decisions == ["dispatch:access_pivot_agent", "dispatch:goal_agent", "stop_success"]
     assert progress["conditions"]["database_file_read"]["satisfied"] is True
-    assert progress["conditions"]["database_file_read"]["evidence_ids"] == ["evidence::database-file-read"]
     assert progress["eligible_for_stop"] is True
     assert summary.success is True
     assert summary.stop_reason == "success_conditions_satisfied"

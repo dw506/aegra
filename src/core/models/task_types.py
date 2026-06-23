@@ -1,4 +1,4 @@
-"""Execution task and stage category names."""
+"""Execution task and execution category names."""
 
 from __future__ import annotations
 

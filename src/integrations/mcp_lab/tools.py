@@ -1716,10 +1716,21 @@ def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
     safe_id = re.sub(r"[^A-Za-z0-9_\-]", "", profile_id)
     if not safe_id:
         return None
-    candidate = Path("configs/exploit_profiles") / f"{safe_id}.yml"
-    if not candidate.exists():
-        candidate = Path("configs/exploit_profiles") / f"{safe_id}.yaml"
-    if not candidate.exists():
+    profiles_dir = Path("configs/exploit_profiles")
+    candidate_names = [safe_id]
+    normalized_id = safe_id.replace("-", "_")
+    if normalized_id != safe_id:
+        candidate_names.append(normalized_id)
+    candidate = next(
+        (
+            path
+            for name in candidate_names
+            for path in (profiles_dir / f"{name}.yml", profiles_dir / f"{name}.yaml")
+            if path.exists()
+        ),
+        None,
+    )
+    if candidate is None:
         return None
     try:
         import yaml  # type: ignore[import-not-found]
@@ -1766,39 +1777,32 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
                 parsed={"runtime_hints": {"blocked_by": "unsafe_output_path"}},
             )
 
-    # Build substitution context for safe_payload_template
     session_id = _string(arguments.get("session_id"))
     route_id = _string(arguments.get("route_id"))
-    extra_params = arguments.get("extra_params") or {}
-    sub_context = {
-        "target_url": target_url,
-        "session_id": session_id or "",
-        "route_id": route_id or "",
-        **{str(k): str(v) for k, v in extra_params.items()},
-    }
 
-    # Execute safe_payload_template as an HTTP probe if it is a URL template
+    # The payload template describes the bounded exploit payload, not its HTTP
+    # endpoint. The profile's target hint remains authoritative for the request
+    # path so a relative payload string can never replace the authorized target.
     template = _string(profile.get("safe_payload_template"))
+    target_hints = profile.get("target_hints") if isinstance(profile.get("target_hints"), dict) else {}
+    vuln_path = _string(target_hints.get("vuln_path")) or "/"
+    request_url = urljoin(target_url.rstrip("/") + "/", vuln_path.lstrip("/"))
     result_stdout = ""
     result_success = False
     executed_steps: list[str] = []
 
     if template:
         try:
-            rendered_url = template.format(**sub_context)
-        except (KeyError, ValueError):
-            rendered_url = target_url
-        try:
-            response = _open_url(rendered_url, method="GET", timeout=timeout)
+            response = _open_url(request_url, method="GET", timeout=timeout)
             result_success = int(response["status"]) < 500
             result_stdout = json.dumps({
-                "url": rendered_url,
+                "url": request_url,
                 "status": response["status"],
                 "body_excerpt_sha256": hashlib.sha256(
                     response["body_excerpt"].encode("utf-8", errors="replace")
                 ).hexdigest(),
             }, sort_keys=True)
-            executed_steps.append(f"http_probe:{rendered_url}")
+            executed_steps.append(f"http_probe:{request_url}")
         except Exception as exc:
             result_stdout = ""
             result_success = False
@@ -1806,10 +1810,10 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
     else:
         # No payload template — probe the target URL directly as a bounded availability check
         try:
-            response = _open_url(target_url, method="GET", timeout=timeout)
+            response = _open_url(request_url, method="GET", timeout=timeout)
             result_success = int(response["status"]) < 500
-            result_stdout = json.dumps({"url": target_url, "status": response["status"]}, sort_keys=True)
-            executed_steps.append(f"availability_check:{target_url}")
+            result_stdout = json.dumps({"url": request_url, "status": response["status"]}, sort_keys=True)
+            executed_steps.append(f"availability_check:{request_url}")
         except Exception as exc:
             result_success = False
             executed_steps.append(f"availability_check_failed:{exc!s:.120}")
@@ -1842,6 +1846,25 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
         "session_id": session_id,
         "route_id": route_id,
     }
+    post_access = profile.get("post_access_capability")
+    if isinstance(post_access, dict):
+        parsed["runtime_hints"].update(
+            {
+                "capability_kind": post_access.get("capability_kind"),
+                "post_access_observable": result_success,
+                "observable_zones": list(post_access.get("observable_zones") or []),
+                "safe_paths": list(post_access.get("safe_paths") or []),
+                "next_tools": list(post_access.get("suggested_next_tools") or []),
+            }
+        )
+        parsed["entities"][0].update(
+            {
+                "capability_kind": post_access.get("capability_kind"),
+                "post_access_observable": result_success,
+                "observable_zones": list(post_access.get("observable_zones") or []),
+                "safe_paths": list(post_access.get("safe_paths") or []),
+            }
+        )
     parsed["writeback_hints"] = {
         "observation_category": "exploit_execution",
         "exploit_profile_id": profile_id,

@@ -22,7 +22,7 @@ from src.core.evaluation.profile_loader import profile_from_dict
 from src.core.evaluation.success_condition_tracker import SuccessConditionTracker
 from src.core.evaluation.success_contract_loader import contract_from_dict, load_contract
 from src.core.models.ag import AttackGraph
-from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, WorkerRuntime, WorkerStatus, utc_now
+from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
@@ -46,7 +46,6 @@ from src.core.runtime.llm_history import (
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
-from src.core.visualization.graph_publisher import graph_delta_publisher
 from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
 
 #把用户输入的目标转换成标准 Asset  用户输入目标 → 标准资产对象 → 写入 runtime policy 的 engagement scope
@@ -338,8 +337,8 @@ class AppOrchestrator:
         return OperationSummary(
             operation_id=state.operation_id,
             operation_status=state.operation_status,
-            runtime_task_count=len(state.execution.tasks),
-            worker_count=len(state.workers),
+            runtime_task_count=0,
+            worker_count=0,
             target_count=int(state.execution.metadata.get("target_count", 0)),
             last_cycle_phase=str(last_phase_checkpoint.get("phase")) if last_phase_checkpoint.get("phase") is not None else None,
             unclean_shutdown=bool(recovery.get("unclean_shutdown", False)),
@@ -657,7 +656,7 @@ class AppOrchestrator:
                 goal=goal,
                 graph_context=planner_context,
                 policy_context=blackbox_policy_context,
-                recent_stage_results=self._planner_recent_stage_results(state),          #最近几轮 Stage 执行结果
+                recent_execution_results=self._planner_recent_execution_results(state),          #最近几轮 Stage 执行结果
                 graph_tools=planner_tools,
             )
             operation_trace_logger.write_block(
@@ -702,8 +701,6 @@ class AppOrchestrator:
         if outcome.directive is not None:
             outcome.directive.cycle_index = cycle_index
         planning_apply = self.result_applier.apply_planner_outcome(outcome, state, kg, ag)
-        for delta in planning_apply.visual_graph_deltas:
-            graph_delta_publisher.publish_nowait(delta)
 
         planning_output = AgentOutput(
             decisions=[
@@ -768,26 +765,26 @@ class AppOrchestrator:
                     pivot_routes=[route.model_dump(mode="json") for route in state.pivot_routes.values()],
                     sessions=[session.model_dump(mode="json") for session in state.sessions.values()],
                 )
-                stage_result = round_result.stage_result
-                if stage_result is None:
-                    raise ValueError("ExecutionAgent returned no StageResult")
-                if stage_result.operation_id != operation_id:
-                    original_operation_id = stage_result.operation_id
-                    stage_result.operation_id = operation_id
-                    stage_result.runtime_hints = {
-                        **dict(stage_result.runtime_hints),
+                execution_result = round_result.execution_result
+                if execution_result is None:
+                    raise ValueError("ExecutionAgent returned no ExecutionResult")
+                if execution_result.operation_id != operation_id:
+                    original_operation_id = execution_result.operation_id
+                    execution_result.operation_id = operation_id
+                    execution_result.runtime_hints = {
+                        **dict(execution_result.runtime_hints),
                         "normalized_operation_id_from": original_operation_id,
                     }
                     self._log_operation_event(
                         state,
-                        event_type="stage_result_operation_id_normalized",
+                        event_type="execution_result_operation_id_normalized",
                         cycle_index=cycle_index,
-                        stage_task_id=stage_result.stage_task_id,
+                        execution_id=execution_result.execution_id,
                         original_operation_id=original_operation_id,
                         normalized_operation_id=operation_id,
                     )
                 finished_at = utc_now()
-                stage_apply = self.result_applier.apply_stage_result(stage_result, state, kg, ag)
+                stage_apply = self.result_applier.apply_execution_result(execution_result, state, kg, ag)
                 self._update_success_condition_progress(
                     state=state,
                     kg=kg,
@@ -809,35 +806,32 @@ class AppOrchestrator:
                 )
             stage_graph_write_payload = {
                 "cycle": cycle_index,
-                "capability": stage_result.capability,
-                "agent": stage_result.agent_name,
-                "stage_status": stage_result.status,
+                "capability": execution_result.capability,
+                "agent": execution_result.agent_name,
+                "execution_status": execution_result.status,
                 "kg_delta_count": len(stage_apply.kg_state_deltas or []),
-                "ag_delta_count": len(stage_apply.ag_state_deltas or []),
                 "runtime_event_count": len(stage_apply.runtime_event_refs or []),
                 "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
                 "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
-                "evidence_refs": list(stage_result.evidence_refs),
+                "evidence_refs": list(execution_result.evidence_refs),
             }
             operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
-            for delta in stage_apply.visual_graph_deltas:
-                graph_delta_publisher.publish_nowait(delta)
             apply_results.append(stage_apply)
-            applied_ids.append(stage_result.stage_task_id)
+            applied_ids.append(execution_result.execution_id)
             stage_output = AgentOutput(
-                outcomes=[stage_result.model_dump(mode="json")],
-                logs=[stage_result.summary],
+                outcomes=[execution_result.model_dump(mode="json")],
+                logs=[execution_result.summary],
             )
             execution = PipelineCycleResult(
                 cycle_name="execution_round",
                 operation_id=operation_id,
-                success=stage_result.status not in {"failed", "blocked"},
+                success=execution_result.status not in {"failed", "blocked"},
                 steps=[
                     PipelineStepResult(
-                        step_name=stage_result.agent_name,
-                        agent_name=stage_result.agent_name,
+                        step_name=execution_result.agent_name,
+                        agent_name=execution_result.agent_name,
                         agent_kind=AgentKind.WORKER,
-                        success=stage_result.status not in {"failed", "blocked"},
+                        success=execution_result.status not in {"failed", "blocked"},
                         agent_input=AgentInput(
                             graph_refs=graph_refs,
                             context=AgentContext(operation_id=operation_id),
@@ -853,17 +847,17 @@ class AppOrchestrator:
                     )
                 ],
                 final_output=stage_output,
-                logs=[stage_result.summary],
+                logs=[execution_result.summary],
             )
             if self._goal_satisfied(state):
                 state.execution.metadata["goal_satisfied"] = True
-            if stage_result.status in {"failed", "blocked"}:
-                stop_reason = stage_result.summary
+            if execution_result.status in {"failed", "blocked"}:
+                stop_reason = execution_result.summary
                 state.execution.metadata["needs_replan"] = True
                 state.execution.metadata["last_stage_stop_reason"] = {
-                    "status": stage_result.status,
-                    "summary": stage_result.summary,
-                    "stage_task_id": stage_result.stage_task_id,
+                    "status": execution_result.status,
+                    "summary": execution_result.summary,
+                    "execution_id": execution_result.execution_id,
                     "recorded_at": utc_now().isoformat(),
                 }
             else:
@@ -874,7 +868,7 @@ class AppOrchestrator:
             cycle_name="feedback_disabled",
             operation_id=operation_id,
             success=True,
-            logs=["feedback critic phase disabled for stage-agent main path"],
+            logs=["feedback critic phase disabled for execution-agent main path"],
         )
         summary = {
             "cycle_index": cycle_index,
@@ -1338,11 +1332,11 @@ class AppOrchestrator:
             payload = outcome.metadata.get("outcome_payload")
             if not isinstance(payload, dict):
                 continue
-            stage_result = payload.get("stage_result")
-            if not isinstance(stage_result, dict):
+            execution_result = payload.get("execution_result")
+            if not isinstance(execution_result, dict):
                 continue
-            if stage_result.get("capability") == "goal" and stage_result.get("status") == "succeeded":
-                hints = stage_result.get("runtime_hints")
+            if execution_result.get("capability") == "goal" and execution_result.get("status") == "succeeded":
+                hints = execution_result.get("runtime_hints")
                 if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
                     state.execution.metadata["goal_satisfied"] = True
                     return True
@@ -1368,14 +1362,14 @@ class AppOrchestrator:
         goal: str,
         graph_context: dict[str, Any],
         policy_context: dict[str, Any],
-        recent_stage_results: list[dict[str, Any]],
+        recent_execution_results: list[dict[str, Any]],
         graph_tools: PlannerGraphTools,
     ) -> PlannerOutcome:
         return self.mission_planner.decide(
             goal=goal,
             graph_context=graph_context,
             policy_context=policy_context,
-            recent_stage_results=recent_stage_results,
+            recent_execution_results=recent_execution_results,
             graph_tools=graph_tools,
         )
 
@@ -1407,16 +1401,16 @@ class AppOrchestrator:
         return LLMDecisionObserver(self.settings).extract(cycle_index=cycle_index, cycle=cycle)
 
     @staticmethod
-    def _planner_recent_stage_results(state: RuntimeState, *, limit: int = 8) -> list[dict[str, Any]]:
-        """Return compact StageResult records for Planner Agent replanning context."""
+    def _planner_recent_execution_results(state: RuntimeState, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Return compact ExecutionResult records for Planner Agent replanning context."""
 
         results: list[dict[str, Any]] = []
         for outcome in state.recent_outcomes[-limit:]:
             payload = outcome.metadata.get("outcome_payload")
             if not isinstance(payload, dict):
                 continue
-            stage_result = payload.get("stage_result")
-            if not isinstance(stage_result, dict):
+            execution_result = payload.get("execution_result")
+            if not isinstance(execution_result, dict):
                 continue
             results.append(
                 {
@@ -1426,7 +1420,7 @@ class AppOrchestrator:
                     "summary": outcome.summary,
                     "payload_ref": outcome.payload_ref,
                     "status": outcome.metadata.get("status"),
-                    "stage_result": stage_result,
+                    "execution_result": execution_result,
                     "runtime_hints": payload.get("runtime_hints") if isinstance(payload.get("runtime_hints"), dict) else {},
                     "writeback_hints": payload.get("writeback_hints") if isinstance(payload.get("writeback_hints"), dict) else {},
                     "graph_update_intents": payload.get("graph_update_intents") if isinstance(payload.get("graph_update_intents"), list) else [],
@@ -1439,7 +1433,7 @@ class AppOrchestrator:
     def _runtime_summary(state: RuntimeState) -> dict[str, Any]:
         return {
             "operation_status": state.operation_status.value,
-            "task_count": len(state.execution.tasks),
+            "task_count": 0,
             "pending_event_count": len(state.pending_events),
             "replan_request_count": len(state.replan_requests),
         }
@@ -1717,7 +1711,7 @@ class AppOrchestrator:
         ]
         if state.execution.metadata.get("goal_satisfied"):
             mark("goal_check_recorded", goal_refs)
-        for hint in state.execution.metadata.get("stage_runtime_hints", []) or []:
+        for hint in state.execution.metadata.get("execution_runtime_hints", []) or []:
             if not isinstance(hint, dict):
                 continue
             refs = [str(ref) for ref in hint.get("evidence_refs", []) or [] if str(ref).strip()]

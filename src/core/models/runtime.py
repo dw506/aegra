@@ -34,32 +34,6 @@ class RuntimeStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TaskRuntimeStatus(str, Enum):
-    """Execution-only status for one task instance during this run."""
-
-    PENDING = "pending"
-    QUEUED = "queued"
-    CLAIMED = "claimed"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    BLOCKED = "blocked"
-    WAITING_APPROVAL = "waiting_approval"
-    SKIPPED = "skipped"
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-
-
-class WorkerStatus(str, Enum):
-    """Availability status for one runtime worker."""
-
-    IDLE = "idle"
-    BUSY = "busy"
-    DRAINING = "draining"
-    UNAVAILABLE = "unavailable"
-    LOST = "lost"
-
-
 class SessionStatus(str, Enum):
     """Lifecycle status for one runtime session handle."""
 
@@ -98,15 +72,6 @@ class PivotRouteStatus(str, Enum):
     ACTIVE = "active"
     FAILED = "failed"
     CLOSED = "closed"
-
-
-class LockStatus(str, Enum):
-    """Lifecycle status for one runtime resource lock."""
-
-    ACTIVE = "active"
-    RELEASED = "released"
-    EXPIRED = "expired"
-    STALE = "stale"
 
 
 class BaseRuntimeModel(BaseModel):
@@ -174,67 +139,6 @@ class OutcomeCacheEntry(BaseRuntimeModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class CheckpointRuntime(BaseRuntimeModel):
-    """Runtime-visible checkpoint marker created during this operation."""
-
-    checkpoint_id: str = Field(min_length=1)
-    created_at: datetime = Field(default_factory=utc_now)
-    created_after_tasks: list[str] = Field(default_factory=list)
-    kg_version: str | None = None
-    ag_version: str | None = None
-    summary: str = Field(default="")
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskRuntime(BaseRuntimeModel):
-    """Execution-time state for one automated stage execution."""
-
-    task_id: str = Field(min_length=1)
-    execution_node_id: str = Field(min_length=1)
-    status: TaskRuntimeStatus = TaskRuntimeStatus.PENDING
-    assigned_worker: str | None = None
-    attempt_count: int = Field(default=0, ge=0)
-    max_attempts: int = Field(default=1, ge=1)
-    queued_at: datetime | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    deadline: datetime | None = None
-    last_error: str | None = None
-    last_outcome_ref: str | None = None
-    resource_keys: set[str] = Field(default_factory=set)
-    checkpoint_ref: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_timestamps(self) -> "TaskRuntime":
-        """Ensure task timestamps remain monotonic when they are present."""
-
-        if self.started_at is not None and self.queued_at is not None and self.started_at < self.queued_at:
-            raise ValueError("started_at must be greater than or equal to queued_at")
-        if self.finished_at is not None and self.started_at is not None and self.finished_at < self.started_at:
-            raise ValueError("finished_at must be greater than or equal to started_at")
-        if self.attempt_count > self.max_attempts:
-            raise ValueError("attempt_count must be less than or equal to max_attempts")
-        return self
-
-    def is_task_retryable(self) -> bool:
-        """Return True when the task may be retried in the current run."""
-
-        return self.status in {TaskRuntimeStatus.FAILED, TaskRuntimeStatus.TIMED_OUT} and self.attempt_count < self.max_attempts
-
-
-class WorkerRuntime(BaseRuntimeModel):
-    """Execution-time state for one worker process or worker agent."""
-
-    worker_id: str = Field(min_length=1)
-    status: WorkerStatus = WorkerStatus.IDLE
-    current_task_id: str | None = None
-    current_load: int = Field(default=0, ge=0)
-    capabilities: set[str] = Field(default_factory=set)
-    heartbeat_at: datetime = Field(default_factory=utc_now)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class SessionRuntime(BaseRuntimeModel):
     """Execution-time state for one leased or reusable session handle."""
 
@@ -279,25 +183,6 @@ class CredentialRuntime(BaseRuntimeModel):
         return self.status == CredentialStatus.VALID
 
 
-class SessionLeaseRuntime(BaseRuntimeModel):
-    """Lease record that assigns one session to a worker task."""
-
-    lease_id: str = Field(min_length=1)
-    session_id: str = Field(min_length=1)
-    owner_task_id: str = Field(min_length=1)
-    owner_worker_id: str | None = None
-    acquired_at: datetime = Field(default_factory=utc_now)
-    lease_expiry: datetime | None = None
-    reuse_policy: Literal["exclusive", "shared_readonly", "shared"] = "exclusive"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    def is_active(self, now: datetime | None = None) -> bool:
-        """Return True when the lease is still valid."""
-
-        current_time = now or utc_now()
-        return self.lease_expiry is None or self.lease_expiry > current_time
-
-
 class PivotRouteRuntime(BaseRuntimeModel):
     """Route state describing how one host may be reached through another."""
 
@@ -321,34 +206,6 @@ class PivotRouteRuntime(BaseRuntimeModel):
         """Return True when the pivot route is active and usable."""
 
         return self.status == PivotRouteStatus.ACTIVE
-
-
-class ResourceLock(BaseRuntimeModel):
-    """Transient resource lock used to coordinate execution conflicts."""
-
-    lock_key: str = Field(min_length=1)
-    owner_type: Literal["operation", "task", "worker", "session"] = "task"
-    owner_id: str = Field(min_length=1)
-    status: LockStatus = LockStatus.ACTIVE
-    acquired_at: datetime = Field(default_factory=utc_now)
-    expires_at: datetime | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_expiry(self) -> "ResourceLock":
-        """Ensure the lock expiry does not precede acquisition."""
-
-        if self.expires_at is not None and self.expires_at < self.acquired_at:
-            raise ValueError("expires_at must be greater than or equal to acquired_at")
-        return self
-
-    def is_lock_expired(self, now: datetime | None = None) -> bool:
-        """Return True when the lock should no longer be treated as active."""
-
-        current_time = now or utc_now()
-        if self.status in {LockStatus.EXPIRED, LockStatus.STALE}:
-            return True
-        return self.expires_at is not None and self.expires_at <= current_time
 
 
 class BudgetRuntime(BaseRuntimeModel):
@@ -390,7 +247,6 @@ class OperationRuntime(BaseRuntimeModel):
     active_goal_id: str | None = None
     active_phase: str | None = None
     summary: str = Field(default="")
-    tasks: dict[str, TaskRuntime] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -403,13 +259,6 @@ class OperationRuntime(BaseRuntimeModel):
             raise ValueError("finished_at must be greater than or equal to started_at")
         return self
 
-    def task_count(self, status: TaskRuntimeStatus | None = None) -> int:
-        """Return the number of tracked tasks, optionally filtered by status."""
-
-        if status is None:
-            return len(self.tasks)
-        return sum(1 for task in self.tasks.values() if task.status == status)
-
 
 class RuntimeState(BaseRuntimeModel):
     """Aggregated runtime state snapshot for one operation.
@@ -421,14 +270,10 @@ class RuntimeState(BaseRuntimeModel):
     operation_id: str = Field(min_length=1)
     operation_status: RuntimeStatus = RuntimeStatus.CREATED
     execution: OperationRuntime
-    workers: dict[str, WorkerRuntime] = Field(default_factory=dict)
     sessions: dict[str, SessionRuntime] = Field(default_factory=dict)
     credentials: dict[str, CredentialRuntime] = Field(default_factory=dict)
-    session_leases: dict[str, SessionLeaseRuntime] = Field(default_factory=dict)
     pivot_routes: dict[str, PivotRouteRuntime] = Field(default_factory=dict)
-    locks: dict[str, ResourceLock] = Field(default_factory=dict)
     budgets: BudgetRuntime = Field(default_factory=BudgetRuntime)
-    checkpoints: dict[str, CheckpointRuntime] = Field(default_factory=dict)
     pending_events: list[RuntimeEventRef] = Field(default_factory=list)
     recent_outcomes: list[OutcomeCacheEntry] = Field(default_factory=list)
     replan_requests: list[ReplanRequest] = Field(default_factory=list)
@@ -443,24 +288,6 @@ class RuntimeState(BaseRuntimeModel):
             raise ValueError("execution.operation_id must match operation_id")
         return self
 
-    def get_task_runtime(self, task_id: str) -> TaskRuntime:
-        """Return the runtime state for one task ID."""
-
-        return self.execution.tasks[task_id]
-
-    def register_task(self, task_runtime: TaskRuntime) -> TaskRuntime:
-        """Insert or replace one task runtime entry."""
-
-        self.execution.tasks[task_runtime.task_id] = task_runtime
-        self.last_updated = utc_now()
-        return task_runtime
-
-    def add_worker(self, worker: WorkerRuntime) -> WorkerRuntime:
-        """Insert or replace one worker runtime entry."""
-
-        self.workers[worker.worker_id] = worker
-        self.last_updated = utc_now()
-        return worker
 
     def add_session(self, session: SessionRuntime) -> SessionRuntime:
         """Insert or replace one session runtime entry."""
@@ -476,12 +303,6 @@ class RuntimeState(BaseRuntimeModel):
         self.last_updated = utc_now()
         return credential
 
-    def add_session_lease(self, lease: SessionLeaseRuntime) -> SessionLeaseRuntime:
-        """Insert or replace one session lease runtime entry."""
-
-        self.session_leases[lease.lease_id] = lease
-        self.last_updated = utc_now()
-        return lease
 
     def add_pivot_route(self, route: PivotRouteRuntime) -> PivotRouteRuntime:
         """Insert or replace one pivot route runtime entry."""
@@ -490,19 +311,6 @@ class RuntimeState(BaseRuntimeModel):
         self.last_updated = utc_now()
         return route
 
-    def add_lock(self, lock: ResourceLock) -> ResourceLock:
-        """Insert or replace one resource lock entry."""
-
-        self.locks[lock.lock_key] = lock
-        self.last_updated = utc_now()
-        return lock
-
-    def add_checkpoint(self, checkpoint: CheckpointRuntime) -> CheckpointRuntime:
-        """Insert or replace one checkpoint runtime entry."""
-
-        self.checkpoints[checkpoint.checkpoint_id] = checkpoint
-        self.last_updated = utc_now()
-        return checkpoint
 
     def push_event(self, event_ref: RuntimeEventRef) -> RuntimeEventRef:
         """Append one pending runtime event and advance the local cursor."""
@@ -532,11 +340,9 @@ class RuntimeState(BaseRuntimeModel):
 __all__ = [
     "BaseRuntimeModel",
     "BudgetRuntime",
-    "CheckpointRuntime",
     "CredentialKind",
     "CredentialRuntime",
     "CredentialStatus",
-    "LockStatus",
     "OperationRuntime",
     "OutcomeCacheEntry",
     "PivotRouteRuntime",
@@ -544,16 +350,10 @@ __all__ = [
     "ReplayPlanRuntime",
     "ReplayPlanStatus",
     "ReplanRequest",
-    "ResourceLock",
     "RuntimeEventRef",
     "RuntimeState",
     "RuntimeStatus",
-    "SessionLeaseRuntime",
     "SessionRuntime",
     "SessionStatus",
-    "TaskRuntime",
-    "TaskRuntimeStatus",
-    "WorkerRuntime",
-    "WorkerStatus",
     "utc_now",
 ]

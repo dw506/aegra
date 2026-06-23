@@ -7,7 +7,7 @@ from src.core.models.ag import AttackGraph
 from src.core.models.runtime import OperationRuntime, RuntimeState
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.stage.models import RoundDirective, StageResult, ToolTrace
+from src.core.execution.models import RoundDirective, ExecutionResult, ToolTrace
 
 
 def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
@@ -32,9 +32,9 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     )
     planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
 
-    stage_result = StageResult(
+    execution_result = ExecutionResult(
         operation_id="op-two-graph",
-        stage_task_id="stage-op-two-graph-1-recon_agent",
+        execution_id="stage-op-two-graph-1-recon_agent",
         capability="recon",
         agent_name="recon_agent",
         status="succeeded",
@@ -44,7 +44,7 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         ],
         tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
     )
-    stage_apply = applier.apply_stage_result(stage_result, state, kg, ag)
+    stage_apply = applier.apply_execution_result(execution_result, state, kg, ag)
     assert stage_apply.ag_graph is not None
 
     assert state.execution.metadata["last_planner_outcome"]["action"] == "execute"
