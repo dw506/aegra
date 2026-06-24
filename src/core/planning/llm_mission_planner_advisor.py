@@ -129,7 +129,7 @@ class LLMMissionPlannerAdvisor:
                 "cycle_index": 0,
                 "capability": "recon | analysis | exploit | pivot | lateral | goal | evidence",
                 "objective": "bounded one-round objective",
-                "target_refs": [],
+                "target_refs": [{"graph": "kg", "ref_id": "node id copied from min_summary", "ref_type": "Host"}],
                 "allowed_tools": [],
                 "tool_hints": [],
                 "max_tools": 8,
@@ -175,12 +175,15 @@ class LLMMissionPlannerAdvisor:
             "next_step_guidance or capability guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
             "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "
-            "Reference graph nodes by their ids in target_refs/required_context. "
+            "target_refs MUST be a list of objects {\"graph\":\"kg\"|\"ag\", \"ref_id\":\"<exact node id from min_summary>\"}, "
+            "never bare id strings; use [] when no specific node applies. Plain ids may go in required_context. "
             "You may emit planner_tool_calls ONLY for write-level judgment records "
             "(record_finding/record_attack_step/link_evidence); these are advisory and do not change this "
             "turn's decision. Machine facts from tools are written deterministically after execution. "
             "If evidence is insufficient, choose action=execute with an appropriate capability or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "
+            "Never select a target whose host appears in policy.blocked_hosts; treat those hosts as strictly out of scope "
+            "(they are control-plane infrastructure, not assessment targets). "
             "If success_condition_progress.eligible_for_stop=true, choose action=stop_success with stop_condition=contract_satisfied. "
             "For action=execute, directive must be non-null. For stop/replan/pause actions, directive must be null. "
             "Use reason for a concise justification without chain-of-thought.\n\n"

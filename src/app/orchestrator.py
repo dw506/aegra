@@ -1458,6 +1458,7 @@ class AppOrchestrator:
         }
         return {
             "authorized_targets": targets,
+            "blocked_hosts": list(policy_context.get("blocked_hosts") or []),
             "allow_fingerprint": bool(policy_context.get("allow_fingerprint", True)),
             "allow_safe_probe": bool(policy_context.get("allow_safe_probe", True)),
             "deny_egress": bool(policy_context.get("deny_egress", False)),

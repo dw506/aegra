@@ -474,6 +474,34 @@ class _ExecutionLoop:
             self._log_tool_result(logger, trace)
             return trace
 
+        # Hard scope gate: reject any tool call that targets a denied host
+        # (control-plane infrastructure / out of authorized scope). Unlike the
+        # advisory policy hints, this is enforced before the tool ever runs.
+        blocked_hosts = [str(h).strip() for h in (request.policy_context.get("blocked_hosts") or []) if str(h).strip()]
+        if blocked_hosts:
+            arg_blob = " ".join(str(value) for value in call.arguments.values())
+            blocked_hit = next((host for host in blocked_hosts if host in arg_blob), None)
+            if blocked_hit is not None:
+                trace = ToolTrace(
+                    step=step,
+                    server_id=call.server_id,
+                    tool_name=call.tool_name or "unknown_tool",
+                    arguments=dict(call.arguments),
+                    success=False,
+                    summary=f"target host {blocked_hit} is out of authorized scope (blocked_hosts)",
+                    stderr=f"blocked_host: {blocked_hit}",
+                    exit_code="target_out_of_scope",
+                    ended_at=utc_now().isoformat(),
+                    policy_check={
+                        "allowed": False,
+                        "reason": f"target host {blocked_hit} is in policy.blocked_hosts (out of scope)",
+                        "metadata": {"scope_enforced": True, "blocked_host": blocked_hit},
+                    },
+                    metadata={"content": {"success": False, "exit_code": "target_out_of_scope"}},
+                )
+                self._log_tool_result(logger, trace)
+                return trace
+
         raw = self._mcp_client.call_tool(
             server_id=call.server_id,
             tool_name=call.tool_name,

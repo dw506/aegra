@@ -88,6 +88,35 @@ class RoundDirective(BaseModel):
     required_context: dict[str, Any] = Field(default_factory=dict)
     risk_level: str = "medium"
 
+    @field_validator("target_refs", mode="before")
+    @classmethod
+    def _coerce_target_refs(cls, value: Any) -> Any:
+        # The planner LLM tends to emit node ids as bare strings ("kg-host::..",
+        # "kg:host::..", "host::..") rather than GraphRef objects. Normalize them.
+        if not isinstance(value, list):
+            return value
+        coerced: list[Any] = []
+        for item in value:
+            if not isinstance(item, str):
+                coerced.append(item)
+                continue
+            graph, ref_id = "kg", item
+            for prefix, resolved in (("kg-", "kg"), ("ag-", "ag"), ("kg:", "kg"), ("ag:", "ag")):
+                if item.startswith(prefix):
+                    graph, ref_id = resolved, item[len(prefix):]
+                    break
+            if ref_id:
+                coerced.append({"graph": graph, "ref_id": ref_id})
+        return coerced
+
+    @field_validator("tool_hints", mode="before")
+    @classmethod
+    def _coerce_tool_hints(cls, value: Any) -> Any:
+        # The planner LLM tends to emit free-text hints; wrap bare strings.
+        if not isinstance(value, list):
+            return value
+        return [{"hint": item} if isinstance(item, str) else item for item in value]
+
 
 class RoundResult(BaseModel):
     """Executor-to-planner result for one bounded execution round."""

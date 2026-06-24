@@ -49,6 +49,13 @@ services:
     depends_on:
       - mcp-tools
     restart: unless-stopped
+    volumes:
+      # Persist run logs/artifacts to the host (D:\Aegra\...) so they are
+      # readable without docker cp. Paths are relative to this compose file:
+      # ../../../ == D:\Aegra
+      - ../../../lab/outputs/runtime:/app/lab/outputs/runtime   # store: operation-trace.txt, audit/kg/ag/state, snapshots
+      - ../../../var/runtime:/app/var/runtime                   # per-round logs + tool-outputs
+      - ../../../var/mcp_artifacts:/app/var/mcp_artifacts        # artifact_store outputs
 
   # -------------------------------------------------------------------------
   # MCP tool server (initial access to dmz_net only)
