@@ -480,7 +480,17 @@ class _ExecutionLoop:
         blocked_hosts = [str(h).strip() for h in (request.policy_context.get("blocked_hosts") or []) if str(h).strip()]
         if blocked_hosts:
             arg_blob = " ".join(str(value) for value in call.arguments.values())
-            blocked_hit = next((host for host in blocked_hosts if host in arg_blob), None)
+            # Match each blocked host as a whole token, NOT a substring: a plain
+            # `"10.20.0.1" in blob` test wrongly flags the in-scope target
+            # "10.20.0.10" (and .11/.12/.100…). Anchor on non-IP-char boundaries.
+            blocked_hit = next(
+                (
+                    host
+                    for host in blocked_hosts
+                    if re.search(r"(?<![\w.])" + re.escape(host) + r"(?![\w.])", arg_blob)
+                ),
+                None,
+            )
             if blocked_hit is not None:
                 trace = ToolTrace(
                     step=step,
