@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -128,6 +129,15 @@ def _extract_http_probe(trace: dict[str, Any]) -> list[ExtractedFact]:
     zone_ref = str(args.get("zone_ref") or "")
     status = parsed.get("status_code") or parsed.get("status")
     if url:
+        # Carry the host/port so the Service node is locatable for zone (CIDR)
+        # resolution; a url-only Service has no address and can never be placed
+        # in the entry zone, leaving entry_zone_service_discovered unsatisfiable.
+        host = str(args.get("host") or args.get("address") or "")
+        port = args.get("port")
+        if not host:
+            parsed_url = urlparse(url if "://" in url else f"//{url}")
+            host = parsed_url.hostname or ""
+            port = port or parsed_url.port
         facts.append(
             ExtractedFact(
                 fact_type="Service",
@@ -135,6 +145,9 @@ def _extract_http_probe(trace: dict[str, Any]) -> list[ExtractedFact]:
                 label=f"http-service:{url}",
                 properties={
                     "url": url,
+                    "address": host or None,
+                    "host": host or None,
+                    "port": port,
                     "status_code": status,
                     "service_name": "http",
                     "zone_ref": zone_ref,
