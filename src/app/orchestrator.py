@@ -616,7 +616,16 @@ class AppOrchestrator:
                 "mission_goal": goal,
                 "targets": state.execution.metadata.get("target_inventory", []),
                 "scope": blackbox_policy_context,
-                "tool_catalog": tool_catalog,
+                # tool_catalog is static + ~13KB; logging it every cycle drowns the
+                # trace. Record only the available tool names for context; the full
+                # catalog stays in state.execution.metadata["tool_catalog"].
+                "tool_names": sorted(
+                    tool["name"]
+                    for server in tool_catalog.values()
+                    if isinstance(server, dict)
+                    for tool in (server.get("tools") or [])
+                    if isinstance(tool, dict) and tool.get("name")
+                ),
             },
         )
         #更新成功条件进度
