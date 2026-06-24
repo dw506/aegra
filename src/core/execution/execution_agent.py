@@ -558,6 +558,11 @@ class _ExecutionLoop:
             "Prefer the tools in recommended_tool_names for this round's capability, but you MAY call any "
             "other catalog tool when it advances the objective — the authorization boundary is scope policy, "
             "not the tool menu. Prefer argv for run_command. "
+            "When matching vulnerability profiles, set product to the observed application/framework "
+            "(inferred from page title, X-Powered-By and other response headers, body markers, or "
+            "characteristic paths), NOT the web server or servlet container (e.g. Jetty, Apache httpd, "
+            "nginx, OpenSSH) — server/container banners rarely map to a bounded vulnerability profile, so "
+            "probe deeper to identify the framework before giving up on a candidate. "
             "Do not invent facts; base findings on KG/Runtime/evidence/tool results."
         )
         context = {
