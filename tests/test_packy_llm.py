@@ -6,6 +6,7 @@ import pytest
 from src.core.agents.packy_llm import (
     PackyLLMClient,
     PackyLLMConfig,
+    PackyLLMError,
     get_llm_usage_ledger,
     reset_llm_usage_ledger,
     summarize_llm_usage_ledger,
@@ -166,6 +167,61 @@ def test_packy_client_retries_retryable_gateway_status(monkeypatch: pytest.Monke
 
     assert response.text == "ok"
     assert calls == 2
+
+
+def test_packy_client_retries_transient_upstream_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    # PackyAPI wraps a transient upstream failure as openai_error on a status
+    # code that is NOT in the hard retry set (here 400); it must still be retried.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(status_code=400, json={"error": {"code": "openai_error"}})
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
+        client = PackyLLMClient(
+            PackyLLMConfig(
+                api_key="test-key",
+                base_url="https://www.packyapi.com/v1",
+                model="gpt-5.2",
+                max_retries=2,
+            ),
+            http_client=http_client,
+        )
+        response = client.complete_chat(user_prompt="hello")
+
+    assert response.text == "ok"
+    assert calls == 2
+
+
+def test_packy_client_does_not_retry_genuine_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A non-transient client error (invalid api key) must fail fast, not retry.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(status_code=401, json={"error": {"code": "invalid_api_key"}})
+
+    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
+        client = PackyLLMClient(
+            PackyLLMConfig(api_key="test-key", base_url="https://www.packyapi.com/v1", model="gpt-5.2", max_retries=3),
+            http_client=http_client,
+        )
+        with pytest.raises(PackyLLMError):
+            client.complete_chat(user_prompt="hello")
+
+    assert calls == 1
 
 
 def test_packy_llm_config_from_env_prefers_aegra_variables(monkeypatch: pytest.MonkeyPatch) -> None:

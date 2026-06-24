@@ -21,6 +21,30 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 DEFAULT_PACKY_BASE_URL = "https://www.packyapi.com/v1"
 DEFAULT_PACKY_MODEL = "gpt-5.2"
 
+# HTTP statuses that always warrant a retry (transport/overload/rate-limit).
+_RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+
+# Substrings that mark a transient *upstream* gateway failure even when the
+# gateway reports a non-retryable status code. PackyAPI in particular wraps
+# upstream hiccups (e.g. OpenAI overload) as ``{"error": {"code": "openai_error"}}``
+# on assorted status codes; treat those as retryable rather than fatal. Only
+# transient markers are listed — genuine client errors (invalid_api_key,
+# invalid_request, context_length, content_policy) are intentionally excluded.
+_TRANSIENT_ERROR_MARKERS = (
+    "openai_error",
+    "overloaded",
+    "rate limit",
+    "rate_limit",
+    "ratelimit",
+    "timeout",
+    "timed out",
+    "temporarily",
+    "unavailable",
+    "upstream",
+    "bad gateway",
+    "try again",
+)
+
 
 class PackyLLMError(RuntimeError):
     """Raised when the Packy/OpenAI-compatible backend returns an unusable response."""
@@ -516,7 +540,7 @@ class PackyLLMClient:
                     ) from exc
                 self._sleep_before_retry(attempt)
                 continue
-            if response.status_code in {408, 409, 425, 429, 500, 502, 503, 504} and attempt < attempts:
+            if self._is_retryable_response(response) and attempt < attempts:
                 last_exc = None
                 self._sleep_before_retry(attempt, response=response)
                 continue
@@ -524,6 +548,21 @@ class PackyLLMClient:
         if last_exc is not None:
             raise PackyLLMError(f"llm_transport_error: {last_exc}") from last_exc
         raise PackyLLMError("llm_transport_error: exhausted retries without response")
+
+    @staticmethod
+    def _is_retryable_response(response: httpx.Response) -> bool:
+        """Retry on overload/rate-limit statuses, or any non-2xx whose error body
+        marks a transient upstream failure (e.g. PackyAPI's ``openai_error``)."""
+
+        if response.status_code in _RETRYABLE_STATUS:
+            return True
+        if response.is_success:
+            return False
+        try:
+            body = response.text.lower()
+        except Exception:
+            return False
+        return any(marker in body for marker in _TRANSIENT_ERROR_MARKERS)
 
     def _sleep_before_retry(self, attempt: int, response: httpx.Response | None = None) -> None:
         retry_after = response.headers.get("Retry-After") if response is not None else None
