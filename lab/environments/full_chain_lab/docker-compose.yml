@@ -70,6 +70,10 @@ services:
       - AEGRA_LAB_MODE=1
       - AEGRA_LAB_PROFILE_PATH=/app/lab/environments/full_chain_lab/profile.yml
       - AEGRA_MCP_TOOLSET=full_pentest
+      # The tool server resolves pivot routes from this policy (identity_context_probe
+      # candidates + server-side internal_service_discover / controlled_data_read_proof).
+      # Without it _load_runtime_pivot_routes returns [] and the internal chain stalls.
+      - AEGRA_RUNTIME_POLICY_PATH=/app/configs/runtime_policy.full-chain.json
     # Publish the HTTP MCP port so an orchestrator running on the host (code-local
     # workflow) can reach it at http://localhost:8765 while the tool server keeps
     # its dmz_net position to reach targets and pivot.
