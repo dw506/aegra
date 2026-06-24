@@ -1732,17 +1732,42 @@ def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
         ),
         None,
     )
-    if candidate is None:
-        return None
     try:
         import yaml  # type: ignore[import-not-found]
-        payload = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
     except Exception:
         return None
-    if not isinstance(payload, dict):
-        return None
-    _EXPLOIT_PROFILE_CACHE[safe_id] = payload
-    return payload
+    if candidate is not None:
+        try:
+            payload = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            _EXPLOIT_PROFILE_CACHE[safe_id] = payload
+            return payload
+    # Fallback: the caller often passes the *vulnerability* profile id
+    # (e.g. "struts2-s2-045") rather than the *exploit* profile id
+    # ("struts2-s2-045-lab-exploit"). Scan the profiles and match on the declared
+    # exploit_profile_id — exact, or the request as a prefix of it.
+    for path in sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml")):
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        pid = str(payload.get("exploit_profile_id") or path.stem)
+        vid = str(payload.get("vuln_profile_id") or "")
+        # Prefer the explicit vuln_profile_id link (the agent passes the recorded
+        # vulnerability id); fall back to exploit-id prefix/equality.
+        if (
+            profile_id in {pid, vid}
+            or safe_id in {pid, vid}
+            or pid.startswith(f"{safe_id}-")
+            or safe_id.startswith(f"{pid}-")
+        ):
+            _EXPLOIT_PROFILE_CACHE[safe_id] = payload
+            return payload
+    return None
 
 
 _VULN_PROFILE_CACHE: dict[str, VulnerabilityProfile] | None = None
