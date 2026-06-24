@@ -1302,6 +1302,10 @@ class AppOrchestrator:
         result = GraphInitializer(self.graph_memory_store).initialize(
             operation_id=state.operation_id,
             target=target,
+            # The initial goal node IS the imported-target goal; tag it so the
+            # success contract's target_imported predicate (Goal with
+            # category=imported_target) can match it.
+            goal_category="imported_target",
             persist=True,
         )
         return {
