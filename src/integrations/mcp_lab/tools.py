@@ -1328,6 +1328,18 @@ def _load_runtime_pivot_routes() -> list[dict[str, Any]]:
     extra = pivot.get("routes")
     if isinstance(extra, list):
         routes.extend(route for route in extra if isinstance(route, dict))
+    # Also accept the named-mapping form used by the lab policy
+    # (pivot: {"<name>": {route_id, via_host, destination_cidr, ...}}). Any
+    # value that looks like a route (carries route_id/via_host/destination_*)
+    # counts, excluding the structural keys handled above.
+    for key, value in pivot.items():
+        if key in {"default_route", "routes"}:
+            continue
+        if isinstance(value, dict) and (
+            value.get("route_id") or value.get("via_host") or value.get("destination_cidr") or value.get("destination_host")
+        ):
+            value.setdefault("route_id", str(key))
+            routes.append(value)
     return routes
 
 
