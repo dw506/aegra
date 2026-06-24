@@ -190,16 +190,34 @@ def _extract_web_fingerprint(trace: dict[str, Any]) -> list[ExtractedFact]:
 
 
 def _extract_vuln_profile_match(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract VulnerabilityCandidate from vulnerability profile match."""
+    """Extract VulnerabilityCandidate from vulnerability profile match.
+
+    The tool declares matched candidates as typed ``parsed.entities``
+    (``type == VulnerabilityCandidate``); older/alt shapes used
+    ``matches``/``candidates``. Read the entities envelope first so a real match
+    becomes a VulnerabilityCandidate fact (this is the single KG source).
+    """
     facts: list[ExtractedFact] = []
     parsed = trace.get("parsed_output") or {}
     args = trace.get("arguments") or {}
-    matches = parsed.get("matches") or parsed.get("candidates") or []
-    target = str(args.get("target") or "")
+    matches = [
+        item
+        for item in (parsed.get("entities") or [])
+        if isinstance(item, dict) and str(item.get("type") or "") == "VulnerabilityCandidate"
+    ]
+    if not matches:
+        matches = [m for m in (parsed.get("matches") or parsed.get("candidates") or []) if isinstance(m, dict)]
+    target = str(args.get("target") or args.get("target_url") or "")
     zone_ref = str(args.get("zone_ref") or "")
     if isinstance(matches, list):
         for match in matches:
-            vuln_id = str(match.get("vuln_profile_id") or match.get("id") or "unknown")
+            vuln_id = str(
+                match.get("vulnerability_id")
+                or match.get("matched_profile_id")
+                or match.get("vuln_profile_id")
+                or match.get("id")
+                or "unknown"
+            )
             confidence = float(match.get("confidence") or 0.5)
             facts.append(
                 ExtractedFact(

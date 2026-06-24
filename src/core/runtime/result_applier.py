@@ -1,4 +1,4 @@
-"""Write a v3 ``ExecutionResult`` directly into runtime, KG, and AG."""
+#把 ExecutionAgent 的 ExecutionResult 写回到 Runtime、KG、AG 和审计日志中
 
 from __future__ import annotations
 
@@ -35,21 +35,28 @@ class PhaseTwoApplyResult(BaseModel):
 class PhaseTwoResultApplier:
     """The sole v3 writeback owner.  It accepts no worker compatibility protocol."""
 
+    #初始化了四个管理器，管理会话，凭证，路由和事实
     def __init__(self) -> None:
         self._sessions = RuntimeSessionManager()
         self._credentials = RuntimeCredentialManager()
         self._routes = RuntimePivotRouteManager()
         self._facts = ToolTraceFactExtractor()
 
+    #记录 Planner 决策
     def apply_planner_outcome(self, outcome: PlannerOutcome, state: RuntimeState, kg_store: KnowledgeGraph, attack_graph: AttackGraph) -> PhaseTwoApplyResult:
-        del kg_store
+        #显式删除当前函数作用域里的 kg_store 这个局部变量引用
+        del kg_store     
+
+        #把上一轮 PlannerOutcome 写入 Runtime metadata，写一条 audit log
         state.execution.metadata["last_planner_outcome"] = outcome.model_dump(mode="json")
         append_audit_log(state, {"event_type": "planner_outcome_applied", "planner_outcome": outcome.model_dump(mode="json")})
         return PhaseTwoApplyResult(ag_graph=attack_graph.to_dict(), logs=[f"recorded planner outcome {outcome.action}"])
 
     def apply_execution_result(self, execution_result: ExecutionResult, state: RuntimeState, kg_store: KnowledgeGraph, attack_graph: AttackGraph) -> PhaseTwoApplyResult:
+       
         if execution_result.operation_id != state.operation_id:
             raise ValueError("execution_result.operation_id must match RuntimeState.operation_id")
+       
         self._harvest_runtime_facts(execution_result)
         result = PhaseTwoApplyResult()
         result.runtime_event_refs.extend(self._apply_runtime(execution_result, state))
@@ -118,10 +125,12 @@ class PhaseTwoResultApplier:
 
     def _fact_deltas(self, stage: ExecutionResult) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = [dict(x) for x in stage.discovered_entities if isinstance(x, dict)]
-        for trace in stage.tool_trace:
-            for item in trace.parsed_output.get("entities") or trace.parsed_output.get("discovered_entities") or []:
-                if isinstance(item, dict):
-                    records.append({"id": item.get("id") or item.get("entity_id") or item.get("candidate_id"), "type": item.get("type") or item.get("entity_type"), "label": item.get("label") or item.get("summary") or item.get("candidate_id"), **item})
+        # Single KG machine-fact source: the deterministic ToolTraceFactExtractor.
+        # The tools' self-declared parsed.entities envelope is NOT re-ingested here
+        # (it used inconsistent id fields — candidate_id/capability_id/session_id —
+        # so typed nodes were silently dropped or duplicated against the extractor's
+        # synthesized ids). Every tool that yields a contract-relevant node has a
+        # dedicated _extract_* function; per-tool extractors own the id scheme.
         for trace_result in self._facts.extract_all(stage.tool_trace):
             for fact in trace_result.facts:
                 records.append({"id": f"{fact.entity_type.lower()}::{self._hash({'label': fact.label, 'tool': fact.source_tool})}", "type": fact.entity_type, "label": fact.label, **fact.properties, "confidence": fact.confidence})
