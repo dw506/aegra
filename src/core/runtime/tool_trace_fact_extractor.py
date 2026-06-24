@@ -60,9 +60,34 @@ def _extract_nmap_scan(trace: dict[str, Any]) -> list[ExtractedFact]:
     args = trace.get("arguments") or {}
     target = str(args.get("target") or args.get("host") or "")
     zone_ref = str(args.get("zone_ref") or "")
+    # A single-IP target may anchor services; a CIDR/range target must NOT be used
+    # as an address (it is not locatable). Per-host attribution comes from the
+    # "Nmap scan report for <ip>" lines below.
+    target_ip = target if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", target) else ""
 
-    # Parse open ports from stdout
+    # Parse open ports from stdout, attributing each service to the host most
+    # recently named by an "Nmap scan report for <ip>" line so a range/CIDR scan
+    # yields per-host addresses (not the range string).
+    current_host = target_ip
+    seen_hosts: set[str] = set()
     for line in stdout.splitlines():
+        hm = re.search(r"Nmap scan report for (?:[^()]*\()?(\d{1,3}(?:\.\d{1,3}){3})\)?", line)
+        if hm:
+            current_host = hm.group(1)
+            if current_host not in seen_hosts:
+                seen_hosts.add(current_host)
+                facts.append(
+                    ExtractedFact(
+                        fact_type="Host",
+                        entity_type="Host",
+                        label=f"host:{current_host}",
+                        properties={"address": current_host, "zone_ref": zone_ref},
+                        confidence=0.9,
+                        source_tool="nmap_scan",
+                        zone_ref=zone_ref,
+                    )
+                )
+            continue
         m = re.match(r"(\d+)/(tcp|udp)\s+open\s+(\S+)", line)
         if m:
             port = int(m.group(1))
@@ -72,12 +97,12 @@ def _extract_nmap_scan(trace: dict[str, Any]) -> list[ExtractedFact]:
                 ExtractedFact(
                     fact_type="Service",
                     entity_type="Service",
-                    label=f"{service_name}:{port}/{proto}@{target}",
+                    label=f"{service_name}:{port}/{proto}@{current_host or target}",
                     properties={
                         "port": port,
                         "protocol": proto,
                         "service_name": service_name,
-                        "address": target,
+                        "address": current_host or None,
                         "zone_ref": zone_ref,
                     },
                     confidence=0.9,
