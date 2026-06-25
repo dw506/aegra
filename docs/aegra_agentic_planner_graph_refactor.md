@@ -2,8 +2,7 @@
 
 > 状态：正式提案 (Proposed) · 版本：v3
 > 范围：主控制循环 / Agent 模型 / 图模型（KG·AG·Log 三层）/ 写图链路 / 成功契约
-> 取代：`aegra_plan_execute_verify_refactor.md`、`aegra_multihost_graph_driven_refactor.md`（均废弃删除）
-> 关联（描述**当前**架构）：`aegra_two_graph_architecture.md`、`aegra_runtime_flow.md`、`graph_driven_multi_agent_architecture.md`
+> 取代：`aegra_plan_execute_verify_refactor.md`、`aegra_multihost_graph_driven_refactor.md`（均废弃删除）；旧的 `aegra_two_graph_architecture.md` / `aegra_runtime_flow.md` / `graph_driven_multi_agent_architecture.md` / `aegra_llm_stage_architecture.md` 已删除（描述的是被取代的多 stage-agent 架构）。本文档为当前架构的权威来源，待重写为正式版。
 
 设计基调：**厚 planner + 薄执行器的单层 Plan→Execute→Verify 循环**。把决策权全部收回 planner；
 执行器退化为"单目标一轮"的能力 agent；图拆成 **KG（状态真相）/ AG（结果叙事）/ Log（过程明细）** 三层；
@@ -27,7 +26,7 @@ Plan（planner 用图工具读图+判断）
 
 ## 1. 背景与三个结构性症结
 
-当前主链路（见 `aegra_runtime_flow.md`）：
+被取代的旧主链路（多 stage-agent 模型）：
 
 ```
 KG/AG/Runtime → PlannerAgent(单选 stage) → ResultApplier → StageDispatcher
