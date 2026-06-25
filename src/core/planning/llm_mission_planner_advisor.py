@@ -152,7 +152,7 @@ class LLMMissionPlannerAdvisor:
                 "success_condition_progress": graph_context.get("success_condition_progress") or {},
                 "graph_tools": graph_context.get("graph_tools") or {},
                 "agent_capabilities": graph_context.get("agent_capabilities") or [],
-                "mcp_tool_catalog": graph_context.get("mcp_tool_catalog") or {},
+                "mcp_tool_catalog": _slim_tool_catalog(graph_context.get("mcp_tool_catalog") or {}),
                 "recent_results": list(recent_execution_results or []),
                 "planner_outcome_contract": outcome_contract,
             },
@@ -224,6 +224,35 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _slim_tool_catalog(catalog: dict[str, Any]) -> dict[str, Any]:
+    """Project the MCP catalog to tool names + short descriptions for the planner.
+
+    The planner only selects a capability and is told never to emit tool
+    arguments, so the per-tool inputSchemas (the bulk of the catalog, ~3.6k
+    tokens) are dead weight in its prompt. Keep name/description/availability and
+    drop the schemas; the executor still receives the full catalog.
+    """
+
+    if not isinstance(catalog, dict):
+        return {}
+    slim: dict[str, Any] = {}
+    for server_id, server in catalog.items():
+        if not isinstance(server, dict):
+            continue
+        slim_tools: list[dict[str, Any]] = []
+        for tool in server.get("tools") or []:
+            if not isinstance(tool, dict):
+                continue
+            entry: dict[str, Any] = {"name": tool.get("name")}
+            if tool.get("description"):
+                entry["description"] = tool.get("description")
+            if tool.get("available") is False:
+                entry["available"] = False
+            slim_tools.append(entry)
+        slim[server_id] = {"tools": slim_tools}
+    return slim
 
 
 def _truncate_json(payload: dict[str, Any], max_chars: int) -> str:
