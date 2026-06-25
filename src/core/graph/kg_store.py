@@ -481,12 +481,6 @@ class KnowledgeGraph:
         self._ensure_node_type(host_id, NodeType.HOST)
         return self._collect_targets(host_id, EdgeType.HOSTS)
 
-    def get_identities_on_host(self, host_id: str) -> list[BaseNode]:
-        """Return identities present on the given host."""
-
-        self._ensure_node_type(host_id, NodeType.HOST)
-        return self._collect_sources(host_id, EdgeType.IDENTITY_PRESENT_ON)
-
     def get_sessions_on_host(self, host_id: str) -> list[BaseNode]:
         """Return sessions active on the given host."""
 

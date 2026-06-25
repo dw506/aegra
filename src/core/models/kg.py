@@ -125,12 +125,6 @@ class Service(BaseNode):
     protocol: str | None = None
 
 
-class Identity(BaseNode):
-    type: Literal[NodeType.IDENTITY] = NodeType.IDENTITY
-    username: str | None = None
-    domain: str | None = None
-
-
 class Credential(BaseNode):
     type: Literal[NodeType.CREDENTIAL] = NodeType.CREDENTIAL
     credential_kind: str | None = None
@@ -141,12 +135,6 @@ class Session(BaseNode):
     type: Literal[NodeType.SESSION] = NodeType.SESSION
     session_kind: str | None = None
     session_state: str | None = None
-
-
-class PrivilegeState(BaseNode):
-    type: Literal[NodeType.PRIVILEGE_STATE] = NodeType.PRIVILEGE_STATE
-    privilege_level: str | None = None
-    scope: str | None = None
 
 
 class Vulnerability(BaseNode):
@@ -163,12 +151,6 @@ class Vulnerability(BaseNode):
     remediation: str | None = None
     safe_payload_summary: str | None = None
     summary: str | None = None
-
-
-class DataAsset(BaseNode):
-    type: Literal[NodeType.DATA_ASSET] = NodeType.DATA_ASSET
-    asset_kind: str | None = None
-    sensitivity: str | None = None
 
 
 class Observation(BaseNode):
@@ -295,36 +277,8 @@ class BelongsToZoneEdge(BaseEdge):
     type: Literal[EdgeType.BELONGS_TO_ZONE] = EdgeType.BELONGS_TO_ZONE
 
 
-class IdentityPresentOnEdge(BaseEdge):
-    type: Literal[EdgeType.IDENTITY_PRESENT_ON] = EdgeType.IDENTITY_PRESENT_ON
-
-
-class IdentityAvailableOnEdge(BaseEdge):
-    type: Literal[EdgeType.IDENTITY_AVAILABLE_ON] = EdgeType.IDENTITY_AVAILABLE_ON
-
-
-class AuthenticatesAsEdge(BaseEdge):
-    type: Literal[EdgeType.AUTHENTICATES_AS] = EdgeType.AUTHENTICATES_AS
-
-
-class ReusesCredentialEdge(BaseEdge):
-    type: Literal[EdgeType.REUSES_CREDENTIAL] = EdgeType.REUSES_CREDENTIAL
-
-
-class SessionForEdge(BaseEdge):
-    type: Literal[EdgeType.SESSION_FOR] = EdgeType.SESSION_FOR
-
-
 class SessionOnEdge(BaseEdge):
     type: Literal[EdgeType.SESSION_ON] = EdgeType.SESSION_ON
-
-
-class HasPrivilegeStateEdge(BaseEdge):
-    type: Literal[EdgeType.HAS_PRIVILEGE_STATE] = EdgeType.HAS_PRIVILEGE_STATE
-
-
-class PrivilegeSourceEdge(BaseEdge):
-    type: Literal[EdgeType.PRIVILEGE_SOURCE] = EdgeType.PRIVILEGE_SOURCE
 
 
 class AppliesToHostEdge(BaseEdge):
@@ -342,15 +296,6 @@ class CanReachEdge(BaseEdge):
     route_id: str | None = None
     session_id: str | None = None
     observed_by_task_id: str | None = None
-
-
-class HasVulnerabilityEdge(BaseEdge):
-    type: Literal[EdgeType.HAS_VULNERABILITY] = EdgeType.HAS_VULNERABILITY
-    validation_status: str | None = None
-
-
-class AffectsEdge(BaseEdge):
-    type: Literal[EdgeType.AFFECTS] = EdgeType.AFFECTS
 
 
 class PivotsToEdge(BaseEdge):
@@ -390,19 +335,12 @@ class TargetsEdge(BaseEdge):
     type: Literal[EdgeType.TARGETS] = EdgeType.TARGETS
 
 
-class CoOccursWithEdge(BaseEdge):
-    type: Literal[EdgeType.CO_OCCURS_WITH] = EdgeType.CO_OCCURS_WITH
-
-
 NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.HOST: Host,
     NodeType.SERVICE: Service,
-    NodeType.IDENTITY: Identity,
     NodeType.CREDENTIAL: Credential,
     NodeType.SESSION: Session,
-    NodeType.PRIVILEGE_STATE: PrivilegeState,
     NodeType.VULNERABILITY: Vulnerability,
-    NodeType.DATA_ASSET: DataAsset,
     NodeType.OBSERVATION: Observation,
     NodeType.EVIDENCE: Evidence,
     NodeType.FINDING: Finding,
@@ -422,18 +360,9 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
 EDGE_MODEL_BY_TYPE: dict[EdgeType, type[BaseEdge]] = {
     EdgeType.HOSTS: HostsEdge,
     EdgeType.BELONGS_TO_ZONE: BelongsToZoneEdge,
-    EdgeType.IDENTITY_PRESENT_ON: IdentityPresentOnEdge,
-    EdgeType.IDENTITY_AVAILABLE_ON: IdentityAvailableOnEdge,
-    EdgeType.AUTHENTICATES_AS: AuthenticatesAsEdge,
-    EdgeType.REUSES_CREDENTIAL: ReusesCredentialEdge,
-    EdgeType.SESSION_FOR: SessionForEdge,
     EdgeType.SESSION_ON: SessionOnEdge,
-    EdgeType.HAS_PRIVILEGE_STATE: HasPrivilegeStateEdge,
-    EdgeType.PRIVILEGE_SOURCE: PrivilegeSourceEdge,
     EdgeType.APPLIES_TO_HOST: AppliesToHostEdge,
     EdgeType.CAN_REACH: CanReachEdge,
-    EdgeType.HAS_VULNERABILITY: HasVulnerabilityEdge,
-    EdgeType.AFFECTS: AffectsEdge,
     EdgeType.PIVOTS_TO: PivotsToEdge,
     EdgeType.OBSERVED_ON: ObservedOnEdge,
     EdgeType.SUPPORTED_BY: SupportedByEdge,
@@ -441,7 +370,6 @@ EDGE_MODEL_BY_TYPE: dict[EdgeType, type[BaseEdge]] = {
     EdgeType.RELATED_TO: RelatedToEdge,
     EdgeType.CONTAINS: ContainsEdge,
     EdgeType.TARGETS: TargetsEdge,
-    EdgeType.CO_OCCURS_WITH: CoOccursWithEdge,
 }
 
 
