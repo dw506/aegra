@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
-from src.app.llm_decision_observer import LLMDecisionObserver
 from src.core.agents.pipeline_results import PipelineCycleResult, PipelineStepResult
 from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef
 from src.core.agents.packy_llm import PackyLLMClient
@@ -35,12 +34,6 @@ from src.core.runtime.observability import (
     record_phase_checkpoint,
 )
 from src.core.runtime.report_generator import ReportFormat, ReportGenerator
-from src.core.runtime.llm_history import (
-    LLMDecisionHistoryRecord,
-    append_llm_decision_history,
-    ensure_llm_decision_history,
-    recent_llm_decision_history,
-)
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
@@ -200,9 +193,6 @@ class AppOrchestrator:
         public_lab_profile = self._public_lab_profile_metadata(lab_profile)
         operation_metadata = {        #某一次 operation 的附加运行上下文信息
             "control_plane": {            #运行控制参数
-                "audit_enabled": self.settings.audit_enabled,               #用于决定 operation 中是否记录审计事件
-                "audit_persist_enabled": self.settings.audit_persist_enabled,
-                
                 # 日志治理参数跟随 operation 一起固化到 runtime metadata，
                 # 这样后续 resume、export 和不同 store 后端都能复用同一份配置。
                 "audit_max_entries": self.settings.audit_max_entries,
@@ -218,8 +208,6 @@ class AppOrchestrator:
             "lab_profile": public_lab_profile,
             "target_inventory": [],                       #用户导入的目标列表
             "target_count": 0,
-            "llm_decision_history": [],                  #LLM 决策历史
-
         }
         if metadata:
             operation_metadata.update(metadata)
@@ -234,7 +222,6 @@ class AppOrchestrator:
             ),
         )
         created = self.runtime_store.create_operation(operation_id, initial_state=state)
-        ensure_llm_decision_history(created)
         self._log_operation_event(
             created,
             event_type="operation_created",
@@ -462,25 +449,6 @@ class AppOrchestrator:
         report = build_operation_audit_report(state, limit=limit)
         return list(report["control_cycle_history"])
 
-    def get_llm_decision_history(
-        self,
-        operation_id: str,
-        *,
-        limit: int = 20,
-        agent_kind: str | None = None,
-        accepted: bool | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return recent operation-level LLM decision history entries."""
-
-        state = self.runtime_store.snapshot(operation_id)
-        report = build_operation_audit_report(
-            state,
-            limit=limit,
-            agent_kind=agent_kind,
-            accepted=accepted,
-        )
-        return list(report["llm_decision_history"])
-
     def list_findings(self, operation_id: str) -> list[dict[str, Any]]:
         """Return sanitized findings for one operation."""
 
@@ -506,28 +474,6 @@ class AppOrchestrator:
 
         state = self.runtime_store.snapshot(operation_id)
         return ReportGenerator().export(state, format=format)
-
-    def record_llm_decision_cycle(
-        self,
-        operation_id: str,
-        *,
-        cycle_index: int,
-        cycle: PipelineCycleResult,
-    ) -> list[dict[str, Any]]:
-        """Persist LLM decision history from an explicitly executed pipeline cycle."""
-
-        state = self.runtime_store.snapshot(operation_id)
-        records = self._extract_llm_decision_history(cycle_index=cycle_index, cycle=cycle)
-        if records:
-            append_llm_decision_history(state, records)
-            self._log_operation_event(
-                state,
-                event_type="llm_decision_history_recorded",
-                cycle_index=cycle_index,
-                record_count=len(records),
-            )
-            self.runtime_store.save_state(state)
-        return recent_llm_decision_history(state, limit=len(records) if records else 20)
 
     def get_health_status(self) -> dict[str, Any]:
         """Return a lightweight liveness view for operational checks."""
@@ -1373,33 +1319,6 @@ class AppOrchestrator:
             recent_execution_results=recent_execution_results,
             graph_tools=graph_tools,
         )
-
-    def _append_llm_decision_history_from_cycle(
-        self,
-        state: RuntimeState,
-        *,
-        cycle_index: int,
-        cycle: PipelineCycleResult,
-    ) -> None:
-        records = self._extract_llm_decision_history(cycle_index=cycle_index, cycle=cycle)
-        if not records:
-            return
-        append_llm_decision_history(state, records)
-        self._log_operation_event(
-            state,
-            event_type="llm_decision_history_recorded",
-            cycle_index=cycle_index,
-            cycle_name=cycle.cycle_name,
-            record_count=len(records),
-        )
-
-    def _extract_llm_decision_history(
-        self,
-        *,
-        cycle_index: int,
-        cycle: PipelineCycleResult,
-    ) -> list[LLMDecisionHistoryRecord]:
-        return LLMDecisionObserver(self.settings).extract(cycle_index=cycle_index, cycle=cycle)
 
     @staticmethod
     def _planner_recent_execution_results(state: RuntimeState, *, limit: int = 8) -> list[dict[str, Any]]:

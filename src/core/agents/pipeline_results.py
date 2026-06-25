@@ -1,9 +1,7 @@
 """Prompt-free pipeline cycle/step result models.
 
-These structured results are retained for the LLM decision-history API
-(`AppOrchestrator.record_llm_decision_cycle` / `LLMDecisionObserver`). They are
-not tied to the legacy `AgentPipeline`; the execution-agent main path builds and
-consumes lean domain objects instead.
+These structured results are not tied to the legacy `AgentPipeline`; the
+execution-agent main path builds and consumes lean domain objects instead.
 """
 
 from __future__ import annotations

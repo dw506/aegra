@@ -29,27 +29,6 @@ def _state() -> RuntimeState:
             },
         },
     ]
-    state.execution.metadata["llm_decision_history"] = [
-        {
-            "cycle_index": 1,
-            "agent_kind": "planner",
-            "advisor_type": "injected",
-            "enabled": True,
-            "configured": True,
-            "decision_type": "planner_strategy_decision",
-            "accepted": True,
-        },
-        {
-            "cycle_index": 2,
-            "agent_kind": "supervisor",
-            "advisor_type": "injected",
-            "enabled": True,
-            "configured": True,
-            "decision_type": "supervisor_strategy",
-            "accepted": False,
-            "rejected_reason": "illegal write attempt",
-        },
-    ]
     state.request_replan(
         ReplanRequest(
             request_id="replan-1",
@@ -73,55 +52,24 @@ def test_operation_audit_report_contains_required_sections() -> None:
     assert report["pause_reason"] == "operator review"
     assert report["latest_supervisor_control_strategy"]["strategy"] == "pause_for_review"
     assert [item["cycle_index"] for item in report["control_cycle_history"]] == [1, 2]
-    assert [item["agent_kind"] for item in report["llm_decision_history"]] == ["planner", "supervisor"]
     assert report["replan_requests"][0]["request_id"] == "replan-1"
     assert report["operation_log"][-1]["event_type"] == "operation_paused_for_review"
     assert report["budget_summary"]["requires_human_review"] is False
     assert "correlations" in report["derived"]
 
 
-def test_operation_audit_report_filters_llm_history_by_agent_kind_and_accepted() -> None:
-    state = _state()
-
-    report = build_operation_audit_report(state, agent_kind="supervisor", accepted=False)
-
-    assert len(report["llm_decision_history"]) == 1
-    assert report["llm_decision_history"][0]["agent_kind"] == "supervisor"
-    assert report["llm_decision_history"][0]["accepted"] is False
-    assert report["filters"] == {
-        "limit": 100,
-        "agent_kind": "supervisor",
-        "accepted": False,
-    }
-
-
 def test_operation_audit_report_applies_limit_to_recent_sections() -> None:
     state = _state()
-    state.execution.metadata["llm_decision_history"].append(
-        {
-            "cycle_index": 3,
-            "agent_kind": "critic",
-            "advisor_type": "injected",
-            "enabled": True,
-            "configured": True,
-            "decision_type": "critic_finding_review",
-            "accepted": True,
-        }
-    )
 
     report = build_operation_audit_report(state, limit=1)
 
     assert [item["cycle_index"] for item in report["control_cycle_history"]] == [2]
-    assert [item["cycle_index"] for item in report["llm_decision_history"]] == [3]
     assert [item["event_type"] for item in report["operation_log"]] == ["operation_paused_for_review"]
     assert report["filters"]["limit"] == 1
 
 
 def test_operation_audit_report_sanitizes_sensitive_and_raw_llm_content() -> None:
     state = _state()
-    state.execution.metadata["llm_decision_history"][0]["api_key"] = "secret-key"
-    state.execution.metadata["llm_decision_history"][0]["prompt"] = "full prompt should not leak"
-    state.execution.metadata["llm_decision_history"][0]["raw_response"] = "raw model response should not leak"
     state.execution.metadata["operation_log"].append(
         {
             "event_type": "llm_debug",
@@ -133,13 +81,7 @@ def test_operation_audit_report_sanitizes_sensitive_and_raw_llm_content() -> Non
     report = build_operation_audit_report(state)
     report_text = str(report)
 
-    assert "secret-key" not in report_text
-    assert "full prompt should not leak" not in report_text
-    assert "raw model response should not leak" not in report_text
     assert "Bearer secret-token" not in report_text
-    assert report["llm_decision_history"][0]["api_key"] == "[REDACTED]"
-    assert report["llm_decision_history"][0]["prompt"] == "[REDACTED]"
-    assert report["llm_decision_history"][0]["raw_response"] == "[REDACTED]"
     assert "truncated" in report["operation_log"][-1]["long_context"]
 
 
@@ -239,7 +181,7 @@ def test_operation_audit_report_correlates_budget_guard_strategy() -> None:
     assert correlation["requires_human_review"] is True
 
 
-def test_operation_audit_report_correlates_deterministic_fallback_with_rejected_llm_decisions() -> None:
+def test_operation_audit_report_correlates_deterministic_fallback_strategy() -> None:
     state = _state()
     state.execution.metadata["control_cycle_history"] = [
         {
@@ -258,29 +200,8 @@ def test_operation_audit_report_correlates_deterministic_fallback_with_rejected_
         "accepted": False,
         "reason": "consecutive llm rejections threshold reached",
     }
-    state.execution.metadata["llm_decision_history"].append(
-        {
-            "cycle_index": 3,
-            "agent_kind": "supervisor",
-            "advisor_type": "injected",
-            "enabled": True,
-            "configured": True,
-            "decision_type": "supervisor_strategy",
-            "accepted": False,
-            "rejected_reason": "strategy attempted forbidden patch",
-            "prompt": "do not leak",
-            "raw_response": "do not leak either",
-            "api_key": "secret-key",
-        }
-    )
 
     report = build_operation_audit_report(state)
     correlation = report["derived"]["correlations"]["deterministic_fallbacks"][0]
-    recent_rejected = correlation["recent_rejected_llm_decision"]
 
     assert correlation["strategy"]["strategy"] == "deterministic_fallback"
-    assert correlation["rejected_llm_decision_count"] == 2
-    assert recent_rejected["agent_kind"] == "supervisor"
-    assert recent_rejected["rejected_reason"] == "strategy attempted forbidden patch"
-    assert "secret-key" not in str(correlation)
-    assert "do not leak" not in str(correlation)

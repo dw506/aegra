@@ -28,8 +28,6 @@ class AppSettings(BaseModel):
             "http://localhost:5173",
         ]
     )
-    audit_enabled: bool = True
-    audit_persist_enabled: bool = True
     audit_max_entries: int = Field(default=200, ge=1)
     operation_log_max_entries: int = Field(default=200, ge=1)
     audit_redaction_enabled: bool = True
@@ -140,20 +138,6 @@ class AppSettings(BaseModel):
                 if raw_origins.startswith("[")
                 else [item.strip() for item in raw_origins.split(",") if item.strip()]
             )
-        if "AEGRA_AUDIT_ENABLED" in environ:
-            values["audit_enabled"] = environ["AEGRA_AUDIT_ENABLED"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-        if "AEGRA_AUDIT_PERSIST_ENABLED" in environ:
-            values["audit_persist_enabled"] = environ["AEGRA_AUDIT_PERSIST_ENABLED"].strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
         if "AEGRA_AUDIT_MAX_ENTRIES" in environ:
             values["audit_max_entries"] = int(environ["AEGRA_AUDIT_MAX_ENTRIES"])
         if "AEGRA_OPERATION_LOG_MAX_ENTRIES" in environ:

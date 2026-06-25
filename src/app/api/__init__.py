@@ -32,7 +32,6 @@ FASTAPI_UNAVAILABLE_MESSAGE = (
     "FastAPI is not installed. Install 'fastapi' and an ASGI server such as 'uvicorn' "
     "to use the HTTP control surface."
 )
-LLM_DECISION_QUERY_LIMIT_MAX = 200
 CONTROL_CYCLE_QUERY_LIMIT_MAX = 200
 AUDIT_REPORT_QUERY_LIMIT_MAX = 500
 
@@ -453,23 +452,6 @@ def create_app(
             return Response(content=str(payload), media_type="text/markdown")
         return payload
 
-    @app.get("/operations/{operation_id}/llm-decisions")
-    def get_llm_decisions(
-        operation_id: str,
-        limit: int = Query(20, ge=0, le=LLM_DECISION_QUERY_LIMIT_MAX),
-        agent_kind: str | None = None,
-        accepted: bool | None = None,
-    ) -> list[dict[str, Any]]:
-        try:
-            return resolved_orchestrator.get_llm_decision_history(
-                operation_id,
-                limit=limit,
-                agent_kind=agent_kind,
-                accepted=accepted,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
     @app.get("/operations/{operation_id}/control-cycles")
     def get_control_cycles(
         operation_id: str,
@@ -509,7 +491,6 @@ __all__ = [
     "AUDIT_REPORT_QUERY_LIMIT_MAX",
     "CONTROL_CYCLE_QUERY_LIMIT_MAX",
     "ImportTargetsRequest",
-    "LLM_DECISION_QUERY_LIMIT_MAX",
     "OperationActionRequest",
     "OperationCreateRequest",
     "OperationCycleRequest",

@@ -44,16 +44,9 @@ def build_operation_audit_report(
     """Build a sanitized operation audit/control observability report."""
 
     parsed_limit = _coerce_limit(limit)
-    all_llm_history = _metadata_list(state, "llm_decision_history")
     control_cycle_history = _metadata_list(state, "control_cycle_history")
     replan_requests = [item.model_dump(mode="json") for item in state.replan_requests]
     budget_summary = _budget_summary(state)
-    llm_history = _filter_llm_history(
-        all_llm_history,
-        limit=parsed_limit,
-        agent_kind=agent_kind,
-        accepted=accepted,
-    )
     report = {
         "operation_id": state.operation_id,
         "exported_at": utc_now().isoformat(),
@@ -68,7 +61,6 @@ def build_operation_audit_report(
             control_cycle_history,
             limit=parsed_limit,
         ),
-        "llm_decision_history": llm_history,
         "replan_requests": _recent_items(
             replan_requests,
             limit=parsed_limit,
@@ -87,7 +79,6 @@ def build_operation_audit_report(
                 state,
                 control_cycle_history=control_cycle_history,
                 replan_requests=replan_requests,
-                llm_history=all_llm_history,
                 budget_summary=budget_summary,
             ),
         },
@@ -105,15 +96,9 @@ def _build_correlations(
     *,
     control_cycle_history: list[dict[str, Any]],
     replan_requests: list[dict[str, Any]],
-    llm_history: list[dict[str, Any]],
     budget_summary: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
     strategy_records = _supervisor_strategy_records(state, control_cycle_history=control_cycle_history)
-    rejected_llm_decisions = [
-        dict(item)
-        for item in llm_history
-        if item.get("accepted") is False
-    ]
     correlations: dict[str, list[dict[str, Any]]] = {
         "accepted_request_replans": [],
         "accepted_pauses": [],
@@ -151,8 +136,6 @@ def _build_correlations(
             correlations["deterministic_fallbacks"].append(
                 {
                     "strategy": dict(strategy),
-                    "rejected_llm_decision_count": len(rejected_llm_decisions),
-                    "recent_rejected_llm_decision": dict(rejected_llm_decisions[-1]) if rejected_llm_decisions else None,
                 }
             )
     return correlations
@@ -204,24 +187,6 @@ def _matching_replan_request(
         if cycle_index is None or _coerce_optional_int(metadata.get("cycle_index")) == cycle_index:
             return dict(request)
     return None
-
-
-def _filter_llm_history(
-    history: list[dict[str, Any]],
-    *,
-    limit: int,
-    agent_kind: str | None,
-    accepted: bool | None,
-) -> list[dict[str, Any]]:
-    filtered = []
-    normalized_agent_kind = agent_kind.lower() if agent_kind else None
-    for item in history:
-        if normalized_agent_kind is not None and str(item.get("agent_kind", "")).lower() != normalized_agent_kind:
-            continue
-        if accepted is not None and item.get("accepted") is not accepted:
-            continue
-        filtered.append(dict(item))
-    return _recent_items(filtered, limit=limit)
 
 
 def _budget_summary(state: RuntimeState) -> dict[str, Any]:
