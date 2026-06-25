@@ -2335,8 +2335,15 @@ def _normalize_nmap_host(value: str) -> str | None:
 def _profile(profile_id: str) -> VulnerabilityProfile:
     try:
         return SAFE_VALIDATION_PROFILES[profile_id]
-    except KeyError as exc:
-        raise ValueError(f"unknown validation profile: {profile_id}") from exc
+    except KeyError:
+        pass
+    # yml-loaded profiles are keyed by filename stem, but vuln_profile_match
+    # advertises profile.vulnerability_id (which can differ, e.g. hyphens vs
+    # underscores), so resolve by that too instead of failing the chain.
+    for profile in SAFE_VALIDATION_PROFILES.values():
+        if profile.vulnerability_id == profile_id:
+            return profile
+    raise ValueError(f"unknown validation profile: {profile_id}")
 
 
 def _run_profile_prechecks(*, target_url: str, profile: VulnerabilityProfile, timeout: int) -> list[dict[str, Any]]:
