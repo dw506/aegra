@@ -169,6 +169,34 @@ def test_packy_client_retries_retryable_gateway_status(monkeypatch: pytest.Monke
     assert calls == 2
 
 
+def test_packy_client_retries_empty_200_completion(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The gateway intermittently returns a 200 with no assistant text and no
+    # tool_calls; that empty response must be retried, not failed.
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(status_code=200, json={"choices": [{"message": {}}]})
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
+        client = PackyLLMClient(
+            PackyLLMConfig(api_key="test-key", base_url="https://www.packyapi.com/v1", model="gpt-5.2", max_retries=1),
+            http_client=http_client,
+        )
+        response = client.complete_chat(user_prompt="hello")
+
+    assert response.text == "ok"
+    assert calls == 2
+
+
 def test_packy_client_retries_transient_upstream_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
     # PackyAPI wraps a transient upstream failure as openai_error on a status
     # code that is NOT in the hard retry set (here 400); it must still be retried.

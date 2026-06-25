@@ -557,12 +557,33 @@ class PackyLLMClient:
         if response.status_code in _RETRYABLE_STATUS:
             return True
         if response.is_success:
-            return False
+            # An HTTP 200 with no assistant text and no tool_calls is an empty
+            # gateway response (a transient upstream hiccup); retry it instead of
+            # failing the round.
+            return not PackyLLMClient._completion_has_content(response)
         try:
             body = response.text.lower()
         except Exception:
             return False
         return any(marker in body for marker in _TRANSIENT_ERROR_MARKERS)
+
+    @staticmethod
+    def _completion_has_content(response: httpx.Response) -> bool:
+        """Return whether a 2xx completion carries any assistant text or tool_calls."""
+
+        raw_text = response.text
+        try:
+            json_payload: Any = json.loads(raw_text)
+        except (json.JSONDecodeError, ValueError):
+            json_payload = None
+        text = ""
+        tool_calls: list[Any] = []
+        if isinstance(json_payload, dict):
+            text, _ = _extract_text_from_completion_payload(json_payload)
+            tool_calls = _extract_tool_calls_from_completion_payload(json_payload)
+        if not text and not tool_calls:
+            text, _ = _extract_text_from_sse_blob(raw_text)
+        return bool(text or tool_calls)
 
     def _sleep_before_retry(self, attempt: int, response: httpx.Response | None = None) -> None:
         retry_after = response.headers.get("Retry-After") if response is not None else None
