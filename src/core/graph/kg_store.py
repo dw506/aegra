@@ -62,10 +62,10 @@ class KnowledgeGraph:
         return self._last_patch_batch_id
 
     def apply_patch_batch(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Apply one StateWriter-style patch batch to the KG.
+        """Apply one serialized state-delta patch batch to the KG.
 
-        这里故意只接受序列化后的字典载荷，避免 KG store 反向依赖 agent 层类型。
-        真正的协议 owner 仍是 StateWriter；store 只负责执行结构变更并推进版本。
+        这里故意只接受序列化后的字典载荷（由 ResultApplier 构造），避免 KG store
+        反向依赖 agent 层类型；store 只负责执行结构变更并推进版本。
         """
 
         state_deltas = request.get("state_deltas") or []
@@ -576,7 +576,7 @@ class KnowledgeGraph:
         self._delta.last_changed_at = self._delta.changes[-1].changed_at
 
     def _apply_entity_patch(self, patch: dict[str, Any]) -> BaseNode:
-        """Apply one entity upsert patch emitted by StateWriter."""
+        """Apply one entity upsert patch from a state-delta batch."""
 
         entity_id = str(patch["entity_id"])
         entity_type = self._normalize_node_type(str(patch["entity_type"]))
@@ -602,7 +602,7 @@ class KnowledgeGraph:
         return self.add_node(parse_node(payload))
 
     def _apply_relation_patch(self, patch: dict[str, Any]) -> BaseEdge:
-        """Apply one relation upsert patch emitted by StateWriter."""
+        """Apply one relation upsert patch from a state-delta batch."""
 
         relation_id = str(patch["relation_id"])
         relation_type = self._normalize_edge_type(str(patch["relation_type"]))

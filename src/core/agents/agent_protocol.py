@@ -26,12 +26,10 @@ def utc_now() -> datetime:
 class AgentKind(str, Enum):
     """Top-level categories for orchestration agents.
 
-    PLANNER/WORKER/STATE_WRITER are produced by the live path; CRITIC/SUPERVISOR
-    remain only as decision-history labels (the observer and settings still
-    branch on them, though no critic/supervisor advisor is wired).
+    Only PLANNER/WORKER are produced by the live path; CRITIC/SUPERVISOR remain
+    only as legacy labels (no critic/supervisor advisor is wired).
     """
 
-    STATE_WRITER = "state_writer"
     PLANNER = "planner"
     WORKER = "worker"
     CRITIC = "critic"
