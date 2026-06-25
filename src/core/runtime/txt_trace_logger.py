@@ -9,6 +9,18 @@ from pathlib import Path
 from typing import Any
 
 
+def resolve_runtime_store_root(runtime_root: str | Path | None = None) -> Path:
+    """Resolve the canonical runtime store root for an operation's on-disk artifacts.
+
+    All per-operation artifacts (state, trace, round logs, raw tool outputs) must
+    land under one directory so cross-references stay valid. Honor an explicit
+    ``runtime_root``, else ``AEGRA_RUNTIME_STORE_DIR``, else the ``var/runtime``
+    default — never hardcode the path at individual call sites.
+    """
+
+    return Path(runtime_root or os.getenv("AEGRA_RUNTIME_STORE_DIR") or "var/runtime")
+
+
 SENSITIVE_KEYS = {
     "password",
     "token",
@@ -43,7 +55,7 @@ class TxtTraceLogger:
     def operation_trace(cls, operation_id: str, runtime_root: str | Path | None = None) -> "TxtTraceLogger":
         """Return the canonical human-readable operation trace logger."""
 
-        root = runtime_root or os.getenv("AEGRA_RUNTIME_STORE_DIR") or "var/runtime"
+        root = resolve_runtime_store_root(runtime_root)
         return cls(
             operation_id,
             log_dir=root,

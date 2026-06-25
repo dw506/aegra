@@ -13,7 +13,7 @@ from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.graph_common import utc_now
 from src.core.runtime.tool_trace_fact_extractor import ToolTraceFactExtractor
-from src.core.runtime.txt_trace_logger import TxtTraceLogger
+from src.core.runtime.txt_trace_logger import TxtTraceLogger, resolve_runtime_store_root
 from src.core.execution.models import (
     ExtractedFact,
     RoundDirective,
@@ -172,7 +172,7 @@ class ExecutionAgent:
     ) -> None:
         logger = self._trace_logger_factory(
             directive.operation_id,
-            log_dir="var/runtime",
+            log_dir=resolve_runtime_store_root(),
             filename=f"round-{directive.cycle_index}.txt",
             operation_subdir=True,
         )

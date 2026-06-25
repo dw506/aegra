@@ -7,10 +7,13 @@ only; they are not persistent KG facts.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from enum import Enum
 
 from src.core.models.runtime import RuntimeState, SessionRuntime, SessionStatus, utc_now
+
+logger = logging.getLogger(__name__)
 
 
 class SessionReusePolicy(str, Enum):
@@ -19,6 +22,28 @@ class SessionReusePolicy(str, Enum):
     EXCLUSIVE = "exclusive"
     SHARED_READONLY = "shared_readonly"
     SHARED = "shared"
+
+    @classmethod
+    def coerce(cls, value: object, default: "SessionReusePolicy" | None = None) -> "SessionReusePolicy":
+        """Resolve an arbitrary value to a known policy, falling back instead of raising.
+
+        Tool callers (including the LLM) can supply free-form reuse_policy strings.
+        An unknown value must never crash result write-back, so coerce to the most
+        restrictive default (EXCLUSIVE) and record a warning for diagnosis.
+        """
+
+        fallback = default or cls.EXCLUSIVE
+        if isinstance(value, cls):
+            return value
+        if value is None or value == "":
+            return fallback
+        try:
+            return cls(str(value))
+        except ValueError:
+            logger.warning(
+                "unknown session reuse_policy %r; falling back to %s", value, fallback.value
+            )
+            return fallback
 
 
 class RuntimeSessionManager:
@@ -36,7 +61,7 @@ class RuntimeSessionManager:
         """Create or refresh one runtime session with a new lease window."""
 
         now = utc_now()
-        policy = SessionReusePolicy(reusability)
+        policy = SessionReusePolicy.coerce(reusability)
         lease_expiry = now + timedelta(seconds=lease_seconds)
         session = state.sessions.get(session_id)
 
@@ -219,7 +244,7 @@ class RuntimeSessionManager:
         for session in state.sessions.values():
             if not session.is_session_usable():
                 continue
-            policy = SessionReusePolicy(session.metadata.get("reuse_policy", SessionReusePolicy.EXCLUSIVE.value))
+            policy = SessionReusePolicy.coerce(session.metadata.get("reuse_policy", SessionReusePolicy.EXCLUSIVE.value))
             if policy == SessionReusePolicy.EXCLUSIVE:
                 continue
             if bound_target is not None and session.bound_target != bound_target:

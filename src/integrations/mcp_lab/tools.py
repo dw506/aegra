@@ -20,6 +20,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
+from src.core.runtime.session_manager import SessionReusePolicy
+from src.core.runtime.txt_trace_logger import resolve_runtime_store_root
 from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
 
 
@@ -1169,6 +1171,8 @@ def _session_probe(arguments: dict[str, Any]) -> dict[str, Any]:
 def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
     session_id = _required(arguments, "session_id")
     lease_seconds = _int(arguments.get("lease_seconds"), 300)
+    requested_policy = _string(arguments.get("reuse_policy")) or "exclusive"
+    reuse_policy = SessionReusePolicy.coerce(requested_policy).value
     parsed = _default_parsed()
     parsed["runtime_hints"] = {
         "open_session": True,
@@ -1176,8 +1180,16 @@ def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
         "bound_target": _string(arguments.get("bound_target")),
         "bound_identity": _string(arguments.get("bound_identity")),
         "lease_seconds": lease_seconds,
-        "reuse_policy": _string(arguments.get("reuse_policy")) or "exclusive",
+        "reuse_policy": reuse_policy,
     }
+    if reuse_policy != requested_policy:
+        # Surface the coercion so the caller (LLM) gets immediate feedback instead of
+        # silently believing its invented policy was accepted.
+        parsed["runtime_hints"]["reuse_policy_requested"] = requested_policy
+        parsed["runtime_hints"]["reuse_policy_note"] = (
+            f"reuse_policy {requested_policy!r} is not supported; using {reuse_policy!r}. "
+            f"valid values: {', '.join(p.value for p in SessionReusePolicy)}"
+        )
     parsed["writeback_hints"] = {"observation_category": "session_open"}
     return _payload(success=True, stdout=json.dumps(parsed["runtime_hints"], ensure_ascii=True, sort_keys=True), parsed=parsed)
 
@@ -2238,7 +2250,7 @@ def _success_condition_check(arguments: dict[str, Any]) -> dict[str, Any]:
     progress: dict[str, Any] = {}
 
     if operation_id:
-        metadata_path = Path("var/runtime") / operation_id / "metadata.json"
+        metadata_path = resolve_runtime_store_root() / operation_id / "metadata.json"
         if metadata_path.exists():
             try:
                 raw = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -2543,10 +2555,11 @@ def _decode_timeout_output(value: Any) -> str:
 def _write_raw_tool_output(*, arguments: dict[str, Any], payload: dict[str, Any]) -> str:
     operation_id = _string(arguments.get("operation_id") or os.getenv("AEGRA_OPERATION_ID"))
     trace_id = _string(arguments.get("trace_id")) or f"tool-{uuid.uuid4().hex}"
+    store_root = resolve_runtime_store_root()
     if operation_id:
-        output_dir = Path("var/runtime") / operation_id / "tool-outputs"
+        output_dir = store_root / operation_id / "tool-outputs"
     else:
-        output_dir = Path("var/runtime/_tool_outputs")
+        output_dir = store_root / "_tool_outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{_safe_artifact_name(trace_id)}.json"
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True, default=str), encoding="utf-8")
