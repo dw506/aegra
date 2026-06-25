@@ -14,7 +14,7 @@ from src.core.models.attack_process import (
     AttackStepNode,
     GoalOutcomeNode,
 )
-from src.core.models.graph_common import GraphRef, stable_node_id
+from src.core.models.graph_common import GraphRef, stable_node_id as stable_node_id
 
 
 AGNode: TypeAlias = AttackProcessNode

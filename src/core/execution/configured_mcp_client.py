@@ -410,7 +410,7 @@ class _StdioMCPSession:
                     continue
                 try:
                     parsed = json.loads(line)
-                except Exception as exc:
+                except Exception:
                     self._stderr_lines.append(f"stdout non-json: {line}")
                     del self._stderr_lines[:-20]
                     continue

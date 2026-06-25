@@ -397,7 +397,7 @@ def create_app(
     @app.post("/operations/{operation_id}/resume")
     def resume_operation(operation_id: str, request: OperationActionRequest) -> dict[str, Any]:
         try:
-            state = resolved_orchestrator.resume_operation(operation_id, reason=request.reason)
+            resolved_orchestrator.resume_operation(operation_id, reason=request.reason)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return resolved_orchestrator.get_operation_summary(operation_id).model_dump(mode="json")

@@ -74,7 +74,6 @@ class GoalOracle:
             config = dict(oracle_config)
 
         goal_id = config.get("goal_id", oracle_input.goal_id)
-        public_cfg = config.get("public", {})
         private_cfg = config.get("private", {})
         validation_cfg = config.get("validation", {})
 

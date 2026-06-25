@@ -30,7 +30,7 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         ),
         confidence=0.9,
     )
-    planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
+    applier.apply_planner_outcome(outcome, state, kg, ag)
 
     execution_result = ExecutionResult(
         operation_id="op-two-graph",

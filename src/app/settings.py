@@ -29,7 +29,6 @@ class AppSettings(BaseModel):
         ]
     )
     audit_enabled: bool = True
-    audit_dir: Path = Field(default_factory=lambda: Path("var/audit"))
     audit_persist_enabled: bool = True
     audit_max_entries: int = Field(default=200, ge=1)
     operation_log_max_entries: int = Field(default=200, ge=1)
@@ -53,11 +52,6 @@ class AppSettings(BaseModel):
     @field_validator("runtime_store_dir", mode="before")
     @classmethod
     def _coerce_runtime_store_dir(cls, value: str | Path) -> Path:
-        return Path(value).expanduser().resolve()
-
-    @field_validator("audit_dir", mode="before")
-    @classmethod
-    def _coerce_audit_dir(cls, value: str | Path) -> Path:
         return Path(value).expanduser().resolve()
 
     @field_validator("runtime_policy_path", mode="before")
@@ -153,8 +147,6 @@ class AppSettings(BaseModel):
                 "yes",
                 "on",
             }
-        if "AEGRA_AUDIT_DIR" in environ:
-            values["audit_dir"] = environ["AEGRA_AUDIT_DIR"]
         if "AEGRA_AUDIT_PERSIST_ENABLED" in environ:
             values["audit_persist_enabled"] = environ["AEGRA_AUDIT_PERSIST_ENABLED"].strip().lower() in {
                 "1",

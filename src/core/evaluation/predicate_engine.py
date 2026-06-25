@@ -528,7 +528,6 @@ def _oracle_proof_valid(ctx: PredicateContext, args: dict[str, Any]) -> Conditio
 @_register("chain_satisfied")
 def _chain_satisfied(ctx: PredicateContext, args: dict[str, Any]) -> ConditionResult:
     """Verify that a list of conditions are satisfied in documented chain order."""
-    conditions = list(args.get("conditions") or [])
     # Delegate to individual condition results stored in ctx
     # This predicate is evaluated last, after all other conditions
     chain_results = list(args.get("chain_results") or [])

@@ -7,8 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.kg import BaseEdge, BaseNode, CanReachEdge, NetworkZone, PivotsToEdge, Service
-from src.core.models.kg_enums import EdgeType, NodeType
+from src.core.models.kg import BaseEdge, BaseNode, NetworkZone, Service
+from src.core.models.kg_enums import EdgeType
 
 
 ReachabilityVia = Literal["direct", "session", "pivot", "inferred"]

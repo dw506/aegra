@@ -29,7 +29,7 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         ),
         confidence=0.9,
     )
-    planner_apply = applier.apply_planner_outcome(outcome, state, kg, ag)
+    applier.apply_planner_outcome(outcome, state, kg, ag)
 
     execution_result = ExecutionResult(
         operation_id="op-apply",
@@ -45,7 +45,7 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         ],
         tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
     )
-    stage_apply = applier.apply_execution_result(execution_result, state, kg, ag)
+    applier.apply_execution_result(execution_result, state, kg, ag)
 
     # v3 result-tier AG: one ATTACK_STEP per round; legacy process nodes are gone.
     process_types = {node.node_type for node in ag.find_process_nodes()}

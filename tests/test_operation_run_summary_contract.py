@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.app import api as app_api
-from src.app.orchestrator import AppOrchestrator, TargetHost
+from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
