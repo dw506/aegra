@@ -84,6 +84,27 @@ def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> 
     assert result.tool_trace[0].policy_check["metadata"]["original_allowed"] is True
 
 
+def test_server_prefixed_tool_name_resolves_to_bare_catalog_tool() -> None:
+    # LLMs sometimes namespace the tool as "<server_id>.tool"; it must still resolve
+    # to the bare catalog tool instead of failing as tool_not_in_catalog.
+    result = ExecutionAgent(llm_client=StaticLLM("mcp.safe_vuln_validate"), mcp_client=MCP()).run(
+        ExecutionRequest(
+            operation_id="op-tools",
+            cycle_index=1,
+            agent_name="recon_agent",
+            capability="recon",
+            objective="recon",
+            policy_context={"authorized": True},
+            max_steps=1,
+            mcp_tool_catalog={"mcp": {"tools": [{"name": "safe_vuln_validate", "category": "exploit", "requires_authorization": False}]}},
+        )
+    )
+
+    assert result.tool_trace[0].exit_code != "tool_not_in_catalog"
+    assert result.tool_trace[0].tool_name == "safe_vuln_validate"
+    assert result.tool_trace[0].policy_check["allowed"] is True
+
+
 def test_policy_denylist_is_audit_only_without_blocking() -> None:
     result = ExecutionAgent(llm_client=StaticLLM("pivot_route_probe"), mcp_client=MCP()).run(
         ExecutionRequest(

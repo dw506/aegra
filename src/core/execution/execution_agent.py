@@ -409,9 +409,10 @@ class _ExecutionLoop:
         logger: TxtTraceLogger,
     ) -> ToolTrace:
         arguments = dict(decision.get("arguments") or decision.get("input") or {})
+        server_id = str(decision.get("server_id") or decision.get("server") or self._default_server_id(request.mcp_tool_catalog))
         call = _ExecutionToolCall(
-            server_id=str(decision.get("server_id") or decision.get("server") or self._default_server_id(request.mcp_tool_catalog)),
-            tool_name=str(decision.get("tool_name") or decision.get("tool") or ""),
+            server_id=server_id,
+            tool_name=self._strip_server_prefix(str(decision.get("tool_name") or decision.get("tool") or ""), server_id),
             arguments=arguments,
             timeout_seconds=int(arguments.get("timeout_seconds") or self._default_timeout_seconds),
         )
@@ -1056,6 +1057,21 @@ class _ExecutionLoop:
             if isinstance(item, dict) and str(item.get("name") or item.get("tool_name")) == tool_name:
                 return dict(item)
         return {}
+
+    @staticmethod
+    def _strip_server_prefix(tool_name: str, server_id: str) -> str:
+        """Drop a redundant ``<server_id>.``/``<server_id>__`` namespace prefix.
+
+        The catalog registers bare tool names, but LLMs sometimes emit the tool
+        namespaced as ``pentest-tools.post_access_observe``; matching the resolved
+        server prefix and stripping it keeps both forms callable.
+        """
+
+        for sep in (".", "__"):
+            prefix = f"{server_id}{sep}"
+            if server_id and tool_name.startswith(prefix):
+                return tool_name[len(prefix):]
+        return tool_name
 
     @staticmethod
     def _default_server_id(catalog: dict[str, Any]) -> str:
