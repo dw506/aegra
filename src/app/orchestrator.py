@@ -1340,7 +1340,7 @@ class AppOrchestrator:
                     "summary": outcome.summary,
                     "payload_ref": outcome.payload_ref,
                     "status": outcome.metadata.get("status"),
-                    "execution_result": execution_result,
+                    "execution_result": AppOrchestrator._compact_execution_result(execution_result),
                     "runtime_hints": payload.get("runtime_hints") if isinstance(payload.get("runtime_hints"), dict) else {},
                     "writeback_hints": payload.get("writeback_hints") if isinstance(payload.get("writeback_hints"), dict) else {},
                     "graph_update_intents": payload.get("graph_update_intents") if isinstance(payload.get("graph_update_intents"), list) else [],
@@ -1348,6 +1348,38 @@ class AppOrchestrator:
                 }
             )
         return results
+
+    #raw-fact lists already written to the KG (surfaced to the planner via
+    #min_summary); the planner never re-reads them, so collapse to counts.
+    _COMPACTED_RESULT_LISTS = frozenset({
+        "observations", "evidence", "findings", "discovered_entities",
+        "discovered_relations", "capabilities_gained", "credentials", "sessions",
+        "pivot_routes", "privilege_contexts", "graph_update_intents",
+        "evidence_refs", "tool_trace", "tool_traces",
+    })
+    #UI-only projection; the planner never reads it.
+    _DROPPED_RESULT_FIELDS = frozenset({"visual_summary"})
+
+    @staticmethod
+    def _compact_execution_result(execution_result: dict[str, Any]) -> dict[str, Any]:
+        """Project an ExecutionResult to planner-relevant fields only.
+
+        The planner decides from summaries + control signals (replan/retry
+        recommendation, next_capability_suggestion, runtime/writeback hints), not
+        raw tool traces. Those raw-fact lists are already in the KG and surface via
+        min_summary, so collapse only those to counts; keep every scalar, dict, and
+        small decision list (e.g. next_capability_candidates, failed_hypotheses).
+        """
+
+        compact: dict[str, Any] = {}
+        for key, value in execution_result.items():
+            if key in AppOrchestrator._DROPPED_RESULT_FIELDS:
+                continue
+            if isinstance(value, list) and key in AppOrchestrator._COMPACTED_RESULT_LISTS:
+                compact[f"{key}_count"] = len(value)
+            else:
+                compact[key] = value
+        return compact
 
     @staticmethod
     def _runtime_summary(state: RuntimeState) -> dict[str, Any]:
