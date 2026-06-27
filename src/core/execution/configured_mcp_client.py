@@ -230,13 +230,6 @@ class ConfiguredMCPClient:
         return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
 
     @staticmethod
-    def _write_message(process: subprocess.Popen[str], payload: dict[str, Any]) -> None:
-        if process.stdin is None:
-            raise RuntimeError("MCP stdio process has no stdin")
-        process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        process.stdin.flush()
-
-    @staticmethod
     def _structured_content(result: Any) -> Any:
         if not isinstance(result, dict):
             return result

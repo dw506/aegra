@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Literal, TypeAlias
+from typing import Any, TypeAlias
 
 from src.core.models.attack_process import (
     AttackProcessEdge,
@@ -108,28 +108,6 @@ class AttackGraph:
         self._version += 1
         return edge
 
-    def add_process_node(self, node: AttackProcessNode | None = None, **kwargs: Any) -> AttackProcessNode:
-        """Create or add an attack-process node."""
-
-        if node is not None and kwargs:
-            raise ValueError("pass either a process node or process node fields, not both")
-        if node is None:
-            node = parse_ag_node(kwargs)
-        if not isinstance(node, AttackProcessNode):
-            raise ValueError("process node helper only accepts attack-process nodes")
-        return self.add_node(node)
-
-    def add_process_edge(self, edge: AttackProcessEdge | None = None, **kwargs: Any) -> AttackProcessEdge:
-        """Create or add an attack-process edge."""
-
-        if edge is not None and kwargs:
-            raise ValueError("pass either a process edge or process edge fields, not both")
-        if edge is None:
-            edge = parse_ag_edge(kwargs)
-        if not isinstance(edge, AttackProcessEdge):
-            raise ValueError("process edge helper only accepts attack-process edges")
-        return self.add_edge(edge)
-
     def get_node(self, node_id: str) -> AGNode:
         """Return a node by ID."""
 
@@ -160,32 +138,6 @@ class AttackGraph:
             edges = (edge for edge in self._edges.values() if edge.edge_type.value == key)
         return sorted(edges, key=lambda item: item.id)
 
-    def neighbors(
-        self,
-        node_id: str,
-        edge_type: Enum | str | None = None,
-        direction: Literal["in", "out", "both"] = "both",
-    ) -> list[AGNode]:
-        """Return neighboring nodes from incoming, outgoing or both edges."""
-
-        if direction not in {"in", "out", "both"}:
-            raise ValueError("direction must be one of: in, out, both")
-        edge_ids: set[str] = set()
-        if direction in {"out", "both"}:
-            edge_ids.update(self._outgoing_index.get(node_id, set()))
-        if direction in {"in", "both"}:
-            edge_ids.update(self._incoming_index.get(node_id, set()))
-        if edge_type is not None:
-            edge_key = edge_type.value if isinstance(edge_type, Enum) else edge_type
-            edge_ids = {edge_id for edge_id in edge_ids if self._edges[edge_id].edge_type.value == edge_key}
-
-        result: dict[str, AGNode] = {}
-        for edge_id in edge_ids:
-            edge = self._edges[edge_id]
-            other_id = edge.target if edge.source == node_id else edge.source
-            result[other_id] = self._nodes[other_id]
-        return sorted(result.values(), key=lambda item: item.id)
-
     def find_process_nodes(
         self,
         operation_id: str | None = None,
@@ -205,20 +157,6 @@ class AttackGraph:
         if agent_name is not None:
             nodes = [node for node in nodes if node.agent_name == agent_name]
         return sorted(nodes, key=lambda item: (item.created_at, item.id))
-
-    def recent_process_nodes(self, limit: int = 20) -> list[AttackProcessNode]:
-        """Return the most recently created attack-process nodes."""
-
-        nodes = [node for node in self.list_nodes() if isinstance(node, AttackProcessNode)]
-        return sorted(nodes, key=lambda item: (item.created_at, item.id), reverse=True)[: max(limit, 0)]
-
-    def by_subject_ref(self, ref: GraphRef) -> list[AGNode]:
-        """Return AG nodes indexed by a subject-like graph ref."""
-
-        return sorted(
-            (self._nodes[node_id] for node_id in self._subject_ref_index.get(ref.key(), set())),
-            key=lambda item: item.id,
-        )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the graph to a JSON-safe dictionary."""

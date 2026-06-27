@@ -92,16 +92,6 @@ class PlannerGraphTools:
             "write": ["record_finding", "record_attack_step", "link_evidence"],
         }
 
-    def kg_query(self, node_type: str | None = None, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        filters = dict(filters or {})
-        nodes = self.kg.list_nodes(type=node_type) if node_type else self.kg.list_nodes()
-        return [
-            payload
-            for payload in (node.model_dump(mode="json") for node in nodes)
-            if self._matches_filters(payload, filters)
-        ]
-
-
     def record_finding(self, request: RecordFindingRequest | dict[str, Any]) -> dict[str, Any]:
         payload = request if isinstance(request, RecordFindingRequest) else RecordFindingRequest.model_validate(request)
         finding_id = stable_node_id(
@@ -214,18 +204,6 @@ class PlannerGraphTools:
                 "created_at": utc_now().isoformat(),
             }
         )
-
-    @staticmethod
-    def _matches_filters(payload: dict[str, Any], filters: dict[str, Any]) -> bool:
-        props = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
-        for key, expected in filters.items():
-            actual = payload.get(key, props.get(key))
-            if isinstance(expected, dict) and "in" in expected:
-                if actual not in set(expected.get("in") or []):
-                    return False
-            elif actual != expected:
-                return False
-        return True
 
 
 __all__ = [

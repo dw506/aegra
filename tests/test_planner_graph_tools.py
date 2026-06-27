@@ -27,7 +27,7 @@ def test_planner_graph_tools_query_and_record_finding() -> None:
             "evidence_refs": ["evidence::probe"],
         }
     )
-    findings = tools.kg_query("Finding", {"severity": "medium"})
+    findings = [node.model_dump(mode="json") for node in kg.list_nodes(type="Finding")]
     attack_step = tools.record_attack_step(
         {
             "capability": "recon",

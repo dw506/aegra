@@ -22,7 +22,7 @@ from src.core.models.kg_exceptions import (
     EntityNotFoundError,
     ValidationConstraintError,
 )
-from src.core.models.kg_types import Direction, JsonDict
+from src.core.models.kg_types import JsonDict
 
 
 class KnowledgeGraph:
@@ -242,37 +242,6 @@ class KnowledgeGraph:
         if target is not None:
             edge_ids &= set(self._incoming_index.get(target, set()))
         return sorted((self._edges[edge_id] for edge_id in edge_ids), key=lambda item: item.id)
-
-    def neighbors(
-        self,
-        node_id: str,
-        edge_type: str | EdgeType | None = None,
-        direction: Direction = "both",
-    ) -> list[BaseNode]:
-        """Return neighboring nodes from incoming, outgoing or both directions."""
-
-        self.get_node(node_id)
-        if direction not in {"in", "out", "both"}:
-            raise ValidationConstraintError("direction must be one of: in, out, both")
-
-        edge_ids: set[str] = set()
-        if direction in {"out", "both"}:
-            edge_ids.update(self._outgoing_index.get(node_id, set()))
-        if direction in {"in", "both"}:
-            edge_ids.update(self._incoming_index.get(node_id, set()))
-        if edge_type is not None:
-            edge_ids = {
-                edge_id
-                for edge_id in edge_ids
-                if self._edges[edge_id].type.value == self._edge_type_key(edge_type)
-            }
-
-        result: dict[str, BaseNode] = {}
-        for edge_id in edge_ids:
-            edge = self._edges[edge_id]
-            other_id = edge.target if edge.source == node_id else edge.source
-            result[other_id] = self._nodes[other_id]
-        return sorted(result.values(), key=lambda item: item.id)
 
     def to_dict(self) -> JsonDict:
         """Serialize the graph into a plain dictionary."""

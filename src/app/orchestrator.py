@@ -1140,16 +1140,6 @@ class AppOrchestrator:
     def _budget_exhausted(used: float | int, maximum: float | int | None) -> bool:
         return maximum is not None and used >= maximum
 
-    @staticmethod
-    def _critic_finding_count(feedback: PipelineCycleResult | None) -> int:
-        if feedback is None:
-            return 0
-        count = 0
-        for decision in feedback.final_output.decisions:
-            payload = decision.get("payload") if isinstance(decision, dict) else None
-            if isinstance(payload, dict) and "recommendation" in payload:
-                count += 1
-        return count
 
     def _load_graph_memory(self, operation_id: str) -> tuple[KnowledgeGraph, AttackGraph, RuntimeState | None]:
         """Load KG / AG / Runtime snapshots for operation bootstrap."""
@@ -1314,15 +1304,6 @@ class AppOrchestrator:
             else:
                 compact[key] = value
         return compact
-
-    @staticmethod
-    def _runtime_summary(state: RuntimeState) -> dict[str, Any]:
-        return {
-            "operation_status": state.operation_status.value,
-            "task_count": 0,
-            "pending_event_count": len(state.pending_events),
-            "replan_request_count": len(state.replan_requests),
-        }
 
     @staticmethod
     def _blackbox_policy_context(policy_context: dict[str, Any], state: RuntimeState) -> dict[str, Any]:

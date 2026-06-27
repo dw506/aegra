@@ -93,25 +93,6 @@ class RuntimeSessionManager:
         state.last_updated = now
         return session
 
-    def expire_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        reason: str | None = None,
-    ) -> SessionRuntime:
-        """Mark one session as expired and record the optional reason."""
-
-        session = self.get_session(state, session_id)
-        now = utc_now()
-        session.status = SessionStatus.EXPIRED
-        session.lease_expiry = now
-        session.heartbeat_at = now
-        session.failure_count += 1
-        if reason is not None:
-            session.metadata["expiry_reason"] = reason
-        state.last_updated = now
-        return session
-
     def get_session(self, state: RuntimeState, session_id: str) -> SessionRuntime:
         """Return one tracked runtime session."""
 
@@ -128,19 +109,6 @@ class RuntimeSessionManager:
             return False
         return session.is_session_usable()
 
-    def extend_lease(self, state: RuntimeState, session_id: str, extra_seconds: int) -> SessionRuntime:
-        """Extend the session lease by the requested number of seconds."""
-
-        session = self.get_session(state, session_id)
-        now = utc_now()
-        if session.status == SessionStatus.EXPIRED:
-            raise ValueError(f"session '{session_id}' is expired")
-        base = session.lease_expiry if session.lease_expiry is not None and session.lease_expiry > now else now
-        session.lease_expiry = base + timedelta(seconds=extra_seconds)
-        session.heartbeat_at = now
-        state.last_updated = now
-        return session
-
     def bind_task_to_session(self, state: RuntimeState, task_id: str, session_id: str) -> SessionRuntime:
         """Attach one source task ID to the session metadata."""
 
@@ -150,25 +118,6 @@ class RuntimeSessionManager:
             task_ids.append(task_id)
         state.last_updated = utc_now()
         return session
-
-    def cleanup_expired_sessions(self, state: RuntimeState) -> int:
-        """Mark active sessions as expired when their lease has elapsed."""
-
-        now = utc_now()
-        expired = 0
-        for session in state.sessions.values():
-            if session.status == SessionStatus.EXPIRED:
-                continue
-            if session.lease_expiry is None:
-                continue
-            if session.lease_expiry <= now:
-                session.status = SessionStatus.EXPIRED
-                session.failure_count += 1
-                session.metadata.setdefault("expiry_reason", "lease_expired")
-                expired += 1
-        if expired:
-            state.last_updated = now
-        return expired
 
     @staticmethod
     def _model_reusability(policy: SessionReusePolicy) -> str:
