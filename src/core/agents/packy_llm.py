@@ -420,21 +420,6 @@ class PackyLLMClient:
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
         self.close()
 
-    def list_models(self) -> list[str]:
-        """Return model IDs exposed by the configured gateway."""
-
-        response = self._http.get("/models")
-        self._raise_for_status(response)
-        payload = self._parse_json_response(response)
-        models = payload.get("data")
-        if not isinstance(models, list):
-            raise PackyLLMError("gateway /models response does not contain a data list")
-        model_ids: list[str] = []
-        for item in models:
-            if isinstance(item, dict) and isinstance(item.get("id"), str):
-                model_ids.append(item["id"])
-        return model_ids
-
     def chat(
         self,
         *,
@@ -617,12 +602,6 @@ class PackyLLMClient:
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
-
-    def _parse_json_response(self, response: httpx.Response) -> dict[str, Any]:
-        payload = self._try_parse_json(response.text)
-        if payload is None:
-            raise PackyLLMError("gateway response is not valid JSON")
-        return payload
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:

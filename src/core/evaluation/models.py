@@ -49,14 +49,6 @@ class OperationProfile(BaseModel):
         """Return the ZoneBinding for a logical zone reference."""
         return self.zone_bindings.get(zone_ref)
 
-    def is_zone_directly_reachable(self, zone_ref: str) -> bool:
-        zone = self.resolve_zone(zone_ref)
-        return zone.directly_reachable if zone else False
-
-    def zone_requires(self, zone_ref: str) -> list[str]:
-        zone = self.resolve_zone(zone_ref)
-        return zone.requires if zone else []
-
 
 class ConditionBinding(BaseModel):
     """One condition binding from a success contract."""

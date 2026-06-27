@@ -93,14 +93,6 @@ class RuntimeSessionManager:
         state.last_updated = now
         return session
 
-    def heartbeat_session(self, state: RuntimeState, session_id: str) -> SessionRuntime:
-        """Refresh the heartbeat timestamp for one runtime session."""
-
-        session = self.get_session(state, session_id)
-        session.heartbeat_at = utc_now()
-        state.last_updated = session.heartbeat_at
-        return session
-
     def expire_session(
         self,
         state: RuntimeState,
@@ -117,45 +109,6 @@ class RuntimeSessionManager:
         session.failure_count += 1
         if reason is not None:
             session.metadata["expiry_reason"] = reason
-        state.last_updated = now
-        return session
-
-    def fail_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        *,
-        reason: str | None = None,
-    ) -> SessionRuntime:
-        """Mark one session as failed and record the optional reason."""
-
-        session = self.get_session(state, session_id)
-        now = utc_now()
-        session.status = SessionStatus.FAILED
-        session.lease_expiry = now
-        session.heartbeat_at = now
-        session.failure_count += 1
-        if reason is not None:
-            session.metadata["failure_reason"] = reason
-        state.last_updated = now
-        return session
-
-    def close_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        *,
-        reason: str | None = None,
-    ) -> SessionRuntime:
-        """Close one session without treating it as a failure."""
-
-        session = self.get_session(state, session_id)
-        now = utc_now()
-        session.status = SessionStatus.CLOSED
-        session.lease_expiry = now
-        session.heartbeat_at = now
-        if reason is not None:
-            session.metadata["close_reason"] = reason
         state.last_updated = now
         return session
 
@@ -198,20 +151,6 @@ class RuntimeSessionManager:
         state.last_updated = utc_now()
         return session
 
-    def unbind_task_from_session(
-        self,
-        state: RuntimeState,
-        task_id: str,
-        session_id: str,
-    ) -> SessionRuntime:
-        """Remove one source task ID from the session metadata."""
-
-        session = self.get_session(state, session_id)
-        task_ids = session.metadata.setdefault("bound_task_ids", [])
-        session.metadata["bound_task_ids"] = [item for item in task_ids if item != task_id]
-        state.last_updated = utc_now()
-        return session
-
     def cleanup_expired_sessions(self, state: RuntimeState) -> int:
         """Mark active sessions as expired when their lease has elapsed."""
 
@@ -230,29 +169,6 @@ class RuntimeSessionManager:
         if expired:
             state.last_updated = now
         return expired
-
-    def list_reusable_sessions(
-        self,
-        state: RuntimeState,
-        bound_target: str | None = None,
-        bound_identity: str | None = None,
-    ) -> list[SessionRuntime]:
-        """Return currently usable shared sessions, optionally filtered by bindings."""
-
-        self.cleanup_expired_sessions(state)
-        sessions: list[SessionRuntime] = []
-        for session in state.sessions.values():
-            if not session.is_session_usable():
-                continue
-            policy = SessionReusePolicy.coerce(session.metadata.get("reuse_policy", SessionReusePolicy.EXCLUSIVE.value))
-            if policy == SessionReusePolicy.EXCLUSIVE:
-                continue
-            if bound_target is not None and session.bound_target != bound_target:
-                continue
-            if bound_identity is not None and session.bound_identity != bound_identity:
-                continue
-            sessions.append(session)
-        return sorted(sessions, key=lambda item: item.session_id)
 
     @staticmethod
     def _model_reusability(policy: SessionReusePolicy) -> str:

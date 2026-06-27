@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,14 +51,12 @@ class PlannerGraphTools:
         kg: KnowledgeGraph,
         ag: AttackGraph,
         runtime_state: RuntimeState,
-        runtime_root: str | Path = "var/runtime",
     ) -> None:
         self.operation_id = operation_id
         self.cycle_index = cycle_index
         self.kg = kg
         self.ag = ag
         self.runtime_state = runtime_state
-        self.runtime_root = Path(runtime_root)
 
     def build_min_summary(self) -> dict[str, Any]:
         progress = dict(self.runtime_state.execution.metadata.get("success_condition_progress") or {})
@@ -104,49 +101,6 @@ class PlannerGraphTools:
             if self._matches_filters(payload, filters)
         ]
 
-    def kg_get_node(self, node_id: str) -> dict[str, Any] | None:
-        try:
-            return self.kg.get_node(node_id).model_dump(mode="json")
-        except Exception:
-            return None
-
-    def kg_neighbors(self, node_id: str, edge_type: str | None = None) -> dict[str, list[dict[str, Any]]]:
-        edges = self.kg.list_edges(type=edge_type, source=node_id) if edge_type else self.kg.list_edges(source=node_id)
-        incoming = self.kg.list_edges(type=edge_type, target=node_id) if edge_type else self.kg.list_edges(target=node_id)
-        return {
-            "outgoing": [edge.model_dump(mode="json") for edge in edges],
-            "incoming": [edge.model_dump(mode="json") for edge in incoming],
-        }
-
-    def ag_get_timeline(self) -> list[dict[str, Any]]:
-        nodes = [
-            node.model_dump(mode="json")
-            for node in self.ag.find_process_nodes()
-            if getattr(getattr(node, "node_type", None), "value", None) == "ATTACK_STEP"
-        ]
-        return sorted(nodes, key=lambda item: int(item.get("cycle_index") or 0))
-
-    def ag_get_step(self, step_id: str) -> dict[str, Any] | None:
-        try:
-            node = self.ag.get_node(step_id)
-        except Exception:
-            return None
-        return node.model_dump(mode="json")
-
-    def get_round_log(self, step_id: str) -> str | None:
-        step = self.ag_get_step(step_id)
-        if not step:
-            return None
-        log_ref = ((step.get("properties") or {}).get("log_ref") or "").strip()
-        if not log_ref:
-            return None
-        path = Path(log_ref)
-        if not path.is_absolute():
-            path = self.runtime_root / self.operation_id / path
-        try:
-            return path.read_text(encoding="utf-8")[:16000]
-        except OSError:
-            return None
 
     def record_finding(self, request: RecordFindingRequest | dict[str, Any]) -> dict[str, Any]:
         payload = request if isinstance(request, RecordFindingRequest) else RecordFindingRequest.model_validate(request)

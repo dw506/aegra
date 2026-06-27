@@ -188,46 +188,5 @@ class RuntimeCredentialManager:
         except KeyError as exc:
             raise ValueError(f"credential '{credential_id}' does not exist") from exc
 
-    def is_credential_usable_for_target(
-        self,
-        state: RuntimeState,
-        credential_id: str,
-        *,
-        target_id: str | None = None,
-    ) -> bool:
-        """Return True when the credential is valid for the optional target."""
-
-        credential = self.get_credential(state, credential_id)
-        if not credential.is_usable():
-            return False
-        if target_id is None or not credential.bound_targets:
-            return True
-        return target_id in credential.bound_targets
-
-    def list_credentials_for_session(self, state: RuntimeState, session_id: str) -> list[CredentialRuntime]:
-        """Return credentials discovered from the given source session."""
-
-        return sorted(
-            [credential for credential in state.credentials.values() if credential.source_session_id == session_id],
-            key=lambda item: item.credential_id,
-        )
-
-    # 中文注释：
-    # 会话失效后，由该会话导出的临时凭据也要同步过期，避免调度继续复用脏凭据。
-    def expire_credentials_for_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        *,
-        reason: str | None = None,
-    ) -> int:
-        """Expire credentials sourced from the given session."""
-
-        expired = 0
-        for credential in self.list_credentials_for_session(state, session_id):
-            self.mark_expired(state, credential.credential_id, reason=reason or "source_session_expired")
-            expired += 1
-        return expired
-
 
 __all__ = ["RuntimeCredentialManager"]

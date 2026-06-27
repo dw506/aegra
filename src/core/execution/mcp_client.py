@@ -23,9 +23,6 @@ class MCPToolCallResult(BaseModel):
 class MCPClient(Protocol):
     """Minimal client contract required by MCPExecutionAdapter."""
 
-    def is_available(self, server_id: str | None = None) -> bool:
-        """Return True when the selected MCP server can accept calls."""
-
     def list_tools(self) -> dict[str, Any]:
         """Return a catalog of configured MCP tools when available."""
 
@@ -42,9 +39,6 @@ class MCPClient(Protocol):
 
 class UnavailableMCPClient:
     """Default client used when no MCP transport has been configured."""
-
-    def is_available(self, server_id: str | None = None) -> bool:
-        return False
 
     def list_tools(self) -> dict[str, Any]:
         return {"available": False, "error": "MCP is not configured"}

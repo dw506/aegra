@@ -64,11 +64,6 @@ class ProfileLoader:
 _default_loader = ProfileLoader()
 
 
-def load_profile(path: str | Path) -> OperationProfile:
-    """Convenience wrapper around ProfileLoader.load()."""
-    return _default_loader.load(path)
-
-
 def profile_from_dict(data: dict[str, Any]) -> OperationProfile:
     """Convenience wrapper around ProfileLoader.load_from_dict()."""
     return _default_loader.load_from_dict(data)

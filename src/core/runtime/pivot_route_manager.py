@@ -106,24 +106,6 @@ class RuntimePivotRouteManager:
         state.last_updated = now
         return route
 
-    def close_route(
-        self,
-        state: RuntimeState,
-        route_id: str,
-        *,
-        reason: str | None = None,
-    ) -> PivotRouteRuntime:
-        """Close one route and record the optional reason."""
-
-        route = self.get_route(state, route_id)
-        now = utc_now()
-        route.status = PivotRouteStatus.CLOSED
-        route.last_verified_at = now
-        if reason is not None:
-            route.metadata["close_reason"] = reason
-        state.last_updated = now
-        return route
-
     def refresh_from_reachability(
         self,
         state: RuntimeState,
@@ -219,44 +201,6 @@ class RuntimePivotRouteManager:
             return state.pivot_routes[route_id]
         except KeyError as exc:
             raise ValueError(f"pivot route '{route_id}' does not exist") from exc
-
-    def list_routes_for_session(self, state: RuntimeState, session_id: str) -> list[PivotRouteRuntime]:
-        """Return tracked pivot routes attached to the given session."""
-
-        return sorted(
-            [route for route in state.pivot_routes.values() if route.session_id == session_id],
-            key=lambda item: item.route_id,
-        )
-
-    def fail_routes_for_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        *,
-        reason: str | None = None,
-    ) -> int:
-        """Mark routes attached to the given session as failed."""
-
-        failed = 0
-        for route in self.list_routes_for_session(state, session_id):
-            self.fail_route(state, route.route_id, reason=reason or "source_session_failed")
-            failed += 1
-        return failed
-
-    def close_routes_for_session(
-        self,
-        state: RuntimeState,
-        session_id: str,
-        *,
-        reason: str | None = None,
-    ) -> int:
-        """Close routes attached to the given session."""
-
-        closed = 0
-        for route in self.list_routes_for_session(state, session_id):
-            self.close_route(state, route.route_id, reason=reason or "source_session_closed")
-            closed += 1
-        return closed
 
     @staticmethod
     def _route_session_usable(state: RuntimeState, route: PivotRouteRuntime) -> bool:

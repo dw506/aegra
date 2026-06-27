@@ -19,7 +19,7 @@ from src.core.evaluation.profile_loader import profile_from_dict
 from src.core.evaluation.success_condition_tracker import SuccessConditionTracker
 from src.core.evaluation.success_contract_loader import contract_from_dict, load_contract
 from src.core.models.ag import AttackGraph
-from src.core.models.runtime import OperationRuntime, ReplanRequest, RuntimeState, RuntimeStatus, utc_now
+from src.core.models.runtime import OperationRuntime, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
 from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
 from src.core.planning.mission_planner_agent import MissionPlannerAgent
@@ -579,7 +579,6 @@ class AppOrchestrator:
             kg=kg,
             ag=ag,
             runtime_state=state,
-            runtime_root=self.settings.runtime_store_dir,
         )
         min_summary = planner_tools.build_min_summary()
         success_progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
@@ -1056,52 +1055,6 @@ class AppOrchestrator:
         self.runtime_store.save_state(state)
         return state.model_copy(deep=True)
 
-    def _supervisor_payload_from_cycle(
-        self,
-        state: RuntimeState,
-        cycle_result: OperationCycleResult,
-    ) -> dict[str, Any]:
-        last_control_cycle = self._mapping(state.execution.metadata.get("last_control_cycle"))
-        return {
-            "runtime_summary": self._runtime_summary(state),
-            "last_control_cycle": last_control_cycle,
-            "planner_summary": {
-                "success": cycle_result.planning.success if cycle_result.planning is not None else False,
-                "step_count": len(cycle_result.planning.steps) if cycle_result.planning is not None else 0,
-            },
-            "critic_summary": {
-                "success": cycle_result.feedback.success if cycle_result.feedback is not None else False,
-                "finding_count": self._critic_finding_count(cycle_result.feedback),
-                "replan_request_count": len(state.replan_requests),
-            },
-            "budget_summary": self._budget_summary(state),
-        }
-
-    def _validated_supervisor_strategy(self, cycle: PipelineCycleResult) -> dict[str, Any] | None:
-        for decision in cycle.final_output.decisions:
-            payload = self._mapping(decision.get("payload"))
-            validation = self._mapping(payload.get("llm_decision_validation"))
-            if not bool(payload.get("control_only")):
-                continue
-            if not bool(payload.get("llm_adopted")) or not bool(validation.get("accepted")):
-                continue
-            supervisor_decision = self._mapping(payload.get("supervisor_decision"))
-            strategy = supervisor_decision.get("strategy")
-            if strategy not in {
-                "continue_planning",
-                "continue_execution",
-                "request_replan",
-                "pause_for_review",
-                "stop_when_quiescent",
-            }:
-                continue
-            return {
-                "strategy": str(strategy),
-                "rationale": supervisor_decision.get("rationale"),
-                "requires_human_review": bool(supervisor_decision.get("requires_human_review", False)),
-            }
-        return None
-
     def _record_control_strategy(
         self,
         state: RuntimeState,
@@ -1152,25 +1105,6 @@ class AppOrchestrator:
             event_type="operation_paused_for_review",
             cycle_index=cycle_index,
             reason=reason,
-        )
-
-    def _request_supervisor_replan(self, state: RuntimeState, *, cycle_index: int, rationale: str) -> None:
-        request = ReplanRequest(
-            request_id=f"supervisor-replan-{cycle_index}-{len(state.replan_requests) + 1}",
-            reason="supervisor requested existing replan flow",
-            scope="local",
-            metadata={
-                "source": "supervisor",
-                "cycle_index": cycle_index,
-                "rationale": rationale,
-            },
-        )
-        state.request_replan(request)
-        self._log_operation_event(
-            state,
-            event_type="supervisor_replan_requested",
-            cycle_index=cycle_index,
-            request_id=request.request_id,
         )
 
     @staticmethod
@@ -1355,7 +1289,7 @@ class AppOrchestrator:
         "observations", "evidence", "findings", "discovered_entities",
         "discovered_relations", "capabilities_gained", "credentials", "sessions",
         "pivot_routes", "privilege_contexts", "graph_update_intents",
-        "evidence_refs", "tool_trace", "tool_traces",
+        "evidence_refs", "tool_trace",
     })
     #UI-only projection; the planner never reads it.
     _DROPPED_RESULT_FIELDS = frozenset({"visual_summary"})

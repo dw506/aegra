@@ -140,33 +140,6 @@ class AttackGraph:
 
         return self._edges[edge_id]
 
-    def remove_node(self, node_id: str) -> AGNode:
-        """Remove a node and its incident edges."""
-
-        node = self._nodes[node_id]
-        incident_edges = set(self._outgoing_index.get(node_id, set()))
-        incident_edges.update(self._incoming_index.get(node_id, set()))
-        for edge_id in list(incident_edges):
-            self.remove_edge(edge_id)
-        del self._nodes[node_id]
-        self._node_type_index[self._node_type_key(node)].discard(node_id)
-        for ref in self._refs_for_index(node):
-            self._subject_ref_index[ref.key()].discard(node_id)
-            if not self._subject_ref_index[ref.key()]:
-                del self._subject_ref_index[ref.key()]
-        self._version += 1
-        return node
-
-    def remove_edge(self, edge_id: str) -> AGEdge:
-        """Remove an edge by ID."""
-
-        edge = self._edges[edge_id]
-        self._outgoing_index[edge.source].discard(edge_id)
-        self._incoming_index[edge.target].discard(edge_id)
-        del self._edges[edge_id]
-        self._version += 1
-        return edge
-
     def list_nodes(self, node_type: str | Enum | None = None) -> list[AGNode]:
         """List nodes, optionally filtered by their effective type."""
 

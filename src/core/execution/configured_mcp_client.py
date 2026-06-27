@@ -75,11 +75,6 @@ class ConfiguredMCPClient:
             payload.update(config_json)
         return cls(payload)
 
-    def is_available(self, server_id: str | None = None) -> bool:
-        if not server_id:
-            return bool(self._config.servers)
-        return server_id in self._config.servers
-
     def close(self) -> None:
         """Close all managed stdio sessions."""
 

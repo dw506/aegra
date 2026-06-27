@@ -128,13 +128,6 @@ class Workspace(BaseModel):
     default_engagement_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def active_engagement(self) -> Engagement | None:
-        if self.default_engagement_id:
-            for engagement in self.engagements:
-                if engagement.engagement_id == self.default_engagement_id:
-                    return engagement
-        return self.engagements[0] if self.engagements else None
-
 
 __all__ = [
     "Asset",

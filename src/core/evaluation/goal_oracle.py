@@ -199,15 +199,3 @@ class GoalOracle:
             hashlib.sha256,
         ).hexdigest()
         return f"proof:{goal_id}:{token[:16]}"
-
-    def compute_submission_hash(self, secret_value: str, goal_id: str) -> str:
-        """Compute the hash that should be submitted for a known secret value.
-
-        This method is intended for use by MCP tools that read lab markers.
-        The raw secret_value is never stored; only the hash is returned.
-        """
-        return hmac.new(
-            secret_value.encode(),
-            (goal_id + ":" + secret_value).encode(),
-            hashlib.sha256,
-        ).hexdigest()

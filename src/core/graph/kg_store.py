@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Any
 
 from src.core.models.kg import (
     EDGE_MODEL_BY_TYPE,
     BaseEdge,
     BaseNode,
-    Evidence,
     GraphChange,
     GraphDelta,
     GraphEntityRef,
     NODE_MODEL_BY_TYPE,
-    Observation,
     parse_edge,
     parse_node,
 )
@@ -24,7 +22,6 @@ from src.core.models.kg_exceptions import (
     EntityNotFoundError,
     ValidationConstraintError,
 )
-from src.core.models.kg_query import QueryFilter
 from src.core.models.kg_types import Direction, JsonDict
 
 
@@ -181,21 +178,6 @@ class KnowledgeGraph:
         except KeyError as exc:
             raise EntityNotFoundError(f"node '{node_id}' was not found") from exc
 
-    def remove_node(self, node_id: str) -> BaseNode:
-        """Remove a node and all incident edges."""
-
-        node = self.get_node(node_id)
-        incident_edge_ids = set(self._outgoing_index.get(node_id, set()))
-        incident_edge_ids.update(self._incoming_index.get(node_id, set()))
-        for edge_id in list(incident_edge_ids):
-            self.remove_edge(edge_id)
-
-        self._node_type_index[node.type.value].discard(node_id)
-        self._unindex_source_refs("node", node.id, node.source_refs)
-        del self._nodes[node_id]
-        self._record_change(ChangeOperation.DELETE, node.to_ref("node"), node, None)
-        return node
-
     def add_edge(self, edge: BaseEdge) -> BaseEdge:
         """Add a validated edge between existing nodes."""
 
@@ -217,18 +199,6 @@ class KnowledgeGraph:
             return self._edges[edge_id]
         except KeyError as exc:
             raise EntityNotFoundError(f"edge '{edge_id}' was not found") from exc
-
-    def remove_edge(self, edge_id: str) -> BaseEdge:
-        """Remove an edge by ID."""
-
-        edge = self.get_edge(edge_id)
-        self._edge_type_index[edge.type.value].discard(edge_id)
-        self._outgoing_index[edge.source].discard(edge_id)
-        self._incoming_index[edge.target].discard(edge_id)
-        self._unindex_source_refs("edge", edge.id, edge.source_refs)
-        del self._edges[edge_id]
-        self._record_change(ChangeOperation.DELETE, edge.to_ref("edge"), edge, None)
-        return edge
 
     def list_nodes(
         self,
@@ -273,55 +243,6 @@ class KnowledgeGraph:
             edge_ids &= set(self._incoming_index.get(target, set()))
         return sorted((self._edges[edge_id] for edge_id in edge_ids), key=lambda item: item.id)
 
-    def upsert_observation(self, observation: Observation | JsonDict) -> Observation:
-        """Insert or update an observation node."""
-
-        payload = observation.model_dump() if isinstance(observation, Observation) else dict(observation)
-        candidate = Observation.model_validate(payload)
-        if candidate.id in self._nodes:
-            patch = candidate.model_dump()
-            patch["first_seen"] = self.get_node(candidate.id).first_seen
-            return self.update_node(candidate.id, patch)  # type: ignore[return-value]
-        return self.add_node(candidate)  # type: ignore[return-value]
-
-    def upsert_evidence(self, evidence: Evidence | JsonDict) -> Evidence:
-        """Insert or update an evidence node."""
-
-        payload = evidence.model_dump() if isinstance(evidence, Evidence) else dict(evidence)
-        candidate = Evidence.model_validate(payload)
-        if candidate.id in self._nodes:
-            patch = candidate.model_dump()
-            patch["first_seen"] = self.get_node(candidate.id).first_seen
-            return self.update_node(candidate.id, patch)  # type: ignore[return-value]
-        return self.add_node(candidate)  # type: ignore[return-value]
-
-    def link_supported_by(
-        self,
-        subject_ref: GraphEntityRef | str,
-        evidence_ref: GraphEntityRef | str,
-    ) -> BaseEdge:
-        """Create or return a SUPPORTING edge from a subject node to evidence."""
-
-        subject_id = self._normalize_ref(subject_ref)
-        evidence_id = self._normalize_ref(evidence_ref)
-        evidence = self.get_node(evidence_id)
-        if not isinstance(evidence, Evidence):
-            raise ValidationConstraintError("SUPPORTED_BY target must be an Evidence node")
-
-        edge_id = f"supported_by::{subject_id}::{evidence_id}"
-        if edge_id in self._edges:
-            return self._edges[edge_id]
-
-        edge_cls = EDGE_MODEL_BY_TYPE[EdgeType.SUPPORTED_BY]
-        edge = edge_cls(
-            id=edge_id,
-            type=EdgeType.SUPPORTED_BY,
-            label="supported_by",
-            source=subject_id,
-            target=evidence_id,
-        )
-        return self.add_edge(edge)
-
     def neighbors(
         self,
         node_id: str,
@@ -352,18 +273,6 @@ class KnowledgeGraph:
             other_id = edge.target if edge.source == node_id else edge.source
             result[other_id] = self._nodes[other_id]
         return sorted(result.values(), key=lambda item: item.id)
-
-    def subgraph(self, node_ids: set[str] | list[str]) -> "KnowledgeGraph":
-        """Return a new graph containing only the selected nodes and edges."""
-
-        selected = set(node_ids)
-        graph = KnowledgeGraph()
-        for node_id in selected:
-            graph.add_node(self.get_node(node_id))
-        for edge in self._edges.values():
-            if edge.source in selected and edge.target in selected:
-                graph.add_edge(edge)
-        return graph
 
     def to_dict(self) -> JsonDict:
         """Serialize the graph into a plain dictionary."""
@@ -399,150 +308,6 @@ class KnowledgeGraph:
         graph._version = int(payload.get("version", graph._delta.version))
         graph._last_patch_batch_id = payload.get("last_patch_batch_id") or graph._delta.last_patch_batch_id
         return graph
-
-    def get_supporting_evidence(self, entity_id: str) -> list[Evidence]:
-        """Return evidence nodes reachable from an entity via support chains."""
-
-        self.get_node(entity_id)
-        evidence_map: dict[str, Evidence] = {}
-        for path in self.get_support_chain(entity_id):
-            for ref in path:
-                if ref.entity_kind == "node" and ref.entity_id in self._nodes:
-                    node = self._nodes[ref.entity_id]
-                    if isinstance(node, Evidence):
-                        evidence_map[node.id] = node
-        return sorted(evidence_map.values(), key=lambda item: item.id)
-
-    def get_support_chain(self, entity_id: str, max_depth: int = 3) -> list[list[GraphEntityRef]]:
-        """Return support paths following SUPPORTED_BY and DERIVED_FROM edges."""
-
-        self.get_node(entity_id)
-        if max_depth < 1:
-            return []
-
-        results: list[list[GraphEntityRef]] = []
-        allowed_types = {EdgeType.SUPPORTED_BY, EdgeType.DERIVED_FROM}
-        queue: deque[tuple[str, list[GraphEntityRef], int]] = deque(
-            [(entity_id, [self._nodes[entity_id].to_ref("node")], 0)]
-        )
-
-        while queue:
-            current_id, path, depth = queue.popleft()
-            if depth >= max_depth:
-                continue
-            for edge in self.list_edges(source=current_id):
-                if edge.type not in allowed_types:
-                    continue
-                next_node = self._nodes[edge.target]
-                next_path = [*path, next_node.to_ref("node")]
-                if isinstance(next_node, (Evidence, Observation)):
-                    results.append(next_path)
-                if next_node.id not in {ref.entity_id for ref in path}:
-                    queue.append((next_node.id, next_path, depth + 1))
-        return results
-
-    def get_observations_for_entity(self, entity_id: str) -> list[Observation]:
-        """Return observations directly or indirectly linked to an entity."""
-
-        self.get_node(entity_id)
-        observations: dict[str, Observation] = {}
-        for edge in self.list_edges(type=EdgeType.OBSERVED_ON, target=entity_id):
-            node = self._nodes[edge.source]
-            if isinstance(node, Observation):
-                observations[node.id] = node
-        for path in self.get_support_chain(entity_id, max_depth=4):
-            for ref in path:
-                if ref.entity_kind == "node" and ref.entity_id in self._nodes:
-                    node = self._nodes[ref.entity_id]
-                    if isinstance(node, Observation):
-                        observations[node.id] = node
-        return sorted(observations.values(), key=lambda item: item.id)
-
-    def get_entities_supported_by_evidence(self, evidence_id: str) -> list[BaseNode]:
-        """Return entities that directly point to an evidence node."""
-
-        evidence = self.get_node(evidence_id)
-        if not isinstance(evidence, Evidence):
-            raise ValidationConstraintError("evidence_id must reference an Evidence node")
-
-        result: dict[str, BaseNode] = {}
-        for edge in self.list_edges(type=EdgeType.SUPPORTED_BY, target=evidence_id):
-            result[edge.source] = self._nodes[edge.source]
-        return sorted(result.values(), key=lambda item: item.id)
-
-    def get_hosts(self) -> list[BaseNode]:
-        """Return all host nodes."""
-
-        return self.list_nodes(type=NodeType.HOST)
-
-    def get_services_for_host(self, host_id: str) -> list[BaseNode]:
-        """Return services hosted on the given host."""
-
-        self._ensure_node_type(host_id, NodeType.HOST)
-        return self._collect_targets(host_id, EdgeType.HOSTS)
-
-    def get_sessions_on_host(self, host_id: str) -> list[BaseNode]:
-        """Return sessions active on the given host."""
-
-        self._ensure_node_type(host_id, NodeType.HOST)
-        return self._collect_sources(host_id, EdgeType.SESSION_ON)
-
-    def get_privilege_states_for_host(self, host_id: str) -> list[BaseNode]:
-        """Return privilege states that apply to the given host."""
-
-        self._ensure_node_type(host_id, NodeType.HOST)
-        return self._collect_sources(host_id, EdgeType.APPLIES_TO_HOST)
-
-    def get_goal_related_entities(self, goal_id: str) -> list[BaseNode]:
-        """Return entities connected to a goal through planning-relevant edges."""
-
-        self._ensure_node_type(goal_id, NodeType.GOAL)
-        related_edge_types = {EdgeType.TARGETS, EdgeType.RELATED_TO, EdgeType.CONTAINS}
-        result: dict[str, BaseNode] = {}
-        for edge in self.list_edges():
-            if edge.type not in related_edge_types:
-                continue
-            if edge.source == goal_id:
-                result[edge.target] = self._nodes[edge.target]
-            elif edge.target == goal_id:
-                result[edge.source] = self._nodes[edge.source]
-        return sorted(result.values(), key=lambda item: item.id)
-
-    def get_reachable_targets(self, source_id: str) -> list[BaseNode]:
-        """Return nodes directly reachable from the given source entity."""
-
-        self.get_node(source_id)
-        return self._collect_targets(source_id, EdgeType.CAN_REACH)
-
-    def get_entities_by_confidence(self, min_confidence: float) -> list[BaseNode]:
-        """Return nodes with confidence at or above the given threshold."""
-
-        query = QueryFilter(min_confidence=min_confidence)
-        return sorted(
-            [node for node in self._nodes.values() if query.matches_confidence(node.confidence)],
-            key=lambda item: item.id,
-        )
-
-    def _collect_targets(self, source_id: str, edge_type: EdgeType) -> list[BaseNode]:
-        result = {
-            edge.target: self._nodes[edge.target]
-            for edge in self.list_edges(type=edge_type, source=source_id)
-        }
-        return sorted(result.values(), key=lambda item: item.id)
-
-    def _collect_sources(self, target_id: str, edge_type: EdgeType) -> list[BaseNode]:
-        result = {
-            edge.source: self._nodes[edge.source]
-            for edge in self.list_edges(type=edge_type, target=target_id)
-        }
-        return sorted(result.values(), key=lambda item: item.id)
-
-    def _ensure_node_type(self, node_id: str, expected_type: NodeType) -> None:
-        node = self.get_node(node_id)
-        if node.type != expected_type:
-            raise ValidationConstraintError(
-                f"node '{node_id}' must be of type '{expected_type.value}'"
-            )
 
     def _validate_edge_constraints(self, edge: BaseEdge) -> None:
         if edge.source not in self._nodes:
@@ -692,13 +457,6 @@ class KnowledgeGraph:
             self._source_ref_index[ref_key].discard(storage_key)
             if not self._source_ref_index[ref_key]:
                 del self._source_ref_index[ref_key]
-
-    def _normalize_ref(self, value: GraphEntityRef | str) -> str:
-        if isinstance(value, GraphEntityRef):
-            if value.entity_kind != "node":
-                raise ValidationConstraintError("only node references can be used for edge linkage")
-            return value.entity_id
-        return value
 
     @staticmethod
     def _normalize_source_refs(raw_refs: list[Any]) -> list[GraphEntityRef]:

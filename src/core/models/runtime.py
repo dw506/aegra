@@ -1,11 +1,5 @@
-"""Runtime State core models.
+#Aegra 单个 operation 在执行期间的运行时状态模型
 
-This module defines the execution-time state used by the orchestration engine.
-The models here intentionally describe only the current execution context for
-one operation. They do not replace KG facts, AG planning structure or runtime
-topology.
-"""
-#定义 operation 的生命周期状态
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -14,15 +8,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
+#UTC 时间生成函数
 def utc_now() -> datetime:
-    """Return the current UTC timestamp."""
-
+   
     return datetime.now(timezone.utc)
 
-
+#描述整个 operation 的生命周期
 class RuntimeStatus(str, Enum):
-    """Lifecycle status for the current operation runtime."""
 
     CREATED = "created"
     READY = "ready"
@@ -33,30 +25,27 @@ class RuntimeStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-
+#描述一个 session 的状态
 class SessionStatus(str, Enum):
-    """Lifecycle status for one runtime session handle."""
 
     OPENING = "opening"
     ACTIVE = "active"
-    DRAINING = "draining"
+    DRAINING = "draining"    #准备释放，不再接新任务
     CLOSED = "closed"
     FAILED = "failed"
-    EXPIRED = "expired"
+    EXPIRED = "expired"        #租约过期
 
-
+#描述凭据是否可用
 class CredentialStatus(str, Enum):
-    """Lifecycle status for one runtime credential handle."""
 
     UNKNOWN = "unknown"
     VALID = "valid"
     INVALID = "invalid"
-    EXPIRED = "expired"
-    REVOKED = "revoked"
+    EXPIRED = "expired"       #过期
+    REVOKED = "revoked"       #被撤销
 
-
+#描述凭据类型
 class CredentialKind(str, Enum):
-    """Credential categories tracked by runtime."""
 
     PASSWORD = "password"
     TOKEN = "token"
@@ -64,7 +53,7 @@ class CredentialKind(str, Enum):
     HASH = "hash"
     CERTIFICATE = "certificate"
 
-
+#描述一条 pivot / jump route 的状态
 class PivotRouteStatus(str, Enum):
     """Lifecycle status for one pivot or jump route."""
 
@@ -75,25 +64,24 @@ class PivotRouteStatus(str, Enum):
 
 
 class BaseRuntimeModel(BaseModel):
-    """Shared validation and serialization settings for runtime models."""
+   #Runtime 模型的基类
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 class RuntimeEventRef(BaseRuntimeModel):
-    """Reference to a runtime event waiting to be processed or recently emitted."""
+   #Runtime event 的轻量引用
 
     event_id: str = Field(min_length=1)
     event_type: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=utc_now)
-    cursor: int = Field(default=0, ge=0)
+    cursor: int = Field(default=0, ge=0)      # 事件游标，用来排序或增量处理
     summary: str | None = None
-    payload_ref: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    payload_ref: str | None = None           #事件完整 payload 的引用地址
+    metadata: dict[str, Any] = Field(default_factory=dict)    #扩展信息
 
-
+#定义用于事件 replay 或恢复流程
 class ReplayPlanStatus(str, Enum):
-    """Lifecycle status for one runtime replay planning record."""
 
     NOT_REQUIRED = "not_required"
     PLANNED = "planned"
@@ -101,9 +89,8 @@ class ReplayPlanStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
-
+#记录一次 replay 的窗口
 class ReplayPlanRuntime(BaseRuntimeModel):
-    """Lightweight replay planning snapshot kept alongside RuntimeState."""
 
     plan_id: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=utc_now)
@@ -126,9 +113,8 @@ class ReplayPlanRuntime(BaseRuntimeModel):
             raise ValueError("start_cursor must be greater than or equal to last_replayed_cursor")
         return self
 
-
+#最近任务结果的缓存条目
 class OutcomeCacheEntry(BaseRuntimeModel):
-    """Small cache entry describing a task outcome produced during this run."""
 
     outcome_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
@@ -138,17 +124,16 @@ class OutcomeCacheEntry(BaseRuntimeModel):
     payload_ref: str = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-
+#运行时 session
 class SessionRuntime(BaseRuntimeModel):
-    """Execution-time state for one leased or reusable session handle."""
 
     session_id: str = Field(min_length=1)
     status: SessionStatus = SessionStatus.OPENING
     bound_identity: str | None = None
     bound_target: str | None = None
-    lease_expiry: datetime | None = None
-    heartbeat_at: datetime = Field(default_factory=utc_now)
-    reusability: Literal["single_use", "reusable", "sticky"] = "reusable"
+    lease_expiry: datetime | None = None          #租约过期时间
+    heartbeat_at: datetime = Field(default_factory=utc_now)       #最近心跳时间
+    reusability: Literal["single_use", "reusable", "sticky"] = "reusable"      
     failure_count: int = Field(default=0, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -162,29 +147,22 @@ class SessionRuntime(BaseRuntimeModel):
             return False
         return True
 
-
+#运行时凭据
 class CredentialRuntime(BaseRuntimeModel):
-    """Execution-time state for one discovered or imported credential."""
 
     credential_id: str = Field(min_length=1)
     kind: CredentialKind = CredentialKind.PASSWORD
     principal: str = Field(min_length=1)
-    secret_ref: str | None = None
-    status: CredentialStatus = CredentialStatus.UNKNOWN
-    bound_targets: set[str] = Field(default_factory=set)
+    secret_ref: str | None = None                 #secret 的引用
+    status: CredentialStatus = CredentialStatus.UNKNOWN            #控制凭据是否可用
+    bound_targets: set[str] = Field(default_factory=set)       #表示这个凭据在哪些目标上验证过或绑定过
     source_session_id: str | None = None
     last_validated_at: datetime | None = None
     failure_count: int = Field(default=0, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def is_usable(self) -> bool:
-        """Return True when the credential may be used for new tasks."""
-
-        return self.status == CredentialStatus.VALID
-
-
+#表示一条 pivot 访问路径
 class PivotRouteRuntime(BaseRuntimeModel):
-    """Route state describing how one host may be reached through another."""
 
     route_id: str = Field(min_length=1)
     destination_host: str = Field(min_length=1)
@@ -202,12 +180,7 @@ class PivotRouteRuntime(BaseRuntimeModel):
     last_verified_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def is_usable(self) -> bool:
-        """Return True when the pivot route is active and usable."""
-
-        return self.status == PivotRouteStatus.ACTIVE
-
-
+#记录预算与策略缓存
 class BudgetRuntime(BaseRuntimeModel):
     """Runtime counters and cached policy decisions for this operation."""
 
@@ -221,10 +194,10 @@ class BudgetRuntime(BaseRuntimeModel):
     noise_budget_max: float | None = Field(default=None, ge=0.0)
     risk_budget_used: float = Field(default=0.0, ge=0.0)
     risk_budget_max: float | None = Field(default=None, ge=0.0)
-    approval_cache: dict[str, bool] = Field(default_factory=dict)
-    policy_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)
+    approval_cache: dict[str, bool] = Field(default_factory=dict)    #审批缓存 
+    policy_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)   #策略标记
 
-
+#表示一次重新规划请求
 class ReplanRequest(BaseRuntimeModel):
     """Small runtime record indicating that local or full replanning is needed."""
 
@@ -235,9 +208,8 @@ class ReplanRequest(BaseRuntimeModel):
     scope: Literal["local", "branch", "full"] = "local"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-
+#当前 operation 的顶层控制状态
 class OperationRuntime(BaseRuntimeModel):
-    """Top-level control state for the current operation run."""
 
     operation_id: str = Field(min_length=1)
     status: RuntimeStatus = RuntimeStatus.CREATED
@@ -259,7 +231,7 @@ class OperationRuntime(BaseRuntimeModel):
             raise ValueError("finished_at must be greater than or equal to started_at")
         return self
 
-
+#operation 的完整运行时快照
 class RuntimeState(BaseRuntimeModel):
     """Aggregated runtime state snapshot for one operation.
 
@@ -269,49 +241,27 @@ class RuntimeState(BaseRuntimeModel):
 
     operation_id: str = Field(min_length=1)
     operation_status: RuntimeStatus = RuntimeStatus.CREATED
-    execution: OperationRuntime
-    sessions: dict[str, SessionRuntime] = Field(default_factory=dict)
-    credentials: dict[str, CredentialRuntime] = Field(default_factory=dict)
-    pivot_routes: dict[str, PivotRouteRuntime] = Field(default_factory=dict)
-    budgets: BudgetRuntime = Field(default_factory=BudgetRuntime)
-    pending_events: list[RuntimeEventRef] = Field(default_factory=list)
-    recent_outcomes: list[OutcomeCacheEntry] = Field(default_factory=list)
-    replan_requests: list[ReplanRequest] = Field(default_factory=list)
-    event_cursor: int = Field(default=0, ge=0)
-    last_updated: datetime = Field(default_factory=utc_now)
+
+    execution: OperationRuntime                         #当前 operation 本身
+    sessions: dict[str, SessionRuntime] = Field(default_factory=dict)      #当前已打开/可复用 session
+    credentials: dict[str, CredentialRuntime] = Field(default_factory=dict)   #当前发现/验证过的凭据
+    pivot_routes: dict[str, PivotRouteRuntime] = Field(default_factory=dict)  #当前发现/验证过的跳板路径
+    budgets: BudgetRuntime = Field(default_factory=BudgetRuntime)             # 执行预算
+    pending_events: list[RuntimeEventRef] = Field(default_factory=list)       # 待处理事件
+    recent_outcomes: list[OutcomeCacheEntry] = Field(default_factory=list)     #最近执行结果缓存
+    replan_requests: list[ReplanRequest] = Field(default_factory=list)          #重规划请求
+    event_cursor: int = Field(default=0, ge=0)                               #事件游标
+    last_updated: datetime = Field(default_factory=utc_now)                   #  最近更新时间
 
     @model_validator(mode="after")
     def validate_operation_identity(self) -> "RuntimeState":
         """Ensure the aggregate state and execution section use the same operation ID."""
-
+        #RuntimeState 外层的 operation_id 必须和内部 execution.operation_id 一致
         if self.execution.operation_id != self.operation_id:
             raise ValueError("execution.operation_id must match operation_id")
         return self
 
-
-    def add_session(self, session: SessionRuntime) -> SessionRuntime:
-        """Insert or replace one session runtime entry."""
-
-        self.sessions[session.session_id] = session
-        self.last_updated = utc_now()
-        return session
-
-    def add_credential(self, credential: CredentialRuntime) -> CredentialRuntime:
-        """Insert or replace one credential runtime entry."""
-
-        self.credentials[credential.credential_id] = credential
-        self.last_updated = utc_now()
-        return credential
-
-
-    def add_pivot_route(self, route: PivotRouteRuntime) -> PivotRouteRuntime:
-        """Insert or replace one pivot route runtime entry."""
-
-        self.pivot_routes[route.route_id] = route
-        self.last_updated = utc_now()
-        return route
-
-
+    #新增一个 runtime event，并推进 event cursor
     def push_event(self, event_ref: RuntimeEventRef) -> RuntimeEventRef:
         """Append one pending runtime event and advance the local cursor."""
 
@@ -319,7 +269,8 @@ class RuntimeState(BaseRuntimeModel):
         self.event_cursor = max(self.event_cursor, event_ref.cursor)
         self.last_updated = utc_now()
         return event_ref
-
+    
+    #记录最近执行结果，默认最多保留 50 条
     def record_outcome(self, outcome: OutcomeCacheEntry, keep_last: int = 50) -> OutcomeCacheEntry:
         """Append an outcome cache entry and keep only the most recent entries."""
 
@@ -328,7 +279,8 @@ class RuntimeState(BaseRuntimeModel):
             self.recent_outcomes[:] = self.recent_outcomes[-keep_last:]
         self.last_updated = utc_now()
         return outcome
-
+    
+    #写入一次重规划请求
     def request_replan(self, request: ReplanRequest) -> ReplanRequest:
         """Append one runtime replan request."""
 
