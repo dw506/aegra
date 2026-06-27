@@ -13,7 +13,7 @@ from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.graph_common import utc_now
 from src.core.runtime.tool_trace_fact_extractor import ToolTraceFactExtractor
-from src.core.runtime.txt_trace_logger import TxtTraceLogger, resolve_runtime_store_root
+from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.execution.models import (
     ExtractedFact,
     RoundDirective,
@@ -36,7 +36,6 @@ class ExecutionAgent:
         llm_client: PackyLLMClient | None = None,
         mcp_client: MCPClient | None = None,
         default_timeout_seconds: int = 120,
-        trace_logger_factory: type[TxtTraceLogger] = TxtTraceLogger,
     ) -> None:
         self._agent = agent or _ExecutionLoop(
             agent_name=self.agent_name,
@@ -44,7 +43,6 @@ class ExecutionAgent:
             mcp_client=mcp_client,
             default_timeout_seconds=default_timeout_seconds,
         )
-        self._trace_logger_factory = trace_logger_factory
 
     @classmethod
     def from_clients(
@@ -53,7 +51,6 @@ class ExecutionAgent:
         llm_client: Any = None,
         mcp_client: Any = None,
         default_timeout_seconds: int = 120,
-        trace_logger_factory: type[TxtTraceLogger] = TxtTraceLogger,
     ) -> "ExecutionAgent":
         """Build the default execution agent."""
 
@@ -61,7 +58,6 @@ class ExecutionAgent:
             llm_client=llm_client,
             mcp_client=mcp_client,
             default_timeout_seconds=default_timeout_seconds,
-            trace_logger_factory=trace_logger_factory,
         )
 
     def capability_summary(self) -> list[dict[str, str]]:
@@ -125,14 +121,6 @@ class ExecutionAgent:
         # so the result tier reads it directly.
         execution_result.capability = directive.capability
         round_result = self._round_result(directive=directive, execution_result=execution_result)
-        self._write_round_log(directive=directive, execution_result=execution_result, round_result=round_result)
-        if round_result.log_ref:
-            execution_result.runtime_hints = {
-                **dict(execution_result.runtime_hints),
-                "round_log_ref": round_result.log_ref,
-                "cycle_index": directive.cycle_index,
-                "capability": directive.capability,
-            }
         return round_result
 
     @staticmethod
@@ -162,54 +150,6 @@ class ExecutionAgent:
             objective_met=execution_result.status in {"success", "succeeded"},
             execution_result=execution_result,
         )
-
-    def _write_round_log(
-        self,
-        *,
-        directive: RoundDirective,
-        execution_result: ExecutionResult,
-        round_result: RoundResult,
-    ) -> None:
-        logger = self._trace_logger_factory(
-            directive.operation_id,
-            log_dir=resolve_runtime_store_root(),
-            filename=f"round-{directive.cycle_index}.txt",
-            operation_subdir=True,
-        )
-        logger.write_block(
-            "ROUND_DIRECTIVE",
-            "execution directive",
-            {
-                "cycle_index": directive.cycle_index,
-                "capability": directive.capability,
-                "objective": directive.objective,
-                "target_refs": [item.model_dump(mode="json") for item in directive.target_refs],
-                "allowed_tools": list(directive.allowed_tools),
-                "max_tools": directive.max_tools,
-            },
-        )
-        logger.write_block(
-            "ROUND_RESULT",
-            "execution result",
-            {
-                "status": execution_result.status,
-                "objective_met": round_result.objective_met,
-                "summary": execution_result.summary,
-                "tool_traces": [
-                    {
-                        "trace_id": trace.trace_id,
-                        "step": trace.step,
-                        "tool_name": trace.tool_name,
-                        "success": trace.success,
-                        "raw_output_ref": trace.raw_output_ref,
-                        "summary": trace.summary,
-                    }
-                    for trace in execution_result.tool_trace
-                ],
-                "extracted_fact_count": len(round_result.extracted_facts),
-            },
-        )
-        round_result.log_ref = str(logger.path)
 
 
 __all__ = [
@@ -374,7 +314,6 @@ class _ExecutionLoop:
             evidence=evidence,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
-            tool_traces=list(tool_traces),
             runtime_hints={"cycle_index": request.cycle_index, "max_steps_exhausted": True},
         )
 
@@ -408,7 +347,13 @@ class _ExecutionLoop:
         decision: dict[str, Any],
         logger: TxtTraceLogger,
     ) -> ToolTrace:
-        arguments = dict(decision.get("arguments") or decision.get("input") or {})
+        arguments = dict(
+            decision.get("arguments")
+            or decision.get("input")
+            or decision.get("parameters")
+            or decision.get("args")
+            or {}
+        )
         server_id = str(decision.get("server_id") or decision.get("server") or self._default_server_id(request.mcp_tool_catalog))
         call = _ExecutionToolCall(
             server_id=server_id,
@@ -712,7 +657,6 @@ class _ExecutionLoop:
             next_capability_suggestion=payload.get("next_capability_suggestion"),
             evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
             tool_trace=list(tool_traces),
-            tool_traces=list(tool_traces),
             confidence=float(payload.get("confidence") or 0.5),
             replan_recommendation=payload.get("replan_recommendation"),
             retry_recommendation=payload.get("retry_recommendation"),
@@ -979,7 +923,6 @@ class _ExecutionLoop:
                 evidence=evidence,
                 evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
                 tool_trace=list(tool_traces),
-                tool_traces=list(tool_traces),
                 runtime_hints={
                     "cycle_index": request.cycle_index,
                     "llm_postprocess_failed": True,
@@ -1000,7 +943,6 @@ class _ExecutionLoop:
             evidence=evidence,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
-            tool_traces=list(tool_traces),
             replan_recommendation=str((decision or {}).get("replan_reason") or summary),
             runtime_hints={"cycle_index": request.cycle_index, "missing_context": (decision or {}).get("missing_context") or []},
         )

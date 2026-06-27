@@ -49,8 +49,8 @@ class AttackStepNode(AttackProcessNode):
     """One execution round's *result*, recorded as a single AG node.
 
     Coarse as a node, precise via links: ``kg_node_refs`` points at the KG nodes
-    this round produced/used and ``properties['log_ref']`` points at the full
-    round process log. Detail lives in KG + Log, not in AG.
+    this round produced/used. Full per-round detail lives in the operation trace
+    log (operation-trace.txt) and KG, not in AG.
     """
 
     node_type: Literal[AttackProcessNodeType.ATTACK_STEP] = AttackProcessNodeType.ATTACK_STEP

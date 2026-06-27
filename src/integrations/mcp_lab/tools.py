@@ -315,7 +315,11 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "internal_service_discover",
-        "description": "Probe one internal lab service using bounded TCP or HTTP checks.",
+        "description": (
+            "Probe one internal lab service using bounded TCP or HTTP checks. When route_id is set the "
+            "probe runs over the SSH pivot; supply pivot_username/pivot_password (recovered from the "
+            "compromised host) to authenticate that hop."
+        ),
         "inputSchema": {
             "type": "object",
             "required": ["host", "port"],
@@ -324,6 +328,9 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
                 "port": {"type": "integer"},
                 "protocol": {"type": "string", "default": "tcp"},
                 "path": {"type": "string", "default": "/"},
+                "route_id": {"type": "string"},
+                "pivot_username": {"type": "string"},
+                "pivot_password": {"type": "string"},
                 "timeout_seconds": {"type": "integer", "minimum": 1},
             },
             "additionalProperties": True,
@@ -331,7 +338,11 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "pivoted_nmap_scan",
-        "description": "Run a bounded nmap scan against the restricted zone through a configured pivot route.",
+        "description": (
+            "Run a bounded nmap scan against the restricted zone through a configured pivot route. "
+            "Supply pivot_username/pivot_password (e.g. SSH credentials recovered from the compromised "
+            "entry host) to authenticate the pivot hop; target should be a restricted-zone host or CIDR."
+        ),
         "inputSchema": {
             "type": "object",
             "required": ["target", "route_id"],
@@ -339,6 +350,8 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
                 "target": {"type": "string"},
                 "ports": {"type": "string"},
                 "route_id": {"type": "string"},
+                "pivot_username": {"type": "string"},
+                "pivot_password": {"type": "string"},
                 "timeout_seconds": {"type": "integer", "minimum": 1},
             },
             "additionalProperties": True,
@@ -1394,8 +1407,17 @@ def _run_via_configured_pivot(
     argv: list[str],
     timeout: int,
     env: dict[str, str] | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> subprocess.CompletedProcess:
-    """THE single pivot egress: SSH to the configured pivot host and run argv."""
+    """THE single pivot egress: SSH to the configured pivot host and run argv.
+
+    SSH credentials resolve in order: caller-supplied (``username``/``password``,
+    e.g. recovered by the agent from a compromised host) → env → route config →
+    default user / empty password. Agent-discovered credentials win so the
+    "loot the host, then pivot with what you found" chain is exercised for real;
+    env/route remain as a fallback for tests and pre-seeded labs.
+    """
 
     route = _resolve_pivot_route(route_id)
     if route is None:
@@ -1403,8 +1425,8 @@ def _run_via_configured_pivot(
     if not _pivot_transport_available():
         return subprocess.CompletedProcess(argv, returncode=255, stdout="", stderr="pivot transport unavailable")
     via = _string(route.get("via_host")) or _string(route.get("source_host")) or ""
-    user = _string(os.getenv("AEGRA_LAB_PIVOT_USER")) or _string(route.get("username")) or "pivot"
-    password = _string(os.getenv("AEGRA_LAB_PIVOT_PASSWORD")) or _string(route.get("password")) or ""
+    user = username or _string(os.getenv("AEGRA_LAB_PIVOT_USER")) or _string(route.get("username")) or "pivot"
+    password = password or _string(os.getenv("AEGRA_LAB_PIVOT_PASSWORD")) or _string(route.get("password")) or ""
     remote = " ".join(shlex.quote(part) for part in argv)
     if env:
         prefix = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
@@ -1419,11 +1441,21 @@ def _run_via_configured_pivot(
     return subprocess.run(ssh_argv, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def _probe_tcp_via_configured_pivot(*, route_id: str | None, host: str, port: int, timeout: int) -> dict[str, Any]:
+def _probe_tcp_via_configured_pivot(
+    *,
+    route_id: str | None,
+    host: str,
+    port: int,
+    timeout: int,
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
     completed = _run_via_configured_pivot(
         route_id=route_id,
         argv=["nc", "-z", "-w", str(max(1, timeout)), str(host), str(port)],
         timeout=timeout,
+        username=username,
+        password=password,
     )
     return {"reachable": completed.returncode == 0, "stderr": completed.stderr or ""}
 
@@ -1438,12 +1470,18 @@ def _run_psql_query_via_configured_pivot(
     password: str | None,
     query: str,
     timeout: int,
+    pivot_username: str | None = None,
+    pivot_password: str | None = None,
 ) -> dict[str, Any]:
+    # ``username``/``password`` authenticate the psql/DB session; the separate
+    # ``pivot_*`` pair authenticates the SSH pivot hop that carries it.
     completed = _run_via_configured_pivot(
         route_id=route_id,
         argv=["psql", "-h", str(host), "-p", str(port), "-U", str(username), "-d", str(database), "-t", "-A", "-F", "|", "-c", query],
         timeout=timeout,
         env={"PGPASSWORD": str(password or "")},
+        username=pivot_username,
+        password=pivot_password,
     )
     return {"success": completed.returncode == 0, "stdout": completed.stdout or "", "stderr": completed.stderr or ""}
 
@@ -1457,7 +1495,13 @@ def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     if ports:
         argv += ["-p", ports]
     argv.append(target)
-    completed = _run_via_configured_pivot(route_id=route_id, argv=argv, timeout=timeout)
+    completed = _run_via_configured_pivot(
+        route_id=route_id,
+        argv=argv,
+        timeout=timeout,
+        username=_string(arguments.get("pivot_username")),
+        password=_string(arguments.get("pivot_password")),
+    )
     stdout = completed.stdout or ""
     success = completed.returncode == 0
     parsed = _parse_nmap_output(target, stdout)
@@ -1506,6 +1550,8 @@ def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
         password=arguments.get("password"),
         query=query,
         timeout=timeout,
+        pivot_username=_string(arguments.get("pivot_username")),
+        pivot_password=_string(arguments.get("pivot_password")),
     )
     stdout = _string(result.get("stdout")) or ""
     rows = [line for line in stdout.splitlines() if line.strip()]
@@ -1540,7 +1586,14 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
         # Restricted-zone service: reachable only through the configured pivot
         # route, so the reachability probe is run over the pivot transport.
         timeout = _int(arguments.get("timeout_seconds"), 5)
-        result = _probe_tcp_via_configured_pivot(route_id=route_id, host=host, port=port, timeout=timeout)
+        result = _probe_tcp_via_configured_pivot(
+            route_id=route_id,
+            host=host,
+            port=port,
+            timeout=timeout,
+            username=_string(arguments.get("pivot_username")),
+            password=_string(arguments.get("pivot_password")),
+        )
         reachable = bool(result.get("reachable"))
         service_name = _service_name_for_port(port)
         evidence_id = f"internal-service::{route_id}::{host}:{port}"
@@ -1794,6 +1847,30 @@ def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _available_exploit_profile_ids() -> list[str]:
+    """List the declared exploit_profile_id of every profile on disk.
+
+    Surfaced in the exploit_profile_not_found error so the agent can self-correct
+    when it passes a mangled/abbreviated id (e.g. "thinkphp-5-rce" instead of
+    "thinkphp-5-0-23-lab-exploit") that none of the resolution paths can match.
+    """
+
+    profiles_dir = Path("configs/exploit_profiles")
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except Exception:
+        return []
+    ids: list[str] = []
+    for path in sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml")):
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            ids.append(str(payload.get("exploit_profile_id") or path.stem))
+    return sorted(dict.fromkeys(ids))
+
+
 _VULN_PROFILE_CACHE: dict[str, VulnerabilityProfile] | None = None
 
 
@@ -1858,11 +1935,22 @@ def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]
 
     profile = _load_exploit_profile(profile_id)
     if profile is None:
+        available = _available_exploit_profile_ids()
         return _payload(
             success=False,
-            stderr=f"exploit profile not found: {profile_id}",
+            stderr=(
+                f"exploit profile not found: {profile_id}. "
+                f"Available exploit_profile_id values: {', '.join(available) or '(none)'}. "
+                "Retry with one of these exact ids."
+            ),
             exit_code="exploit_profile_not_found",
-            parsed={"runtime_hints": {"blocked_by": "exploit_profile_not_found", "exploit_profile_id": profile_id}},
+            parsed={
+                "runtime_hints": {
+                    "blocked_by": "exploit_profile_not_found",
+                    "exploit_profile_id": profile_id,
+                    "available_exploit_profile_ids": available,
+                }
+            },
         )
 
     # Validate allowed_operations are present and non-destructive

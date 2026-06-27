@@ -85,7 +85,7 @@ class PhaseTwoResultApplier:
             if not isinstance(item, dict): continue
             destination = self._string(item.get("destination_host") or item.get("target_host"))
             if not destination: continue
-            route = self._routes.register_candidate(state, self._string(item.get("route_id")) or f"route::{stage.execution_id}", destination, source_host=self._string(item.get("source_host")), via_host=self._string(item.get("via_host")), session_id=self._string(item.get("session_id")), protocol=self._string(item.get("protocol")), destination_zone=self._string(item.get("destination_zone")), destination_cidr=self._string(item.get("destination_cidr")), allowed_ports=self._as_set(item.get("allowed_ports") or item.get("port")), protocols=self._as_set(item.get("protocols")), confidence=self._float(item.get("confidence")), metadata={"source_task_id": stage.execution_id})
+            route = self._routes.register_candidate(state, self._string(item.get("route_id")) or f"route::{stage.execution_id}", destination, source_host=self._string(item.get("source_host")), via_host=self._string(item.get("via_host")), session_id=self._string(item.get("session_id")), protocol=self._string(item.get("protocol")), destination_zone=self._string(item.get("destination_zone") or item.get("zone_ref")), destination_cidr=self._string(item.get("destination_cidr")), allowed_ports=self._as_set(item.get("allowed_ports") or item.get("port")), protocols=self._as_set(item.get("protocols")), confidence=self._float(item.get("confidence")), metadata={"source_task_id": stage.execution_id})
             if item.get("active") or item.get("reachable"): self._routes.activate_route(state, route.route_id)
         if stage.status in {"blocked", "need_more_info", "needs_replan"}:
             request = ReplanRequest(request_id=f"replan::{stage.result_id}", reason=stage.replan_recommendation or stage.summary, task_ids=[stage.execution_id], scope="local")
@@ -187,7 +187,7 @@ class PhaseTwoResultApplier:
 
     def _record_attack_step(self, stage: ExecutionResult, graph: AttackGraph, refs: list[str]) -> None:
         cycle = int(stage.runtime_hints.get("cycle_index") or 0)
-        node = AttackStepNode(id=stable_node_id("attack-step", {"operation_id": stage.operation_id, "cycle_index": cycle, "stage": stage.execution_id}), node_type=AttackProcessNodeType.ATTACK_STEP, label=stage.summary, operation_id=stage.operation_id, cycle_index=cycle, agent_name=stage.agent_name, capability=stage.capability, status=stage.status, summary=stage.summary, evidence_refs=list(stage.evidence_refs), kg_node_refs=refs, properties={"execution_id": stage.execution_id, "log_ref": stage.runtime_hints.get("log_ref")})
+        node = AttackStepNode(id=stable_node_id("attack-step", {"operation_id": stage.operation_id, "cycle_index": cycle, "stage": stage.execution_id}), node_type=AttackProcessNodeType.ATTACK_STEP, label=stage.summary, operation_id=stage.operation_id, cycle_index=cycle, agent_name=stage.agent_name, capability=stage.capability, status=stage.status, summary=stage.summary, evidence_refs=list(stage.evidence_refs), kg_node_refs=refs, properties={"execution_id": stage.execution_id})
         if all(existing.id != node.id for existing in graph.find_process_nodes()): graph.add_node(node)
         prior = [n for n in graph.find_process_nodes() if isinstance(n, AttackStepNode) and n.id != node.id]
         if prior:

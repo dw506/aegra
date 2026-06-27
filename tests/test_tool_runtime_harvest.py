@@ -132,6 +132,45 @@ def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
     assert list(state.pivot_routes.keys()) == ["route-x"]
 
 
+def test_harvest_maps_zone_ref_hint_to_route_destination_zone() -> None:
+    """A pivot_route_register hint tags the route with ``zone_ref`` (the tool's
+    field name), but PivotRouteRuntime/the predicate only speak ``destination_zone``.
+    The applier must fold ``zone_ref`` into ``destination_zone`` so a route whose
+    bridge host sits in the entry CIDR (e.g. 10.20.0.50) still binds to the
+    restricted zone — the exact case that stalled full-chain bookkeeping."""
+
+    stage = ExecutionResult(
+        operation_id="op-harvest",
+        execution_id="stage-op-harvest-1-access_pivot_agent",
+        capability="pivot",
+        agent_name="access_pivot_agent",
+        status="succeeded",
+        summary="pivot route registered into restricted zone",
+        tool_trace=[
+            ToolTrace(
+                tool_name="pivot_route_register",
+                success=True,
+                parsed_output={
+                    "runtime_hints": {
+                        "register_pivot_route": True,
+                        "route_id": "route::10.20.0.11::10.20.0.50:22",
+                        # Bridge host's entry-side address: NOT inside the restricted CIDR.
+                        "destination_host": "10.20.0.50",
+                        "zone_ref": "restricted",
+                        "reachable": True,
+                    }
+                },
+            )
+        ],
+    )
+
+    state = _state()
+    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+
+    route = state.pivot_routes["route::10.20.0.11::10.20.0.50:22"]
+    assert route.destination_zone == "restricted"
+
+
 def test_tool_reported_vulnerability_candidate_becomes_typed_kg_node() -> None:
     """A tool-reported ``VulnerabilityCandidate`` entity is minted as a typed KG
     node (not flattened into a generic Finding), satisfying the strongly-typed

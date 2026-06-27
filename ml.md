@@ -368,3 +368,41 @@ src/
         └── __init__.py
 ```
 
+## 8. 本地运行 full_chain_lab（code-local 工作流）
+
+orchestrator 跑在**宿主机本地 Python**（直接用最新源码，无需 rebuild 镜像），MCP 工具经 **HTTP** 连到 docker 里的 `mcp-tools` 容器。靶场各主机（dmz/internal）仍在 docker 网络内；`mcp-tools` 双挂 `dmz_net` 并发布 `:8765`，且 `../../../src:/app/src:ro` 挂载源码——所以改 `tools.py` 后只需 `docker compose restart mcp-tools` 重新 import，不必 rebuild。
+
+**拓扑**：本地 orchestrator ──HTTP:8765──▶ mcp-tools 容器 ──(dmz_net / pivot SSH→pivot-ssh 10.20.0.50→internal_net)──▶ 靶机。run id 约定 `full-chain-local-<unixtime>`。
+
+**前置**：docker 起 full_chain_lab（`cd lab/environments/full_chain_lab && docker compose up -d`）；宿主机 `.env` 有 `AEGRA_LLM_API_KEY/BASE_URL/MODEL`；激活 venv。aegra-api 容器可关闭（本地自起 API server 占用 :8000）。
+
+**启动步骤**：
+1. 关闭容器内 API：`docker compose stop aegra-api`（释放 :8000）。
+2. 重启工具容器载入最新 `tools.py`：`docker compose restart mcp-tools`。
+3. 本地起 API server（同一 shell 内设置 env 后台启动 uvicorn）：
+   ```
+   $env:AEGRA_MCP_ENABLED       = "1"
+   $env:AEGRA_MCP_CONFIG_JSON   = '{"servers":{"pentest-tools":{"transport":"http","url":"http://localhost:8765"}}}'
+   $env:AEGRA_LAB_MODE          = "1"
+   $env:AEGRA_LAB_PROFILE_PATH  = "lab/environments/full_chain_lab/profile.yml"
+   $env:AEGRA_RUNTIME_POLICY_PATH = "configs/runtime_policy.full-chain.json"
+   $env:AEGRA_RUNTIME_STORE_DIR = "var/runtime"
+   # 再从 .env 注入 AEGRA_LLM_* 后：
+   python -m uvicorn src.app.api:app --host 127.0.0.1 --port 8000
+   ```
+   - MCP server id 必须是 `pentest-tools`（与工具目录/planner 一致）。
+   - `AEGRA_MCP_CONFIG_JSON`（内联 http 配置）覆盖仓库里那份 stdio 的 `configs/mcp.lab.full-chain.json`（后者是给容器内用的，cwd=/app）。
+4. `POST /operations` 发起运行（payload 同 `lab/scripts/run_autopentest.ps1`，但 `operation_id="full-chain-local-<ts>"`、`run=true`、`max_cycles` 调高）：
+   ```
+   operation_id = full-chain-local-<unixtime>
+   metadata.operation_input = { target:"10.20.0.0/24", profile_id:"full-chain-autonomous-pentest-lab",
+                                mode:"authorized_blackbox_lab", goal:"... full_chain_lab multi-host chain ..." }
+   targets = [{ address:"10.20.0.0/24", kind:"cidr", tags:["lab","authorized"] }]
+   run = true, max_cycles = 30, max_replans = 20
+   ```
+   `run:true` 会阻塞到 `run_until_quiescent` 跑完（约 30–40 min），所以**后台**发请求。
+5. 实时监测（读文件，不依赖服务）：`python scripts/watch_run.py full-chain-local-<ts>`，PowerShell 循环：
+   `while ($true) { python scripts/watch_run.py <op>; sleep 15; cls }`。
+
+**凭证/pivot 链**（option-3）：pivot SSH 凭证按 `工具传参(pivot_username/pivot_password) → AEGRA_LAB_PIVOT_PASSWORD env → route 配置 → 默认` 解析。code-local 下 `mcp-tools` 容器**未设** `AEGRA_LAB_PIVOT_PASSWORD`，因此 agent 必须从 dmz-thinkphp 的 loot 文件 `/opt/aegra/loot/pivot_access.env`（RCE 读取，含 `pivotpass123`）发现凭证并作为 `pivot_password` 传入 pivot 工具，且把 `pivoted_nmap_scan` 的 `target` 指向受限区 `10.30.0.0/24`，才能打通到 internal-db-mock 的最终 DB 取证。
+

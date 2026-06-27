@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -511,6 +512,43 @@ def test_internal_service_discover_uses_configured_pivot_for_restricted_data_ser
     assert payload["parsed"]["services"][0]["service_name"] == "postgres"
     satisfied = payload["parsed"]["runtime_hints"]["satisfied_conditions"]
     assert {"condition": "restricted_data_service_discovered", "evidence_ids": ["internal-service::route-1::10.0.2.50:5432"]} in satisfied
+
+
+def test_pivoted_scan_uses_agent_supplied_credentials_over_env(monkeypatch) -> None:
+    """Credentials recovered by the agent (passed as pivot_username/pivot_password)
+    must reach the SSH egress and win over the env fallback — the "loot the host,
+    then pivot with what you found" chain works without any pre-seeded password."""
+
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setenv("AEGRA_LAB_PIVOT_USER", "envuser")
+    monkeypatch.setenv("AEGRA_LAB_PIVOT_PASSWORD", "envpass")
+    monkeypatch.setattr(mcp_tools, "_resolve_pivot_route", lambda route_id: {"route_id": route_id, "via_host": "10.20.0.50"})
+    monkeypatch.setattr(mcp_tools, "_pivot_transport_available", lambda *a, **k: True)
+
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mcp_tools.subprocess, "run", fake_run)
+
+    call_lab_tool(
+        "pivoted_nmap_scan",
+        {
+            "target": "10.30.0.0/24",
+            "route_id": "route-1",
+            "pivot_username": "pivot",
+            "pivot_password": "pivotpass123",
+            "timeout_seconds": 5,
+        },
+    )
+
+    argv = captured["argv"]
+    # sshpass -p <password> ssh ... pivot@10.20.0.50 <remote>
+    assert argv[0] == "sshpass"
+    assert argv[2] == "pivotpass123"  # agent-supplied, NOT the env "envpass"
+    assert "pivot@10.20.0.50" in argv  # agent-supplied user, NOT "envuser"
 
 
 def test_identity_context_probe_exposes_redacted_pivot_candidates(tmp_path, monkeypatch) -> None:

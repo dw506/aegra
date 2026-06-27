@@ -139,7 +139,7 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
-    assert result.tool_traces[0].arguments["target_url"] == "http://10.20.0.22:8080/"
+    assert result.tool_trace[0].arguments["target_url"] == "http://10.20.0.22:8080/"
 
 
 def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
@@ -169,7 +169,7 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
 
     assert result.status == "partial"
     assert mcp.calls == []
-    assert result.tool_traces[0].exit_code == "tool_not_in_catalog"
+    assert result.tool_trace[0].exit_code == "tool_not_in_catalog"
 
 
 def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
@@ -199,8 +199,8 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
 
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["url"] == "http://10.0.0.5:8080"
-    assert result.tool_traces[0].arguments["url"] == "http://10.0.0.5:8080"
-    assert result.tool_traces[0].arguments["operation_id"] == "op-url-tool"
+    assert result.tool_trace[0].arguments["url"] == "http://10.0.0.5:8080"
+    assert result.tool_trace[0].arguments["operation_id"] == "op-url-tool"
 
 
 def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_trace_context() -> None:
@@ -427,4 +427,4 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
     result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert mcp.calls == []
-    assert result.tool_traces[0].exit_code == "tool_server_unavailable"
+    assert result.tool_trace[0].exit_code == "tool_server_unavailable"

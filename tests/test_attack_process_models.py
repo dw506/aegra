@@ -40,7 +40,7 @@ def test_attack_process_node_records_attack_step_result() -> None:
         evidence_refs=["evidence-1"],
         capability="recon",
         kg_node_refs=["host-1"],
-        properties={"log_ref": "round-1.log"},
+        properties={"execution_id": "exec-1"},
     )
 
     assert node.id.startswith("ap-node::")
@@ -48,7 +48,7 @@ def test_attack_process_node_records_attack_step_result() -> None:
     assert node.capability == "recon"
     assert node.refs[0].key() == "kg:host-1"
     assert node.evidence_refs == ["evidence-1"]
-    assert node.properties["log_ref"] == "round-1.log"
+    assert node.properties["execution_id"] == "exec-1"
     assert node.created_at.tzinfo is not None
 
 

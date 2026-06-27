@@ -129,7 +129,6 @@ class RoundResult(BaseModel):
     tool_traces: list[ToolTrace] = Field(default_factory=list)
     extracted_facts: list[ExtractedFact] = Field(default_factory=list)
     raw_summary: str = Field(min_length=1)
-    log_ref: str | None = None
     objective_met: bool = False
     execution_result: "ExecutionResult | None" = None
 
@@ -210,7 +209,6 @@ class ExecutionResult(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     graph_update_intents: list[GraphUpdateIntent] = Field(default_factory=list)
     tool_trace: list[ToolTrace] = Field(default_factory=list)
-    tool_traces: list[ToolTrace] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     risk_level: Literal["low", "medium", "high", "critical"] = "medium"
     policy_notes: list[str] = Field(default_factory=list)
@@ -252,12 +250,6 @@ class ExecutionResult(BaseModel):
         if isinstance(value, str):
             return [{"type": "note", "detail": value}]
         return value
-
-    def model_post_init(self, __context: Any) -> None:
-        if self.tool_traces and not self.tool_trace:
-            self.tool_trace = list(self.tool_traces)
-        elif self.tool_trace and not self.tool_traces:
-            self.tool_traces = list(self.tool_trace)
 
 
 __all__ = [
