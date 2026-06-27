@@ -1196,24 +1196,6 @@ class AppOrchestrator:
         return None
 
     @staticmethod
-    def _goal_satisfied(state: RuntimeState) -> bool:
-        if bool(state.execution.metadata.get("goal_satisfied")):
-            return True
-        for outcome in state.recent_outcomes:
-            payload = outcome.metadata.get("outcome_payload")
-            if not isinstance(payload, dict):
-                continue
-            execution_result = payload.get("execution_result")
-            if not isinstance(execution_result, dict):
-                continue
-            if execution_result.get("capability") == "goal" and execution_result.get("status") == "succeeded":
-                hints = execution_result.get("runtime_hints")
-                if isinstance(hints, dict) and hints.get("goal_satisfied") is True:
-                    state.execution.metadata["goal_satisfied"] = True
-                    return True
-        return False
-
-    @staticmethod
     def _mission_goal(*, planner_payload: dict[str, Any], context: dict[str, Any] | None) -> str:
         candidates = [
             planner_payload.get("mission_goal"),

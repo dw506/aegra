@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi.middleware.cors import CORSMiddleware
-
 from pathlib import Path
 from typing import Any
 
