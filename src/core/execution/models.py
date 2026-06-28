@@ -118,21 +118,6 @@ class RoundDirective(BaseModel):
         return [{"hint": item} if isinstance(item, str) else item for item in value]
 
 
-class RoundResult(BaseModel):
-    """Executor-to-planner result for one bounded execution round."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    operation_id: str = Field(min_length=1)
-    cycle_index: int = Field(ge=0)
-    capability: str = Field(min_length=1)
-    tool_traces: list[ToolTrace] = Field(default_factory=list)
-    extracted_facts: list[ExtractedFact] = Field(default_factory=list)
-    raw_summary: str = Field(min_length=1)
-    objective_met: bool = False
-    execution_result: "ExecutionResult | None" = None
-
-
 class ExecutionRequest(BaseModel):
     """RoundDirective-derived request consumed by the execution agent."""
 
@@ -258,7 +243,6 @@ __all__ = [
     "ExtractedFact",
     "GraphUpdateIntent",
     "RoundDirective",
-    "RoundResult",
     "ExecutionRequest",
     "NextRoundSuggestion",
     "ExecutionResult",

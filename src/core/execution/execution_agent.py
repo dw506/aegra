@@ -12,12 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.graph_common import utc_now
-from src.core.runtime.tool_trace_fact_extractor import ToolTraceFactExtractor
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.execution.models import (
-    ExtractedFact,
     RoundDirective,
-    RoundResult,
     ExecutionRequest,
     ExecutionResult,
     ToolTrace,
@@ -80,7 +77,7 @@ class ExecutionAgent:
         mcp_tool_catalog: dict[str, Any] | None = None,
         pivot_routes: list[dict[str, Any]] | None = None,
         sessions: list[dict[str, Any]] | None = None,
-    ) -> RoundResult | ExecutionResult:
+    ) -> ExecutionResult:
         """Execute one capability round through the single execution agent."""
 
         agent = self._agent
@@ -120,36 +117,7 @@ class ExecutionAgent:
         # Capability is authoritative from the directive; stamp it on the result
         # so the result tier reads it directly.
         execution_result.capability = directive.capability
-        round_result = self._round_result(directive=directive, execution_result=execution_result)
-        return round_result
-
-    @staticmethod
-    def _round_result(*, directive: RoundDirective, execution_result: ExecutionResult) -> RoundResult:
-        facts: list[ExtractedFact] = []
-        extractor = ToolTraceFactExtractor()
-        for extraction in extractor.extract_all(execution_result.tool_trace):
-            for fact in extraction.facts:
-                facts.append(
-                    ExtractedFact(
-                        fact_id=f"tool-fact-{extraction.trace_id}-{fact.entity_type}-{fact.label[:40]}",
-                        entity_type=fact.entity_type,
-                        label=fact.label,
-                        properties=dict(fact.properties),
-                        source_tool=fact.source_tool,
-                        trace_id=extraction.trace_id,
-                        confidence=fact.confidence,
-                    )
-                )
-        return RoundResult(
-            operation_id=execution_result.operation_id,
-            cycle_index=directive.cycle_index,
-            capability=directive.capability,
-            tool_traces=list(execution_result.tool_trace),
-            extracted_facts=facts,
-            raw_summary=execution_result.summary,
-            objective_met=execution_result.status in {"success", "succeeded"},
-            execution_result=execution_result,
-        )
+        return execution_result
 
 
 __all__ = [

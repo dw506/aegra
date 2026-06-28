@@ -171,7 +171,7 @@ class LLMMissionPlannerAdvisor:
             "Do not use a fixed stage sequence and do not require every capability to run. "
             "Select the next capability from success_condition_progress.missing, min_summary, Policy, "
             "recent results, and ToolCatalog. "
-            "Treat recent RoundResult/ExecutionResult control hints as hard constraints: if a recent result contains "
+            "Treat recent ExecutionResult control hints as hard constraints: if a recent result contains "
             "next_step_guidance or capability guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
             "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "

@@ -691,7 +691,7 @@ class AppOrchestrator:
         if outcome.action == "execute" and outcome.directive is not None:
             started_at = utc_now()
             try:
-                round_result = self.execution_agent.run(
+                execution_result = self.execution_agent.run(
                     outcome.directive,
                     graph_summary={
                         "operation_id": operation_id,
@@ -707,9 +707,6 @@ class AppOrchestrator:
                     pivot_routes=[route.model_dump(mode="json") for route in state.pivot_routes.values()],
                     sessions=[session.model_dump(mode="json") for session in state.sessions.values()],
                 )
-                execution_result = round_result.execution_result
-                if execution_result is None:
-                    raise ValueError("ExecutionAgent returned no ExecutionResult")
                 if execution_result.operation_id != operation_id:
                     original_operation_id = execution_result.operation_id
                     execution_result.operation_id = operation_id
