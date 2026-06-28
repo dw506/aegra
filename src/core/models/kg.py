@@ -227,19 +227,6 @@ class PostAccessObservation(BaseNode):
     zone_ref: str | None = None
 
 
-class LabHint(BaseNode):
-    type: Literal[NodeType.LAB_HINT] = NodeType.LAB_HINT
-    hint_kind: str | None = None
-    source_path: str | None = None
-    zone_ref: str | None = None
-
-
-class LabFlag(BaseNode):
-    type: Literal[NodeType.LAB_FLAG] = NodeType.LAB_FLAG
-    flag_path: str | None = None
-    zone_ref: str | None = None
-
-
 class GoalCheck(BaseNode):
     type: Literal[NodeType.GOAL_CHECK] = NodeType.GOAL_CHECK
     goal_id: str | None = None
@@ -349,8 +336,6 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.VULNERABILITY_CANDIDATE: VulnerabilityCandidate,
     NodeType.EXPLOIT_CAPABILITY: ExploitCapability,
     NodeType.POST_ACCESS_OBSERVATION: PostAccessObservation,
-    NodeType.LAB_HINT: LabHint,
-    NodeType.LAB_FLAG: LabFlag,
     NodeType.GOAL_CHECK: GoalCheck,
     NodeType.GOAL_PROOF: GoalProof,
     NodeType.PIVOT_ROUTE: PivotRouteNode,

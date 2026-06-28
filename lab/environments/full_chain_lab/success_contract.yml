@@ -151,8 +151,6 @@ condition_bindings:
       type:
         in:
           - PostAccessObservation
-          - LabHint
-          - LabFlag
           - Observation
           - Evidence
       filters: {}
@@ -164,7 +162,6 @@ condition_bindings:
       type:
         in:
           - Credential
-          - LabHint
           - Observation
           - Evidence
       filters: {}

@@ -7,7 +7,8 @@ when a ToolTrace has success=True, even if subsequent LLM processing failed.
 Facts extracted here are conservative (only from clearly successful tool calls)
 and generic (no hardcoded environment values).
 
-Extraction is tool-name-driven, not environment-driven.
+Extraction prefers the tool-declared ``fact_kind`` semantic, falling back to a
+tool-name map for legacy tools. It never mints environment-specific node types.
 """
 
 from __future__ import annotations
@@ -335,7 +336,13 @@ def _extract_exploit_execute(trace: dict[str, Any]) -> list[ExtractedFact]:
 
 
 def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract PostAccessObservation/LabHint/LabFlag from post-access tools."""
+    """Extract a generic post-access fact from post-access tools.
+
+    The semantic flavor (a captured proof artifact, a discovered hint, or a
+    plain observation) is carried as a ``kind`` property, never as a
+    lab-specific node type. The tool may declare ``fact_kind`` directly; absent
+    that, the flavor is inferred from the tool name for legacy lab tools.
+    """
     facts: list[ExtractedFact] = []
     parsed = trace.get("parsed_output") or {}
     args = trace.get("arguments") or {}
@@ -343,24 +350,29 @@ def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
     zone_ref = str(args.get("zone_ref") or "")
     tool_name = str(trace.get("tool_name") or "")
 
-    if "lab_marker" in tool_name or "read_lab" in tool_name:
-        entity_type = "LabFlag"
-        evidence_kind = "lab_flag"
+    declared_kind = str(parsed.get("fact_kind") or "")
+    if declared_kind:
+        kind = declared_kind
+    elif "lab_marker" in tool_name or "read_lab" in tool_name:
+        kind = "proof"
     elif "hint" in tool_name:
-        entity_type = "LabHint"
-        evidence_kind = "lab_hint"
+        kind = "hint"
     else:
-        entity_type = "PostAccessObservation"
-        evidence_kind = "post_access"
+        kind = "post_access"
+
+    # Proof/hint flavors are generic Evidence; a plain post-access read keeps
+    # the generic PostAccessObservation node type.
+    entity_type = "PostAccessObservation" if kind == "post_access" else "Evidence"
 
     content_summary = str(parsed.get("content_summary") or parsed.get("summary") or "")
     facts.append(
         ExtractedFact(
             fact_type=entity_type,
             entity_type=entity_type,
-            label=f"{evidence_kind}:{target}",
+            label=f"{kind}:{target}",
             properties={
-                "evidence_kind": evidence_kind,
+                "kind": kind,
+                "evidence_kind": kind,
                 "target_ref": target,
                 "content_summary": content_summary[:200],  # truncate, never store raw flags
                 "zone_ref": zone_ref,
