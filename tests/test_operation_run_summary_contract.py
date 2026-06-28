@@ -11,12 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.app import api as app_api
 from src.app.orchestrator import AppOrchestrator
 from src.app.settings import AppSettings
-from src.core.graph.kg_store import KnowledgeGraph
-from src.core.models.ag import AttackGraph
 from src.core.models.runtime import RuntimeStatus
 from src.core.planning.models import PlannerOutcome
-from src.core.runtime.result_applier import PhaseTwoResultApplier
-from src.core.execution.models import ExecutionResult, ToolTrace
 
 try:
     from fastapi.testclient import TestClient
@@ -88,98 +84,6 @@ def test_operation_run_summary_contract_uses_success_condition_progress(tmp_path
         "graph_url": "/operations/op-contract/graph",
         "audit_url": "/operations/op-contract/audit-report",
     }
-
-
-def test_success_condition_progress_is_derived_from_configured_stage_signals(tmp_path: Path) -> None:
-    orchestrator = AppOrchestrator(
-        settings=AppSettings(
-            runtime_store_backend="memory",
-            runtime_store_dir=tmp_path / "runtime",
-            lab_profile={
-                "profile_id": "inline-progress-test",
-                "success_conditions": {
-                    "require_all": [
-                        "dmz_service_discovered",
-                        "vulnerability_candidate_recorded",
-                    ]
-                },
-            },
-        )
-    )
-    state = orchestrator.create_operation("op-progress")
-    recon_result = ExecutionResult(
-        operation_id="op-progress",
-        execution_id="stage-recon",
-        capability="recon",
-        agent_name="recon_agent",
-        status="succeeded",
-        summary="service discovery completed",
-        findings=[{"type": "service_discovery", "summary": "one service discovered"}],
-        evidence_refs=["ev-recon"],
-    )
-    vuln_result = ExecutionResult(
-        operation_id="op-progress",
-        execution_id="stage-vuln",
-        capability="analysis",
-        agent_name="vuln_analysis_agent",
-        status="succeeded",
-        summary="candidate vulnerability analysis completed",
-        findings=[{"kind": "candidate_finding", "summary": "candidate recorded"}],
-        evidence_refs=["ev-vuln"],
-        tool_trace=[ToolTrace(tool_name="web_fingerprint", success=True, summary="candidate")],
-    )
-
-    kg = KnowledgeGraph()
-    ag = AttackGraph()
-    applier = PhaseTwoResultApplier()
-    applier.apply_execution_result(recon_result, state, kg, ag)
-    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
-    applier.apply_execution_result(vuln_result, state, kg, ag)
-    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
-
-    progress = state.execution.metadata["success_condition_progress"]
-    assert progress["conditions"]["dmz_service_discovered"]["satisfied"] is True
-    assert progress["conditions"]["vulnerability_candidate_recorded"]["satisfied"] is True
-    assert progress["all_required_satisfied"] is True
-
-
-def test_success_condition_progress_does_not_match_internal_service_from_dmz_recon(tmp_path: Path) -> None:
-    orchestrator = AppOrchestrator(
-        settings=AppSettings(
-            runtime_store_backend="memory",
-            runtime_store_dir=tmp_path / "runtime",
-            lab_profile={
-                "profile_id": "inline-progress-specific-test",
-                "success_conditions": {
-                    "require_all": [
-                        "dmz_service_discovered",
-                        "internal_service_discovered_after_authorized_route",
-                    ]
-                },
-            },
-        )
-    )
-    state = orchestrator.create_operation("op-progress-specific")
-    recon_result = ExecutionResult(
-        operation_id="op-progress-specific",
-        execution_id="stage-recon",
-        capability="recon",
-        agent_name="recon_agent",
-        status="needs_replan",
-        summary="service discovery needs replan",
-        findings=[{"type": "service_discovery", "summary": "one service discovered"}],
-        tool_trace=[ToolTrace(tool_name="nmap_scan", success=True, raw_output_ref="raw-nmap.json")],
-    )
-
-    kg = KnowledgeGraph()
-    ag = AttackGraph()
-    PhaseTwoResultApplier().apply_execution_result(recon_result, state, kg, ag)
-    orchestrator._update_success_condition_progress(state=state, kg=kg, ag=ag)
-
-    progress = state.execution.metadata["success_condition_progress"]
-    assert progress["conditions"]["dmz_service_discovered"]["satisfied"] is True
-    assert progress["conditions"]["internal_service_discovered_after_authorized_route"]["satisfied"] is False
-    assert progress["all_required_satisfied"] is False
 
 
 def test_run_endpoint_returns_operation_run_summary_contract(tmp_path: Path) -> None:

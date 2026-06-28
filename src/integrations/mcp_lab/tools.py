@@ -1325,11 +1325,6 @@ def _service_name_for_port(port: int | None) -> str:
     return _DATA_SERVICE_PORTS.get(int(port or 0), "unknown")
 
 
-def _is_restricted_data_service_name(service_name: str | None) -> bool:
-    text = str(service_name or "").lower()
-    return any(token in text for token in ("postgres", "mysql", "mssql", "mongo", "redis", "oracle"))
-
-
 def _load_runtime_pivot_routes() -> list[dict[str, Any]]:
     """Read configured pivot routes from the runtime policy file, if present."""
 
@@ -1506,7 +1501,6 @@ def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
     success = completed.returncode == 0
     parsed = _parse_nmap_output(target, stdout)
     services: list[dict[str, Any]] = []
-    satisfied: list[dict[str, Any]] = []
     for entity in parsed["entities"]:
         if entity.get("type") != "Service":
             continue
@@ -1514,14 +1508,9 @@ def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
         services.append(
             {"host": entity.get("host"), "port": entity.get("port"), "service_name": service_name, "via_pivot_route": route_id}
         )
-        if _is_restricted_data_service_name(service_name) or int(entity.get("port") or 0) in _DATA_SERVICE_PORTS:
-            evidence_id = f"internal-service::{route_id}::{entity.get('host')}:{entity.get('port')}"
-            satisfied.append({"condition": "restricted_data_service_discovered", "evidence_ids": [evidence_id]})
     parsed["services"] = services
     hints = dict(parsed.get("runtime_hints") or {})
     hints["via_pivot_route"] = route_id
-    if satisfied:
-        hints["satisfied_conditions"] = satisfied
     parsed["runtime_hints"] = hints
     return _payload(success=success, stdout=stdout, stderr=completed.stderr or "", exit_code=0 if success else "scan_failed", parsed=parsed)
 
@@ -1616,10 +1605,6 @@ def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
             {"evidence_id": evidence_id, "kind": "internal_service_discovery", "host": host, "port": port, "via_pivot_route": route_id}
         )
         runtime_hints: dict[str, Any] = {"via_pivot_route": route_id, "reachable": reachable}
-        if reachable and _is_restricted_data_service_name(service_name):
-            runtime_hints["satisfied_conditions"] = [
-                {"condition": "restricted_data_service_discovered", "evidence_ids": [evidence_id]}
-            ]
         parsed["runtime_hints"] = runtime_hints
         parsed["writeback_hints"] = {"observation_category": "internal_service_discovery"}
         return _payload(

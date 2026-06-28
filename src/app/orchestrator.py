@@ -1388,25 +1388,25 @@ class AppOrchestrator:
                 "target_level": success_config.get("target_level"),
                 "condition_bindings": self._mapping(success_config.get("condition_bindings")),
             }
-        if contract_payload["condition_bindings"]:
-            profile = profile_from_dict(dict(lab_profile))
-            progress = SuccessConditionTracker().evaluate(
-                contract=contract_from_dict(dict(contract_payload)),
-                profile=profile,
-                kg_nodes=list(kg.to_dict().get("nodes") or []),
-                kg_edges=list(kg.to_dict().get("edges") or []),
-                ag_nodes=list(ag.to_dict().get("nodes") or []),
-                ag_edges=list(ag.to_dict().get("edges") or []),
-                runtime_state=state.model_dump(mode="json"),
-                cycle_index=cycle_index,
-            ).model_dump(mode="json")
-            progress = self._normalize_success_progress(progress)
-        else:
-            progress = self._inline_success_condition_progress(
-                state=state,
-                contract_payload=contract_payload,
-                cycle_index=cycle_index,
+        if not contract_payload["condition_bindings"]:
+            raise ValueError(
+                f"Success contract '{contract_payload.get('contract_id')}' has no "
+                "condition_bindings. Success is evaluated solely by reading the graph "
+                "through SuccessConditionTracker; a binding-less contract has no "
+                "evaluable success definition. Add condition_bindings to the contract."
             )
+        profile = profile_from_dict(dict(lab_profile))
+        progress = SuccessConditionTracker().evaluate(
+            contract=contract_from_dict(dict(contract_payload)),
+            profile=profile,
+            kg_nodes=list(kg.to_dict().get("nodes") or []),
+            kg_edges=list(kg.to_dict().get("edges") or []),
+            ag_nodes=list(ag.to_dict().get("nodes") or []),
+            ag_edges=list(ag.to_dict().get("edges") or []),
+            runtime_state=state.model_dump(mode="json"),
+            cycle_index=cycle_index,
+        ).model_dump(mode="json")
+        progress = self._normalize_success_progress(progress)
         state.execution.metadata["success_condition_progress"] = progress
         return progress
 
@@ -1430,155 +1430,6 @@ class AppOrchestrator:
             else "continue",
         }
         return normalized
-
-    def _inline_success_condition_progress(
-        self,
-        *,
-        state: RuntimeState,
-        contract_payload: dict[str, Any],
-        cycle_index: int,
-    ) -> dict[str, Any]:
-        required = [str(item) for item in contract_payload.get("require_all") or []]
-        levels = {
-            str(level): [str(condition) for condition in conditions]
-            for level, conditions in self._mapping(contract_payload.get("levels")).items()
-            if isinstance(conditions, list)
-        }
-        target_level = str(contract_payload.get("target_level") or "") or None
-        signals = self._runtime_success_signals(state)
-        conditions: dict[str, dict[str, Any]] = {}
-        satisfied: list[str] = []
-        missing: list[str] = []
-        evidence_refs: list[str] = []
-        for condition in required:
-            item = signals.get(condition, {"satisfied": False, "evidence_ids": []})
-            is_satisfied = bool(item.get("satisfied"))
-            refs = [str(ref) for ref in item.get("evidence_ids", []) if str(ref).strip()]
-            conditions[condition] = {
-                "condition": condition,
-                "satisfied": is_satisfied,
-                "predicate": "runtime_signal",
-                "evidence_ids": refs,
-                "evidence_refs": refs,
-            }
-            if is_satisfied:
-                satisfied.append(condition)
-                evidence_refs.extend(refs)
-            else:
-                missing.append(condition)
-        all_required_satisfied = not missing
-        level_results = self._inline_level_results(levels=levels, signals=signals)
-        achieved_level = self._achieved_level(level_results)
-        target_level_satisfied = (
-            bool(level_results.get(target_level, {}).get("satisfied"))
-            if target_level
-            else all_required_satisfied
-        )
-        return {
-            "profile_id": str(state.execution.metadata.get("lab_profile", {}).get("profile_id") or ""),
-            "contract_id": str(contract_payload.get("contract_id") or ""),
-            "mode": str(contract_payload.get("mode") or ""),
-            "all_required_satisfied": all_required_satisfied,
-            "chain_integrity": True,
-            "goal_proof_valid": bool(signals.get("goal_check_recorded", {}).get("satisfied")),
-            "eligible_for_stop": target_level_satisfied,
-            "achieved_level": achieved_level,
-            "target_level": target_level,
-            "level_results": level_results,
-            "satisfied": satisfied,
-            "missing": missing,
-            "failed": [],
-            "conditions": conditions,
-            "condition_results": conditions,
-            "evidence_refs": self._dedupe_strings(evidence_refs),
-            "redacted_summary": f"{len(satisfied)}/{len(required)} inline success conditions satisfied",
-            "last_updated_cycle": cycle_index,
-        }
-
-    @staticmethod
-    def _inline_level_results(
-        *,
-        levels: dict[str, list[str]],
-        signals: dict[str, dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
-        results: dict[str, dict[str, Any]] = {}
-        for level, required in levels.items():
-            satisfied = [name for name in required if bool(signals.get(name, {}).get("satisfied"))]
-            missing = [name for name in required if name not in set(satisfied)]
-            results[level] = {
-                "level": level,
-                "required": list(required),
-                "satisfied": not missing,
-                "satisfied_conditions": satisfied,
-                "missing": missing,
-                "failed": [],
-            }
-        return results
-
-    @staticmethod
-    def _achieved_level(level_results: dict[str, dict[str, Any]]) -> str | None:
-        achieved: str | None = None
-        for level, result in level_results.items():
-            if bool(result.get("satisfied")):
-                achieved = level
-        return achieved
-
-    @staticmethod
-    def _runtime_success_signals(state: RuntimeState) -> dict[str, dict[str, Any]]:
-        signals: dict[str, dict[str, Any]] = {}
-
-        def mark(condition: str, refs: list[str] | None = None) -> None:
-            bucket = signals.setdefault(condition, {"satisfied": True, "evidence_ids": []})
-            bucket["satisfied"] = True
-            bucket["evidence_ids"] = AppOrchestrator._dedupe_strings(
-                list(bucket.get("evidence_ids") or []) + list(refs or [])
-            )
-
-        for finding in state.execution.metadata.get("findings", []) or []:
-            if not isinstance(finding, dict):
-                continue
-            refs = [
-                str(ref)
-                for ref in finding.get("evidence_refs", []) or []
-                if str(ref).strip()
-            ]
-            text = " ".join(
-                str(finding.get(key) or "")
-                for key in ("kind", "type", "summary", "title", "category")
-            ).lower()
-            if "service" in text:
-                mark("dmz_service_discovered", refs)
-            if "candidate" in text or "vulnerab" in text:
-                mark("vulnerability_candidate_recorded", refs)
-            if "goalcheck" in text or "goal_satisfied" in finding or bool(finding.get("goal_satisfied")):
-                mark("goal_check_recorded", refs)
-            if "database" in text and ("file" in text or "artifact" in text):
-                mark("database_file_read", refs)
-        goal_refs = [
-            str(ref)
-            for ref in state.execution.metadata.get("goal_evidence_refs", []) or []
-            if str(ref).strip()
-        ]
-        if state.execution.metadata.get("goal_satisfied"):
-            mark("goal_check_recorded", goal_refs)
-        for hint in state.execution.metadata.get("execution_runtime_hints", []) or []:
-            if not isinstance(hint, dict):
-                continue
-            refs = [str(ref) for ref in hint.get("evidence_refs", []) or [] if str(ref).strip()]
-            for condition in hint.get("satisfied_conditions", []) or []:
-                mark(str(condition), refs)
-        return signals
-
-    @staticmethod
-    def _dedupe_strings(items: list[str]) -> list[str]:
-        seen: set[str] = set()
-        ordered: list[str] = []
-        for item in items:
-            text = str(item).strip()
-            if text and text not in seen:
-                seen.add(text)
-                ordered.append(text)
-        return ordered
 
     def _load_tool_catalog(self) -> dict[str, Any]:
         if self.mcp_client is None:

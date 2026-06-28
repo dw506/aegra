@@ -510,8 +510,11 @@ def test_internal_service_discover_uses_configured_pivot_for_restricted_data_ser
 
     assert payload["success"] is True
     assert payload["parsed"]["services"][0]["service_name"] == "postgres"
-    satisfied = payload["parsed"]["runtime_hints"]["satisfied_conditions"]
-    assert {"condition": "restricted_data_service_discovered", "evidence_ids": ["internal-service::route-1::10.0.2.50:5432"]} in satisfied
+    assert payload["parsed"]["services"][0]["via_pivot_route"] == "route-1"
+    # The tool reports only the raw service/evidence fact. Deciding whether this
+    # satisfies a success condition is the tracker's job (reading the graph);
+    # the tool must never emit success-contract condition names.
+    assert "satisfied_conditions" not in payload["parsed"]["runtime_hints"]
 
 
 def test_pivoted_scan_uses_agent_supplied_credentials_over_env(monkeypatch) -> None:
@@ -592,7 +595,7 @@ def test_identity_context_probe_exposes_redacted_pivot_candidates(tmp_path, monk
     assert "password" not in json.dumps(payload).lower()
 
 
-def test_pivoted_nmap_scan_emits_restricted_data_service_condition(monkeypatch) -> None:
+def test_pivoted_nmap_scan_reports_restricted_data_service_fact(monkeypatch) -> None:
     class Completed:
         returncode = 0
         stdout = "\n".join(
@@ -614,8 +617,15 @@ def test_pivoted_nmap_scan_emits_restricted_data_service_condition(monkeypatch) 
     )
 
     assert payload["success"] is True
-    conditions = payload["parsed"]["runtime_hints"]["satisfied_conditions"]
-    assert any(item["condition"] == "restricted_data_service_discovered" for item in conditions)
+    services = payload["parsed"]["services"]
+    # Tool returns the raw service fact (service discovered via the pivot route).
+    assert any(
+        "postgres" in str(s["service_name"]).lower() and s["via_pivot_route"] == "route-1"
+        for s in services
+    )
+    # It must not emit success-contract condition names; the tracker judges
+    # satisfaction by reading the graph.
+    assert "satisfied_conditions" not in payload["parsed"]["runtime_hints"]
 
 
 def test_controlled_data_read_proof_returns_redacted_hash(monkeypatch) -> None:

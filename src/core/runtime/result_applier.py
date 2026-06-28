@@ -95,7 +95,6 @@ class PhaseTwoResultApplier:
 
     def _record_runtime_metadata(self, stage: ExecutionResult, state: RuntimeState) -> None:
         hints = stage.runtime_hints
-        state.execution.metadata.setdefault("execution_runtime_hints", []).append({**hints, "source_task_id": stage.execution_id, "recorded_at": utc_now().isoformat()})
         if "goal_satisfied" in hints:
             state.execution.metadata["goal_state"] = {"goal_satisfied": bool(hints["goal_satisfied"]), "goal_summary": hints.get("goal_summary", stage.summary), "goal_evidence_refs": list(hints.get("goal_evidence_refs") or []), "source_task_id": stage.execution_id}
         for name, values in (("capabilities", stage.capabilities_gained), ("failed_hypotheses", stage.failed_hypotheses), ("findings", stage.findings), ("evidence_artifacts", stage.evidence)):
