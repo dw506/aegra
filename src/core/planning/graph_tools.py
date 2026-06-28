@@ -81,16 +81,113 @@ class PlannerGraphTools:
             "recent_attack_steps": attack_steps,
         }
 
+    # ------------------------------------------------------------------
+    # Read tools — the planner agent loop calls these to inspect graph state
+    # mid-decision (drill here instead of front-loading the whole context).
+    # All read-only and JSON-safe.
+    # ------------------------------------------------------------------
+
+    def get_success_progress(self) -> dict[str, Any]:
+        """Return the full success-condition progress (condition_results, missing, ...)."""
+        return dict(self.runtime_state.execution.metadata.get("success_condition_progress") or {})
+
+    def query_kg_nodes(
+        self,
+        node_type: str | None = None,
+        zone_ref: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List KG nodes, optionally filtered by type and zone_ref (bounded by limit)."""
+        nodes = self.kg.list_nodes(type=node_type) if node_type else self.kg.list_nodes()
+        out: list[dict[str, Any]] = []
+        cap = max(1, int(limit))
+        for node in nodes:
+            dump = node.model_dump(mode="json")
+            if zone_ref is not None:
+                node_zone = dump.get("zone_ref") or (dump.get("properties") or {}).get("zone_ref")
+                if str(node_zone) != str(zone_ref):
+                    continue
+            out.append(dump)
+            if len(out) >= cap:
+                break
+        return out
+
+    def get_node(self, ref_id: str) -> dict[str, Any]:
+        """Return one KG node plus its incident edges, or an error marker."""
+        try:
+            node = self.kg.get_node(str(ref_id))
+        except Exception:
+            return {"error": "node_not_found", "ref_id": str(ref_id)}
+        return {
+            "node": node.model_dump(mode="json"),
+            "edges_out": [edge.model_dump(mode="json") for edge in self.kg.list_edges(source=str(ref_id))],
+            "edges_in": [edge.model_dump(mode="json") for edge in self.kg.list_edges(target=str(ref_id))],
+        }
+
+    def get_attack_steps(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return the most recent AG ATTACK_STEP nodes (the result timeline)."""
+        steps = [
+            node.model_dump(mode="json")
+            for node in self.ag.find_process_nodes()
+            if str(getattr(node, "node_type", "")) in ("AttackProcessNodeType.ATTACK_STEP", "ATTACK_STEP")
+            or getattr(getattr(node, "node_type", None), "value", None) == "ATTACK_STEP"
+        ]
+        steps = sorted(steps, key=lambda item: int(item.get("cycle_index") or 0))
+        return steps[-max(1, int(limit)):]
+
+    def list_runtime(self, kind: str) -> list[dict[str, Any]]:
+        """Return runtime sessions/credentials/pivot_routes as JSON dict lists."""
+        source = {
+            "sessions": self.runtime_state.sessions,
+            "credentials": self.runtime_state.credentials,
+            "pivot_routes": self.runtime_state.pivot_routes,
+        }.get(str(kind))
+        if source is None:
+            return []
+        return [item.model_dump(mode="json") for item in source.values()]
+
+    def apply_read_call(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+        """Dispatch one read-tool call by name (used by the planner loop's act step)."""
+        args = dict(arguments or {})
+        if name == "get_success_progress":
+            return self.get_success_progress()
+        if name == "query_kg_nodes":
+            return self.query_kg_nodes(
+                node_type=args.get("node_type"),
+                zone_ref=args.get("zone_ref"),
+                limit=int(args.get("limit") or 50),
+            )
+        if name == "get_node":
+            return self.get_node(str(args.get("ref_id") or ""))
+        if name == "get_attack_steps":
+            return self.get_attack_steps(limit=int(args.get("limit") or 10))
+        if name == "list_runtime":
+            return self.list_runtime(str(args.get("kind") or ""))
+        return {"error": "unknown_read_tool", "name": name}
+
     @staticmethod
     def tool_manifest() -> dict[str, list[str]]:
-        # Push model: the planner advisor is a single-shot LLM call with no
-        # tool-call loop, so the LLM cannot invoke read tools mid-decision. The
-        # read methods on this class are used by the orchestrator to BUILD the
-        # precomputed context (e.g. build_min_summary); only the write tools are
-        # advertised to the LLM, dispatched via apply_tool_calls after the turn.
+        """Read/write tool surface for the planner agent loop.
+
+        Read tools let the planner inspect graph state mid-decision (see
+        read_tool_manifest for arguments); write tools record advisory judgment.
+        Machine facts are written deterministically by the extractor, never here.
+        """
         return {
+            "read": ["get_success_progress", "query_kg_nodes", "get_node", "get_attack_steps", "list_runtime"],
             "write": ["record_finding", "record_attack_step", "link_evidence"],
         }
+
+    @staticmethod
+    def read_tool_manifest() -> list[dict[str, Any]]:
+        """Detailed read-tool descriptions (name/args/desc) for the planner prompt."""
+        return [
+            {"name": "get_success_progress", "args": {}, "desc": "Full success-condition progress (missing/satisfied/condition_results)."},
+            {"name": "query_kg_nodes", "args": {"node_type": "str|null", "zone_ref": "str|null", "limit": "int"}, "desc": "List KG nodes filtered by type/zone."},
+            {"name": "get_node", "args": {"ref_id": "str"}, "desc": "One KG node plus its incident edges."},
+            {"name": "get_attack_steps", "args": {"limit": "int"}, "desc": "Recent AG ATTACK_STEP timeline."},
+            {"name": "list_runtime", "args": {"kind": "sessions|credentials|pivot_routes"}, "desc": "Runtime sessions/credentials/pivot routes."},
+        ]
 
     def record_finding(self, request: RecordFindingRequest | dict[str, Any]) -> dict[str, Any]:
         payload = request if isinstance(request, RecordFindingRequest) else RecordFindingRequest.model_validate(request)

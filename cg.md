@@ -299,3 +299,35 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 | **可降级/删** | confidence, risk_level, created_at, retry_recommendation, policy_notes（多为 LLM 装饰，无决策消费）| 随上面收敛 |
 
 **结论**：目标信封 = §4 的 `ToolFact + 图 delta + 一个 PlannerDecision/薄 round 状态`。当前 `ExecutionResult` 的胖结构是「executor 返回报告 + planner 读报告」模式的产物，**会被 Step 3/4/5 逐步溶解**，不是一次能删完——但要登记为债，避免将来又以「在用」为由保留。
+
+---
+
+## 附录 D：Step 3 落地 —— planner 单发 → 真 tool-use 循环（LangGraph-ready）
+
+> 分支 `refactor/step3-planner-agent`。把 §0 诊断的「单发预言机」改成 LLM 自主迭代查图再决策的真 agent 循环。
+
+### D.1 关键决策：手搓循环、但 LangGraph-ready；LangGraph 留到 Step 6
+- 现在**不引入 LangGraph**（§60：循环写对了再上是机械活；现在上只给 planner 内层套、造混合体、拿不到系统级 resume——那要 planner+executor+外层一起，即 Step 6）。
+- 但 Step 3 强制写成 **LangGraph 形状**，使 Step 6 仅「换驱动」、残留趋零。
+- 现状铁证（要拆除的）：advisor prompt 明写「不能中途查图」；`tool_manifest()` 自述「push 模型、无 tool-call 循环、只暴露写工具」；`PlannerGraphTools` 原本无粒度读工具。
+
+### D.2 三件套（substrate-agnostic + 薄驱动）
+- **State**（`PlannerLoopState`）：operation/cycle/goal、seed_context（min_summary+progress 廉价种子）、`read_log`、`pending_call`、`decision`、`step/max_steps`。= 将来 LangGraph 的 State。
+- **节点函数**（纯 `State→State`）：`decide`（构 prompt→一次 LLM→解析出「一个读工具调用」或「最终 PlannerOutcome」）、`act`（执行读工具、结果回灌 read_log）。
+- **薄驱动**（~15 行 `for range(max_steps)`）：decide→有 final 即返；有 tool_call 则 act 再 decide；到顶兜底 replan。**Step 6 仅把这段换成 `StateGraph(...).invoke()` + checkpointer，节点/State 照搬。**
+- 这段薄驱动是「只跑节点、零决策」的引擎——**不是 §0 批判的硬编码轨道**（决策权已在 LLM）。
+
+### D.3 决策（已定）
+- 循环机制 **L1**：手工 JSON（与 executor 一致、复用 `_extract_json_object`/`_fallback_outcome`），不用原生 function-calling（本仓 executor 亦未用）。
+- 迭代上限 **max_steps=6**。
+- 化石清理（折叠 `MissionPlannerAdvisor` Protocol + `propose_next_decision`，正名 advisor→agent 本体）放在**循环绿后**（3e）。
+
+### D.4 分子步进度
+- ✅ **3a 读工具**：`PlannerGraphTools` 增 `get_success_progress / query_kg_nodes / get_node / get_attack_steps / list_runtime` + `apply_read_call` 分发 + `read_tool_manifest`；`tool_manifest` 去掉「push 模型」自述、加 `read` 区。单测绿。
+- ⬜ 3b State+节点+薄驱动，接入 `agent.decide`，循环单测。
+- ⬜ 3c prompt 改（删「不能查图」、加循环协议）。
+- ⬜ 3d 全量回归。
+- ⬜ 3e 化石折叠（附录 A）。
+
+### D.5 范围边界
+不动 executor（Step 4）、不接真工具（Step 5）、不做 ToolFact（Step 2 余项）。`recent_execution_results` 瘦身（C.3）本步并存不删。
