@@ -11,21 +11,6 @@ from src.core.models.graph_common import utc_now
 from uuid import uuid4
 
 
-class GraphUpdateIntent(BaseModel):
-    """A proposed graph/runtime mutation to be validated by ResultApplier."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    target_graph: Literal["KG", "AG", "Runtime"]
-    operation: Literal["add", "update", "link", "mark_status", "append_evidence"]
-    entity_type: str = ""
-    entity_ref: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
-    evidence_refs: list[str] = Field(default_factory=list)
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    source: Literal["planner", "stage_agent", "tool_trace", "result_applier"] = "stage_agent"
-
-
 class ToolTrace(BaseModel):
     """Audit record for one tool call inside a bounded stage loop."""
 
@@ -55,20 +40,6 @@ class ToolTrace(BaseModel):
 CapabilityName: TypeAlias = Literal["recon", "analysis", "exploit", "pivot", "lateral", "goal", "evidence"]
 
 CAPABILITY_NAMES: tuple[str, ...] = get_args(CapabilityName)
-
-
-class ExtractedFact(BaseModel):
-    """Deterministic fact extracted from a tool trace for KG writeback."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    fact_id: str = Field(min_length=1)
-    entity_type: str = Field(min_length=1)
-    label: str = Field(min_length=1)
-    properties: dict[str, Any] = Field(default_factory=dict)
-    source_tool: str = Field(min_length=1)
-    trace_id: str = Field(min_length=1)
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class RoundDirective(BaseModel):
@@ -149,18 +120,6 @@ class ExecutionRequest(BaseModel):
     handoff_policy: str | None = None
 
 
-class NextRoundSuggestion(BaseModel):
-    """Suggested next-capability handoff emitted by a ExecutionResult."""
-
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-    suggested_agent: str = Field(min_length=1)
-    suggested_capability: CapabilityName
-    reason: str = Field(min_length=1)
-    confidence: float = Field(ge=0.0, le=1.0)
-    required_context_refs: list[Any] = Field(default_factory=list)
-
-
 class ExecutionResult(BaseModel):
     """Execution Agent output consumed directly by ResultApplier."""
 
@@ -187,21 +146,15 @@ class ExecutionResult(BaseModel):
     credentials: list[dict[str, Any]] = Field(default_factory=list)
     sessions: list[dict[str, Any]] = Field(default_factory=list)
     pivot_routes: list[dict[str, Any]] = Field(default_factory=list)
-    privilege_contexts: list[dict[str, Any]] = Field(default_factory=list)
 
-    next_capability_candidates: list[dict[str, Any]] = Field(default_factory=list)
     failed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
-    graph_update_intents: list[GraphUpdateIntent] = Field(default_factory=list)
     tool_trace: list[ToolTrace] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     risk_level: Literal["low", "medium", "high", "critical"] = "medium"
     policy_notes: list[str] = Field(default_factory=list)
     retry_recommendation: str | None = None
     replan_recommendation: str | None = None
-    next_capability_suggestion: dict[str, Any] | None = None
-    handoff_suggestion: NextRoundSuggestion | None = None
-    visual_summary: dict[str, Any] = Field(default_factory=dict)
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
@@ -240,11 +193,8 @@ class ExecutionResult(BaseModel):
 __all__ = [
     "CAPABILITY_NAMES",
     "CapabilityName",
-    "ExtractedFact",
-    "GraphUpdateIntent",
     "RoundDirective",
     "ExecutionRequest",
-    "NextRoundSuggestion",
     "ExecutionResult",
     "ToolTrace",
 ]

@@ -7,8 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
-from src.core.agents.pipeline_results import PipelineCycleResult, PipelineStepResult
-from src.core.agents.agent_protocol import AgentContext, AgentInput, AgentKind, AgentOutput, GraphRef as AgentGraphRef
+from src.core.agents.agent_protocol import GraphRef as AgentGraphRef
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.execution.execution_agent import ExecutionAgent
@@ -113,9 +112,8 @@ class OperationCycleResult(BaseModel):
 
     operation_id: str
     cycle_index: int = Field(ge=1)
-    planning: PipelineCycleResult | None = None
-    execution: PipelineCycleResult | None = None
-    feedback: PipelineCycleResult | None = None
+    planner_outcome: dict[str, Any] | None = None
+    execution_result: dict[str, Any] | None = None
     apply_results: list[PhaseTwoApplyResult] = Field(default_factory=list)
     selected_task_ids: list[str] = Field(default_factory=list)
     applied_task_ids: list[str] = Field(default_factory=list)
@@ -644,52 +642,16 @@ class AppOrchestrator:
             outcome.directive.cycle_index = cycle_index
         planning_apply = self.result_applier.apply_planner_outcome(outcome, state, kg, ag)
 
-        planning_output = AgentOutput(
-            decisions=[
-                {
-                    "planner_outcome": outcome.model_dump(mode="json"),
-                }
-            ],
-            logs=[outcome.reason or f"planner action={outcome.action}"],
-        )
-        now = utc_now()
-        planning = PipelineCycleResult(
-            cycle_name="planner_outcome",
-            operation_id=operation_id,
-            success=outcome.action not in {"stop_failed"},
-            steps=[
-                PipelineStepResult(
-                    step_name="planner_agent",
-                    agent_name="planner_agent",
-                    agent_kind=AgentKind.PLANNER,
-                    success=outcome.action not in {"stop_failed"},
-                    agent_input=AgentInput(
-                        graph_refs=graph_refs,
-                        context=AgentContext(operation_id=operation_id),
-                        raw_payload=planner_payload,
-                    ),
-                    agent_output=planning_output,
-                    started_at=now,
-                    finished_at=now,
-                    duration_ms=0,
-                )
-            ],
-            final_output=planning_output,
-            logs=list(planning_output.logs),
-        )
+        planner_outcome_dump = outcome.model_dump(mode="json")
+        planning_success = outcome.action not in {"stop_failed"}
         apply_results: list[PhaseTwoApplyResult] = [planning_apply]
-        execution = PipelineCycleResult(
-            cycle_name="execution_round",
-            operation_id=operation_id,
-            success=True,
-            final_output=AgentOutput(logs=["no execution round requested"]),
-        )
+        execution_result_dump: dict[str, Any] | None = None
+        execution_success = True
         applied_ids: list[str] = []
         stopped = outcome.action in {"stop_success", "stop_failed", "pause_for_review"}
         stop_reason = outcome.stop_condition or (outcome.action if stopped else None)
 
         if outcome.action == "execute" and outcome.directive is not None:
-            started_at = utc_now()
             try:
                 execution_result = self.execution_agent.run(
                     outcome.directive,
@@ -722,7 +684,6 @@ class AppOrchestrator:
                         original_operation_id=original_operation_id,
                         normalized_operation_id=operation_id,
                     )
-                finished_at = utc_now()
                 stage_apply = self.result_applier.apply_execution_result(execution_result, state, kg, ag)
                 self._update_success_condition_progress(
                     state=state,
@@ -740,7 +701,7 @@ class AppOrchestrator:
                     phase="execution_round",
                     exc=exc,
                     trace_logger=operation_trace_logger,
-                    planning=planning,
+                    planning_success=planning_success,
                     apply_results=apply_results,
                 )
             stage_graph_write_payload = {
@@ -757,37 +718,8 @@ class AppOrchestrator:
             operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
             apply_results.append(stage_apply)
             applied_ids.append(execution_result.execution_id)
-            stage_output = AgentOutput(
-                outcomes=[execution_result.model_dump(mode="json")],
-                logs=[execution_result.summary],
-            )
-            execution = PipelineCycleResult(
-                cycle_name="execution_round",
-                operation_id=operation_id,
-                success=execution_result.status not in {"failed", "blocked"},
-                steps=[
-                    PipelineStepResult(
-                        step_name=execution_result.agent_name,
-                        agent_name=execution_result.agent_name,
-                        agent_kind=AgentKind.WORKER,
-                        success=execution_result.status not in {"failed", "blocked"},
-                        agent_input=AgentInput(
-                            graph_refs=graph_refs,
-                            context=AgentContext(operation_id=operation_id),
-                            raw_payload={
-                                "planner_outcome": outcome.model_dump(mode="json"),
-                                "round_directive": outcome.directive.model_dump(mode="json"),
-                            },
-                        ),
-                        agent_output=stage_output,
-                        started_at=started_at,
-                        finished_at=finished_at,
-                        duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
-                    )
-                ],
-                final_output=stage_output,
-                logs=[execution_result.summary],
-            )
+            execution_result_dump = execution_result.model_dump(mode="json")
+            execution_success = execution_result.status not in {"failed", "blocked"}
             if self._goal_satisfied(state):
                 state.execution.metadata["goal_satisfied"] = True
             if execution_result.status in {"failed", "blocked"}:
@@ -803,19 +735,13 @@ class AppOrchestrator:
                 stop_reason = None
             stopped = False
 
-        feedback = PipelineCycleResult(
-            cycle_name="feedback_disabled",
-            operation_id=operation_id,
-            success=True,
-            logs=["feedback critic phase disabled for execution-agent main path"],
-        )
         summary = {
             "cycle_index": cycle_index,
             "started_at": utc_now().isoformat(),
             "architecture": "planner_stage_agent_graph_main_path",
-            "planning_success": planning.success,
-            "execution_success": execution.success,
-            "feedback_success": feedback.success,
+            "planning_success": planning_success,
+            "execution_success": execution_success,
+            "feedback_success": True,
             "planner_action": outcome.action,
             "capability": outcome.directive.capability if outcome.directive else None,
             "applied_results": len(apply_results),
@@ -875,9 +801,8 @@ class AppOrchestrator:
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planning=planning,
-            execution=execution,
-            feedback=feedback,
+            planner_outcome=planner_outcome_dump,
+            execution_result=execution_result_dump,
             apply_results=apply_results,
             selected_task_ids=applied_ids,
             applied_task_ids=list(applied_ids),
@@ -1246,7 +1171,6 @@ class AppOrchestrator:
                     "execution_result": AppOrchestrator._compact_execution_result(execution_result),
                     "runtime_hints": payload.get("runtime_hints") if isinstance(payload.get("runtime_hints"), dict) else {},
                     "writeback_hints": payload.get("writeback_hints") if isinstance(payload.get("writeback_hints"), dict) else {},
-                    "graph_update_intents": payload.get("graph_update_intents") if isinstance(payload.get("graph_update_intents"), list) else [],
                     "task_candidates": payload.get("task_candidates") if isinstance(payload.get("task_candidates"), list) else [],
                 }
             )
@@ -1257,27 +1181,23 @@ class AppOrchestrator:
     _COMPACTED_RESULT_LISTS = frozenset({
         "observations", "evidence", "findings", "discovered_entities",
         "discovered_relations", "capabilities_gained", "credentials", "sessions",
-        "pivot_routes", "privilege_contexts", "graph_update_intents",
+        "pivot_routes",
         "evidence_refs", "tool_trace",
     })
-    #UI-only projection; the planner never reads it.
-    _DROPPED_RESULT_FIELDS = frozenset({"visual_summary"})
 
     @staticmethod
     def _compact_execution_result(execution_result: dict[str, Any]) -> dict[str, Any]:
         """Project an ExecutionResult to planner-relevant fields only.
 
         The planner decides from summaries + control signals (replan/retry
-        recommendation, next_capability_suggestion, runtime/writeback hints), not
-        raw tool traces. Those raw-fact lists are already in the KG and surface via
-        min_summary, so collapse only those to counts; keep every scalar, dict, and
-        small decision list (e.g. next_capability_candidates, failed_hypotheses).
+        recommendation, runtime/writeback hints), not raw tool traces. Those
+        raw-fact lists are already in the KG and surface via min_summary, so
+        collapse only those to counts; keep every scalar, dict, and small
+        decision list (e.g. failed_hypotheses).
         """
 
         compact: dict[str, Any] = {}
         for key, value in execution_result.items():
-            if key in AppOrchestrator._DROPPED_RESULT_FIELDS:
-                continue
             if isinstance(value, list) and key in AppOrchestrator._COMPACTED_RESULT_LISTS:
                 compact[f"{key}_count"] = len(value)
             else:
@@ -1348,14 +1268,11 @@ class AppOrchestrator:
 
     @staticmethod
     def _cycle_planner_decision(cycle_result: OperationCycleResult) -> str | None:
-        if cycle_result.planning is None:
+        outcome = cycle_result.planner_outcome
+        if not isinstance(outcome, dict):
             return None
-        for item in cycle_result.planning.final_output.decisions:
-            payload = item.get("planner_outcome") if isinstance(item, dict) else None
-            if isinstance(payload, dict):
-                action = payload.get("action")
-                return str(action) if action is not None else None
-        return None
+        action = outcome.get("action")
+        return str(action) if action is not None else None
 
     def _update_success_condition_progress(
         self,
@@ -1557,7 +1474,7 @@ class AppOrchestrator:
         phase: str,
         exc: Exception,
         trace_logger: TxtTraceLogger | None = None,
-        planning: PipelineCycleResult | None = None,
+        planning_success: bool = False,
         apply_results: list[PhaseTwoApplyResult] | None = None,
     ) -> OperationCycleResult:
         error_type = "llm_transport_error" if "llm_transport_error" in str(exc) else exc.__class__.__name__
@@ -1612,7 +1529,7 @@ class AppOrchestrator:
                     "cycle_index": cycle_index,
                     "started_at": error_record["recorded_at"],
                     "architecture": "planner_stage_agent_graph_main_path",
-                    "planning_success": planning.success if planning is not None else False,
+                    "planning_success": planning_success,
                     "execution_success": False,
                     "feedback_success": False,
                     "selected_agent": None,
@@ -1640,23 +1557,11 @@ class AppOrchestrator:
         self.graph_memory_store.save_ag(operation_id, ag)
         self.graph_memory_store.save_runtime(operation_id, state)
         self.graph_memory_store.save_snapshot(operation_id, cycle_index)
-        failed_output = AgentOutput(
-            logs=[state.execution.summary],
-            errors=[f"{error_type}: {exc}"],
-        )
-        failed_cycle = PipelineCycleResult(
-            cycle_name=phase,
-            operation_id=operation_id,
-            success=False,
-            final_output=failed_output,
-            logs=[state.execution.summary],
-        )
         return OperationCycleResult(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            planning=planning or failed_cycle,
-            execution=failed_cycle if phase != "planning" else None,
-            feedback=None,
+            planner_outcome=None,
+            execution_result=None,
             apply_results=list(apply_results or []),
             selected_task_ids=[],
             applied_task_ids=[],

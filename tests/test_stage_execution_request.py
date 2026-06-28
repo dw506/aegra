@@ -45,13 +45,6 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
                 "status": "succeeded",
                 "summary": "finished Collect service evidence",
                 "confidence": 0.9,
-                "handoff_suggestion": {
-                    "suggested_agent": "vuln_analysis_agent",
-                    "suggested_capability": "analysis",
-                    "reason": "service evidence is ready for vulnerability analysis",
-                    "confidence": 0.8,
-                    "required_context_refs": ["kg:svc-1"],
-                },
             }
         ]
     )
@@ -79,9 +72,6 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
     assert result.execution_id == "execution-op-1-2-recon_agent"
     assert result.summary == "finished Collect service evidence"
     assert len(llm.calls) == 1
-    assert result.handoff_suggestion is not None
-    assert result.handoff_suggestion.suggested_agent == "vuln_analysis_agent"
-    assert result.handoff_suggestion.required_context_refs == ["kg:svc-1"]
 
 
 def test_execution_agent_main_path_has_no_task_graph_dependency() -> None:

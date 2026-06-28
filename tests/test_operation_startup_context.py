@@ -137,9 +137,9 @@ def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> N
     )
 
     assert [
-        result.planning.final_output.decisions[0]["planner_outcome"]["action"]
+        result.planner_outcome["action"]
         for result in results
-        if result.planning is not None
+        if result.planner_outcome is not None
     ] == [
         "replan",
         "replan",

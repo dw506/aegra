@@ -619,10 +619,7 @@ class _ExecutionLoop:
             credentials=list(payload.get("credentials") or []),
             sessions=list(payload.get("sessions") or []),
             pivot_routes=list(payload.get("pivot_routes") or []),
-            next_capability_candidates=list(payload.get("next_capability_candidates") or []),
             failed_hypotheses=list(payload.get("failed_hypotheses") or []),
-            handoff_suggestion=payload.get("handoff_suggestion"),
-            next_capability_suggestion=payload.get("next_capability_suggestion"),
             evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
             tool_trace=list(tool_traces),
             confidence=float(payload.get("confidence") or 0.5),
@@ -948,7 +945,6 @@ class _ExecutionLoop:
                 "summary": result.summary,
                 "findings_count": len(result.findings),
                 "evidence_count": len(result.evidence),
-                "handoff_suggestion": result.handoff_suggestion,
                 "replan_recommendation": result.replan_recommendation,
             },
         )
