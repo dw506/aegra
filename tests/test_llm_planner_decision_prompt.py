@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 
 from src.core.agents.packy_llm import PackyLLMResponse
-from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
-from src.core.planning.mission_planner_agent import MissionPlannerAgent
+from src.core.planning.planner import Planner
 from src.core.planning.models import PlannerOutcome
 
 
@@ -62,8 +61,7 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
         ),
     )
     fake = FakePackyClient(response)
-    advisor = LLMMissionPlannerAdvisor(client=fake)
-    planner = MissionPlannerAgent(advisor=advisor)
+    planner = Planner(client=fake)
 
     outcome = planner.decide(
         goal="validate objective",
@@ -92,10 +90,8 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
     assert "MCP tool arguments" in prompt_text
     assert "ExecutionAgent" in prompt_text
     assert "min_summary" in prompt_text
-    # Push model (option B): read tools are no longer advertised or callable, so
-    # the prompt must NOT tell the LLM to pull graph detail via kg_query.
-    assert "kg_query" not in prompt_text
-    assert "kg_summary" not in prompt_text
-    assert "ag_summary" not in prompt_text
-    assert "known_assets" not in prompt_text
-    assert "pivot_candidates" not in prompt_text
+    # Agentic loop: the planner may inspect the graph mid-decision via read
+    # tools, so the prompt advertises the tool-call protocol and read budget.
+    assert "tool_call" in prompt_text
+    assert "read_tools" in prompt_text
+    assert "read_budget" in prompt_text

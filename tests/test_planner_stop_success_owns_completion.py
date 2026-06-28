@@ -81,7 +81,7 @@ def test_goal_agent_hint_does_not_complete_until_planner_stop_success(tmp_path) 
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path)
     orchestrator = AppOrchestrator(settings=settings, graph_memory_store=GraphMemoryStore(tmp_path / "graphs"))
     orchestrator.execution_agent = ExecutionAgent(GoalSatisfiedAgent())  # type: ignore[arg-type]
-    orchestrator.mission_planner = SequencedPlanner()  # type: ignore[assignment]
+    orchestrator.planner = SequencedPlanner()  # type: ignore[assignment]
     orchestrator.create_operation("op-goal-stop")
 
     first = orchestrator.run_operation_cycle("op-goal-stop", graph_refs=[], planner_payload={"mission_goal": "prove goal"})
@@ -101,7 +101,7 @@ def test_goal_stage_success_without_explicit_hint_does_not_mark_goal_satisfied(t
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path)
     orchestrator = AppOrchestrator(settings=settings, graph_memory_store=GraphMemoryStore(tmp_path / "graphs"))
     orchestrator.execution_agent = ExecutionAgent(GoalWithoutExplicitSatisfiedHintAgent())  # type: ignore[arg-type]
-    orchestrator.mission_planner = SequencedPlanner()  # type: ignore[assignment]
+    orchestrator.planner = SequencedPlanner()  # type: ignore[assignment]
     orchestrator.create_operation("op-goal-no-hint")
 
     first = orchestrator.run_operation_cycle("op-goal-no-hint", graph_refs=[], planner_payload={"mission_goal": "prove goal"})

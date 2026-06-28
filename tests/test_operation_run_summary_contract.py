@@ -93,7 +93,7 @@ def test_run_endpoint_returns_operation_run_summary_contract(tmp_path: Path) -> 
         pytest.skip(f"FastAPI TestClient unavailable: {_TESTCLIENT_IMPORT_ERROR}")
     settings = _settings(tmp_path)
     orchestrator = AppOrchestrator(settings=settings)
-    orchestrator.mission_planner = StopSuccessPlanner()  # type: ignore[assignment]
+    orchestrator.planner = StopSuccessPlanner()  # type: ignore[assignment]
     client = TestClient(app_api.create_app(orchestrator=orchestrator, settings=settings))
 
     assert client.post("/operations", json={"operation_id": "op-api-contract", "metadata": {}}).status_code == 200

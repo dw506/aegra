@@ -90,7 +90,7 @@ def test_planner_receives_blackbox_policy_and_tool_catalog_without_lab_topology(
     )
     orchestrator = AppOrchestrator(settings=settings)
     planner = CapturingMissionPlanner()
-    orchestrator.mission_planner = planner  # type: ignore[assignment]
+    orchestrator.planner = planner  # type: ignore[assignment]
     orchestrator.mcp_client = StaticMCPClient()  # type: ignore[assignment]
 
     orchestrator.create_operation("op-startup-context")
@@ -122,7 +122,7 @@ def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> N
     )
     orchestrator = AppOrchestrator(settings=settings)
     planner = SequenceMissionPlanner(["replan", "replan", "stop_success"])
-    orchestrator.mission_planner = planner  # type: ignore[assignment]
+    orchestrator.planner = planner  # type: ignore[assignment]
 
     orchestrator.create_operation("op-replan-loop")
     orchestrator.import_targets("op-replan-loop", [TargetHost(address="10.20.0.20")])

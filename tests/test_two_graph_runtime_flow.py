@@ -46,7 +46,7 @@ class FixedReconAgent:
 def test_two_graph_runtime_flow_creates_operation_imports_target_and_publishes_ag_kg_without_tg(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path / "runtime-store")
     orchestrator = AppOrchestrator(settings=settings)
-    orchestrator.mission_planner = FixedPlanner()  # type: ignore[assignment]
+    orchestrator.planner = FixedPlanner()  # type: ignore[assignment]
     orchestrator.execution_agent = ExecutionAgent(FixedReconAgent())  # type: ignore[arg-type]
 
     orchestrator.create_operation("op-flow")

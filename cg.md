@@ -324,10 +324,19 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 
 ### D.4 分子步进度
 - ✅ **3a 读工具**：`PlannerGraphTools` 增 `get_success_progress / query_kg_nodes / get_node / get_attack_steps / list_runtime` + `apply_read_call` 分发 + `read_tool_manifest`；`tool_manifest` 去掉「push 模型」自述、加 `read` 区。单测绿。
-- ⬜ 3b State+节点+薄驱动，接入 `agent.decide`，循环单测。
-- ⬜ 3c prompt 改（删「不能查图」、加循环协议）。
-- ⬜ 3d 全量回归。
-- ⬜ 3e 化石折叠（附录 A）。
+- ✅ **3b 循环**：新增 `planner_loop.py`（`PlannerLoopState` + `decide_node`/`act_node` + 薄驱动 `run_planner_loop`）。循环单测：读工具迭代→决策、budget 耗尽→replan、无 client→replan。
+- ✅ **3c prompt**：删「不能中途查图」，改为「每轮返回 tool_call 或最终 PlannerOutcome」+ read_tools/read_log/read_budget。
+- ✅ **3d 全量回归**：139 passed / 1 skipped。
+- ✅ **3e 化石折叠（提前随改名一起做）**：见 D.6。
 
 ### D.5 范围边界
 不动 executor（Step 4）、不接真工具（Step 5）、不做 ToolFact（Step 2 余项）。`recent_execution_results` 瘦身（C.3）本步并存不删。
+
+### D.6 命名清理（附录 A 化石 + 缩短）
+单发时代的 `advisor` 命名与多余 facade 全部收敛成**一个 `Planner` 类**（agent 本来就含 LLM，无需 `LLM*`/`*Advisor` 前后缀）：
+- 删 `MissionPlannerAdvisor` Protocol + `propose_next_decision` 单发接口（附录 A 化石）。
+- `LLMMissionPlannerAdvisor`(+Config) → `Planner`/`PlannerConfig`，文件 `llm_mission_planner_advisor.py` → `planner.py`。
+- 删 facade `mission_planner_agent.py`：其 `decide`（建 state→跑循环→应用写工具→无 client 兜底）并入 `Planner.decide`。
+- `planner_loop` 的循环角色 Protocol 命名 `PlannerTurn`（`run_turn`），驱动参数 `planner`。
+- orchestrator/测试：`mission_planner` → `planner`。
+- 结果：`Planner.decide`（orchestrator 入口）+ `Planner.run_turn`（每轮，被循环回调），一个类、短名。

@@ -20,8 +20,7 @@ from src.core.evaluation.success_contract_loader import contract_from_dict, load
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import OperationRuntime, RuntimeState, RuntimeStatus, utc_now
 from src.core.models.scope import Asset, Engagement
-from src.core.planning.llm_mission_planner_advisor import LLMMissionPlannerAdvisor
-from src.core.planning.mission_planner_agent import MissionPlannerAgent
+from src.core.planning.planner import Planner
 from src.core.planning.graph_tools import PlannerGraphTools
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.audit_report import build_operation_audit_report
@@ -175,12 +174,7 @@ class AppOrchestrator:
             mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
-        mission_advisor = (
-            LLMMissionPlannerAdvisor(client=stage_llm_client)
-            if stage_llm_client is not None
-            else None
-        )
-        self.mission_planner = MissionPlannerAgent(advisor=mission_advisor)
+        self.planner = Planner(client=stage_llm_client)
 
 #创建 operation 的初始 RuntimeState，状态为 CREATED
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
@@ -1140,7 +1134,7 @@ class AppOrchestrator:
         recent_execution_results: list[dict[str, Any]],
         graph_tools: PlannerGraphTools,
     ) -> PlannerOutcome:
-        return self.mission_planner.decide(
+        return self.planner.decide(
             goal=goal,
             graph_context=graph_context,
             policy_context=policy_context,
@@ -1636,7 +1630,7 @@ class AppOrchestrator:
         return {
             "architecture": "agentic_planner_single_executor_pev",
             "planner_agent": {
-                "implementation": "MissionPlannerAgent",
+                "implementation": "Planner",
                 "kind": "agentic_graph_planner",
                 "core_decision_owner": "llm_with_typed_graph_tools",
             },
