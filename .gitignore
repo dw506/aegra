@@ -35,3 +35,6 @@ lab/environments/*/private/.env
 lab/environments/*/private/*.env
 !lab/environments/*/private/.gitkeep
 !lab/environments/*/private/*.env.example
+
+# Lab run artifacts (generated per run; kept locally for reference, never committed)
+lab/outputs/
