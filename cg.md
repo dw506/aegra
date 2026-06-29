@@ -395,3 +395,32 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - **④ session/route 传输预留（done）**：`_with_transport_context` 在工具调用前从 `request.sessions`/`pivot_routes` 取最近 active 的 `session_id`/`route_id` 盖进 call 参数（不覆盖已有值、不暴露给 LLM、记 `TRANSPORT_CONTEXT` 日志）；真活 shell 仍待 Step 5 消费。
 - **⑤ 对称三件套（deferred）**：可选项，留待 Step 6 LangGraph 准备时做，避免本步引入大重构风险。
 - 测试：新增 `test_no_progress_guard_stops_round_before_max_steps` / `test_capability_absent_from_executor_decision_context` / `test_active_session_transport_is_stamped_onto_tool_call`；全量 142 passed, 1 skipped。
+
+---
+
+## 附录 F：Step 5 设计 —— 纯真工具（去罐头）+ 数据结构收敛
+
+> 分支 `refactor/step5-real-tools`。决策（与 user 定）：**不做"真/罐头并存 + toolset 切换"，直接收敛到单一真工具集**。本附录是动手前定调 + 分阶段落地记录。
+
+### F.1 当前工具盘点（2026-06-29 快照，`mcp_lab/tools.py`）
+- **已是真工具（留，零改）**：`run_command`/`nmap_scan`/`http_probe`/`web_fingerprint`/`web_discover`/`dns_lookup`/`tls_probe`/`tcp_connect_probe`/`http_basic_auth_check`/`nuclei_scan`/`whatweb_fingerprint`/`ffuf_discover`（真二进制/真发包/真 socket）。
+- **罐头/模拟（待删，F3）**：`lab_authorized_exploit_execute`（profile-YAML 假利用）、`vuln_profile_match`（关键字判断，归 agent LLM）、`safe_vuln_validate`/`validation_precheck`（安全验证姿态，v3 已反转）、`session_open_lab`/`session_probe`（回显假 session）、`credential_check`（假凭证）、`identity_context_probe`/`privilege_context_probe`、`pivoted_nmap_scan`/`internal_service_discover`/`controlled_data_read_proof`（bespoke SSH 罐头）、`pivot_route_probe`/`pivot_route_register`、`post_access_observe`/`read_lab_marker`。
+- **oracle/eval（留 lab 侧）**：`goal_check`/`internal_goal_check`/`chain_goal_check`/`success_condition_check`/`artifact_store`。
+
+### F.2 关键事实：成功合约读图、不读工具名
+`success_contract.yml` 用图谓词（`exists_node`/`service_discovered_via_route`）绑定 KG 节点类型，**不绑工具名**。故"换工具"只要真工具经 `ToolTraceFactExtractor` 产出相同 KG 节点类型（Service/ExploitCapability/Session/PivotRoute/Goal proof），合约层零改动——这让去罐头的牵连面可控。
+
+### F.3 顺序铁律（C.2 警告）
+通道② 是 runtime session/credential/pivot **当前唯一写入路径**。必须**先**让真工具经通道①（`tool_trace→ToolTraceFactExtractor→KG`）产出这些事实，**再**删通道② + 罐头，否则断 runtime 写入。**删除是收尾，不是开场。**
+
+### F.4 分阶段
+- **F1（done，本分支）**：真传输原语先行（不删任何东西，符合铁律）。
+  - 新增 `pivot_exec(route_id, argv)`：包既有真 SSH egress `_run_via_configured_pivot`，跑任意 argv 穿 pivot；成功即因果证明 route 活 → 事实抽取器映射 `pivot_exec→_extract_pivot_route` 记 active PivotRoute。消费 Step 4 ④ 预留的 `route_id`。
+  - 删死配置 `AEGRA_MCP_TOOLSET`（config + orchestrator 注释，已核实全代码无人读）——toolset 切换层取消（单一真工具集）。
+  - 测试：`test_pivot_exec_runs_argv_through_configured_route` / `test_pivot_exec_accepts_shell_string_argv`；全量 144 passed, 1 skipped。
+- **F2（todo，需 live 环境）**：接真引擎——`metasploit_exec`(msfrpcd→Meterpreter)/`sqlmap_scan`/`hydra_bruteforce`/`netexec_run` + `session_exec(session_id, argv)`。改 `ToolTraceFactExtractor` 解析真输出（msf session 元数据/sqlmap loot/hydra creds），抽取器 `parsed` 形态契约不变。**需 msfrpcd/二进制/靶机，不能离线盲写。**
+- **F3（todo，F2 之后）**：删通道② + 罐头。`ExecutionResult` 删 `observations/evidence/findings/discovered_entities/discovered_relations/capabilities_gained/credentials/sessions/pivot_routes/failed_hypotheses` + 装饰字段 `confidence/risk_level/created_at/retry_recommendation/policy_notes`；`ResultApplier` 删通道② 写图/写 runtime 分支；删罐头工具 + `configs/{exploit,vuln}_profiles/*`；`execution_agent._normalize_tool_call_arguments` 删罐头工具名特例；修 B.1 命名 bug（`restricted_data_service_discovered`↔`restricted_zone_service_discovered`）。`ExecutionResult` 瘦成薄信封 `execution_id/status/summary/tool_trace`(+capability AG 标签)。
+- **F4（todo）**：补全 ToolFact 通用词汇（真工具新事实种类）；多主机成功合约形态（objective-over-子图/变量绑定/因果路径判定，依赖 F2 的真因果边）。
+
+### F.5 权衡：罐头兼作离线测试 fixture
+罐头让套件无需真 msf/docker 离线确定性跑通。去罐头后：executor 层测试不受影响（`RecordingMCP`/`FakeStageLLM` mock）；`test_mcp_lab.py` 直测罐头实现的用例 F3 要重写；建议保留**最小 mock MCP server**（只回固定字节，无 profile 判断逻辑）供 CI，而非保留罐头业务逻辑。2 个 deferred option-C exploit-execute 红测随 F3 删罐头自然消失。

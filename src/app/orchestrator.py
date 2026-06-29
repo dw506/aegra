@@ -1351,9 +1351,9 @@ class AppOrchestrator:
     def _lab_activation_metadata(lab_profile: dict[str, Any]) -> dict[str, Any]:
         """Describe lab activation using main-process visible profile state.
 
-        Do not depend on AEGRA_MCP_TOOLSET here. That variable may only exist in
-        the MCP server subprocess environment, while the orchestrator always has
-        access to the loaded public lab profile.
+        Derives activation from the loaded public lab profile, which the
+        orchestrator always has access to (the MCP toolset is no longer
+        switchable — there is a single real toolset).
         """
 
         profile_id = str(lab_profile.get("profile_id") or "")

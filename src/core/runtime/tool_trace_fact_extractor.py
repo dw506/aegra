@@ -637,6 +637,9 @@ _TOOL_EXTRACTORS: dict[str, Any] = {
     "session_probe": _extract_session,
     "pivot_route_probe": _extract_pivot_route,
     "pivot_route_register": _extract_pivot_route,
+    # Step 5 generic transport primitive: a successful pivot_exec is causal proof
+    # the route is live, so record it as an active PivotRoute.
+    "pivot_exec": _extract_pivot_route,
     "pivoted_nmap_scan": _extract_internal_discovery,
     "internal_service_discover": _extract_internal_discovery,
     "goal_check": _extract_goal_check,

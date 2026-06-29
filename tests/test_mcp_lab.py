@@ -47,6 +47,7 @@ def test_lab_tool_specs_include_v1_tools() -> None:
         "pivoted_nmap_scan",
         "chain_goal_check",
         "controlled_data_read_proof",
+        "pivot_exec",
     }
 
 
@@ -674,6 +675,47 @@ def test_optional_external_tool_returns_structured_unavailable(monkeypatch) -> N
     assert payload["success"] is False
     assert payload["exit_code"] == "tool_unavailable"
     assert payload["parsed"]["runtime_hints"]["missing_binary"] == "nuclei"
+
+
+def test_pivot_exec_runs_argv_through_configured_route(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    captured: dict[str, Any] = {}
+
+    def fake_pivot(*, route_id, argv, timeout, env=None, username=None, password=None):
+        captured["route_id"] = route_id
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="uid=0(root)\n", stderr="")
+
+    monkeypatch.setattr(mcp_tools, "_run_via_configured_pivot", fake_pivot)
+
+    payload = call_lab_tool(
+        "pivot_exec",
+        {"route_id": "route-9", "argv": ["id"], "timeout_seconds": 5},
+    )
+
+    assert payload["success"] is True
+    assert payload["stdout"] == "uid=0(root)\n"
+    assert captured == {"route_id": "route-9", "argv": ["id"]}
+    # parsed.route_id lets the fact extractor record this as an active PivotRoute.
+    assert payload["parsed"]["route_id"] == "route-9"
+    assert payload["parsed"]["runtime_hints"]["pivot_exec"] is True
+
+
+def test_pivot_exec_accepts_shell_string_argv(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    captured: dict[str, Any] = {}
+
+    def fake_pivot(*, route_id, argv, timeout, env=None, username=None, password=None):
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(mcp_tools, "_run_via_configured_pivot", fake_pivot)
+
+    payload = call_lab_tool("pivot_exec", {"route_id": "r1", "argv": "cat /etc/passwd"})
+
+    assert captured["argv"] == ["cat", "/etc/passwd"]
+    assert payload["success"] is False
+    assert payload["exit_code"] == "pivot_exec_failed"
 
 
 def _tool_names(catalog: dict[str, Any]) -> set[str]:

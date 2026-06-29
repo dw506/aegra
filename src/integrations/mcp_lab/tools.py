@@ -382,6 +382,28 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "pivot_exec",
+        "description": (
+            "Run an arbitrary argv through a configured pivot route and return the raw command output "
+            "(Step 5 generic transport primitive — the freeform replacement for the bespoke pivoted_* "
+            "tools). Supply route_id (an established PivotRoute) plus argv (list or shell string); "
+            "pivot_username/pivot_password authenticate the hop, e.g. SSH credentials recovered from a "
+            "compromised host. A successful call confirms the route is active."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["route_id", "argv"],
+            "properties": {
+                "route_id": {"type": "string"},
+                "argv": {"type": ["array", "string"], "items": {"type": "string"}},
+                "pivot_username": {"type": "string"},
+                "pivot_password": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
         "name": "chain_goal_check",
         "description": "Alias for bounded goal condition checks used at the end of an attack-chain validation.",
         "inputSchema": {
@@ -682,6 +704,8 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _ensure_raw_output_ref(arguments=arguments, payload=_pivoted_nmap_scan(arguments))
         if name == "controlled_data_read_proof":
             return _ensure_raw_output_ref(arguments=arguments, payload=_controlled_data_read_proof(arguments))
+        if name == "pivot_exec":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_exec(arguments))
         if name == "chain_goal_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_goal_check(arguments))
         if name == "goal_check":
@@ -1563,6 +1587,56 @@ def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
     parsed["writeback_hints"] = {"observation_category": "controlled_data_read_proof"}
     summary = f"read {row_count} row(s) from {host}:{port} via {route_id}; sha256={digest[:12]}"
     return _payload(success=success, stdout=summary, stderr=_string(result.get("stderr")) or "", exit_code=0 if success else "read_failed", parsed=parsed)
+
+
+def _pivot_exec(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Generic pivot egress: run an arbitrary argv through a configured route.
+
+    The freeform Step 5 transport primitive that the bespoke pivoted_* tools
+    collapse into. A successful run is causal proof the route is live, so the
+    fact extractor records the route as an active PivotRoute (see
+    ``_extract_pivot_route`` wired to ``pivot_exec``).
+    """
+
+    route_id = _required(arguments, "route_id")
+    raw_argv = arguments.get("argv")
+    if isinstance(raw_argv, str):
+        argv = shlex.split(raw_argv)
+    else:
+        argv = _string_items(raw_argv)
+    if not argv:
+        raise ValueError("argv is required")
+    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS)
+    completed = _run_via_configured_pivot(
+        route_id=route_id,
+        argv=argv,
+        timeout=timeout,
+        username=_string(arguments.get("pivot_username")),
+        password=_string(arguments.get("pivot_password")),
+    )
+    stdout = completed.stdout or ""
+    success = completed.returncode == 0
+    parsed = _default_parsed()
+    # route_id in parsed lets _extract_pivot_route record the confirmed route.
+    parsed["route_id"] = route_id
+    parsed["runtime_hints"] = {"via_pivot_route": route_id, "pivot_exec": success}
+    parsed["evidence"].append(
+        {
+            "evidence_id": f"pivot-exec::{route_id}::{_safe_artifact_name(' '.join(argv))}",
+            "kind": "pivot_exec",
+            "via_pivot_route": route_id,
+            "argv": argv,
+            "exit_code": completed.returncode,
+        }
+    )
+    parsed["writeback_hints"] = {"observation_category": "pivot_exec"}
+    return _payload(
+        success=success,
+        stdout=stdout,
+        stderr=completed.stderr or "",
+        exit_code=0 if success else "pivot_exec_failed",
+        parsed=parsed,
+    )
 
 
 def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
