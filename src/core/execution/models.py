@@ -135,19 +135,20 @@ class ExecutionResult(BaseModel):
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
     summary: str = Field(min_length=1)
 
+    # KG channel-② self-report (still load-bearing for KG until every fact type
+    # has a real-tool extractor — removal is Step 5 F3, gated on the C.2 ordering
+    # rule). observations/findings/discovered_* feed KG nodes/relations.
     observations: list[dict[str, Any]] = Field(default_factory=list)
-    evidence: list[dict[str, Any]] = Field(default_factory=list)
     findings: list[dict[str, Any]] = Field(default_factory=list)
-
     discovered_entities: list[dict[str, Any]] = Field(default_factory=list)
     discovered_relations: list[dict[str, Any]] = Field(default_factory=list)
 
-    capabilities_gained: list[dict[str, Any]] = Field(default_factory=list)
-    credentials: list[dict[str, Any]] = Field(default_factory=list)
-    sessions: list[dict[str, Any]] = Field(default_factory=list)
-    pivot_routes: list[dict[str, Any]] = Field(default_factory=list)
-
-    failed_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    # Runtime facts (sessions/pivot_routes/credentials) and the
+    # capabilities_gained/failed_hypotheses/evidence display lists were channel-②
+    # LLM self-report. They are GONE: runtime sessions/routes/credentials now
+    # derive solely from tool_trace via PhaseTwoResultApplier._harvest_runtime_facts
+    # (channel ①, tool = authority). evidence_refs (tool-derived, load-bearing for
+    # success/oracle/AG) stays.
     evidence_refs: list[str] = Field(default_factory=list)
     tool_trace: list[ToolTrace] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)

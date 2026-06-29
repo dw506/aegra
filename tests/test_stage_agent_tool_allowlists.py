@@ -141,7 +141,6 @@ def test_max_steps_partial_preserves_successful_tool_evidence_and_parsed_output(
 
     assert result.status == "partial"
     assert result.runtime_hints["max_steps_exhausted"] is True
-    assert len(result.evidence) == 1
     assert result.evidence_refs == ["var/runtime/op-tools/tool-outputs/fp.json"]
     assert result.tool_trace[0].raw_output_ref == "var/runtime/op-tools/tool-outputs/fp.json"
     assert result.tool_trace[0].parsed_output["entities"][0]["title"] == "OWASP Juice Shop"
@@ -178,6 +177,5 @@ def test_need_replan_preserves_successful_tool_evidence_and_parsed_output() -> N
 
     # When LLM emits need_replan but at least one tool succeeded, status is 'partial'
     assert result.status == "partial"
-    assert len(result.evidence) == 1
     assert result.evidence_refs == ["var/runtime/op-tools/tool-outputs/fp.json"]
     assert result.tool_trace[0].parsed_output["entities"][0]["title"] == "OWASP Juice Shop"

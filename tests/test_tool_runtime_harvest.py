@@ -100,8 +100,23 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
     assert route.status == PivotRouteStatus.ACTIVE  # auto-activated because reachable
 
 
-def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
-    """If the LLM already supplied the route, the harvest does not duplicate it."""
+def test_harvest_dedupes_repeated_route_traces() -> None:
+    """Two tool traces reporting the same route_id materialize a single route
+    (the channel-② LLM self-report field is gone; harvest is the only source)."""
+
+    def _register_trace() -> ToolTrace:
+        return ToolTrace(
+            tool_name="pivot_route_register",
+            success=True,
+            parsed_output={
+                "runtime_hints": {
+                    "register_pivot_route": True,
+                    "route_id": "route-x",
+                    "destination_host": "10.30.0.12",
+                    "reachable": True,
+                }
+            },
+        )
 
     stage = ExecutionResult(
         operation_id="op-harvest",
@@ -110,17 +125,36 @@ def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="pivot",
-        pivot_routes=[{"route_id": "route-x", "destination_host": "10.30.0.12", "active": True}],
+        tool_trace=[_register_trace(), _register_trace()],
+    )
+
+    state = _state()
+    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+    assert list(state.pivot_routes.keys()) == ["route-x"]
+
+
+def test_harvest_lifts_credential_from_tool_trace() -> None:
+    """A validated credential reported as parsed.runtime_hints (no channel-②
+    ExecutionResult.credentials field anymore) registers a runtime credential."""
+
+    stage = ExecutionResult(
+        operation_id="op-harvest",
+        execution_id="stage-op-harvest-1-recon_agent",
+        capability="exploit",
+        agent_name="recon_agent",
+        status="succeeded",
+        summary="credential validated",
         tool_trace=[
             ToolTrace(
-                tool_name="pivot_route_register",
+                tool_name="credential_check",
                 success=True,
                 parsed_output={
                     "runtime_hints": {
-                        "register_pivot_route": True,
-                        "route_id": "route-x",
-                        "destination_host": "10.30.0.12",
-                        "reachable": True,
+                        "credential_id": "cred-1",
+                        "credential_status": "valid",
+                        "principal": "admin",
+                        "bind_target": "http://10.20.0.10/",
+                        "target_service_id": "http://10.20.0.10/",
                     }
                 },
             )
@@ -129,7 +163,8 @@ def test_harvest_is_idempotent_with_llm_supplied_routes() -> None:
 
     state = _state()
     PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
-    assert list(state.pivot_routes.keys()) == ["route-x"]
+
+    assert "cred-1" in state.credentials
 
 
 def test_harvest_maps_zone_ref_hint_to_route_destination_zone() -> None:

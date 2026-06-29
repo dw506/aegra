@@ -1173,9 +1173,8 @@ class AppOrchestrator:
     #raw-fact lists already written to the KG (surfaced to the planner via
     #min_summary); the planner never re-reads them, so collapse to counts.
     _COMPACTED_RESULT_LISTS = frozenset({
-        "observations", "evidence", "findings", "discovered_entities",
-        "discovered_relations", "capabilities_gained", "credentials", "sessions",
-        "pivot_routes",
+        "observations", "findings", "discovered_entities",
+        "discovered_relations",
         "evidence_refs", "tool_trace",
     })
 

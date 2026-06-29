@@ -57,10 +57,10 @@ class PhaseTwoResultApplier:
         if execution_result.operation_id != state.operation_id:
             raise ValueError("execution_result.operation_id must match RuntimeState.operation_id")
        
-        self._harvest_runtime_facts(execution_result)
+        harvested = self._harvest_runtime_facts(execution_result)
         result = PhaseTwoApplyResult()
-        result.runtime_event_refs.extend(self._apply_runtime(execution_result, state))
-        self._record_runtime_metadata(execution_result, state)
+        result.runtime_event_refs.extend(self._apply_runtime(execution_result, state, harvested))
+        self._record_runtime_metadata(execution_result, state, harvested)
         deltas = self._fact_deltas(execution_result)
         result.kg_state_deltas = self._ordered(deltas)
         if deltas:
@@ -73,15 +73,15 @@ class PhaseTwoResultApplier:
         self._audit(execution_result, state)
         return result
 
-    def _apply_runtime(self, stage: ExecutionResult, state: RuntimeState) -> list[RuntimeEventRef]:
+    def _apply_runtime(self, stage: ExecutionResult, state: RuntimeState, harvested: dict[str, list[dict[str, Any]]]) -> list[RuntimeEventRef]:
         refs: list[RuntimeEventRef] = []
-        for item in stage.sessions:
+        for item in harvested["sessions"]:
             if not isinstance(item, dict): continue
             session_id = self._string(item.get("session_id")) or f"session::{stage.execution_id}"
             session = self._sessions.open_session(state, session_id, self._string(item.get("bound_identity") or item.get("identity")), self._string(item.get("bound_target") or item.get("target_id") or item.get("host_id")), lease_seconds=int(item.get("lease_seconds") or 300), reusability=str(item.get("reuse_policy") or "shared"))
             self._sessions.bind_task_to_session(state, stage.execution_id, session_id)
             refs.append(self._push(state, SessionOpenedEvent(operation_id=state.operation_id, session_id=session.session_id, bound_identity=session.bound_identity, bound_target=session.bound_target, lease_expiry=session.lease_expiry, reusability=session.reusability)))
-        for item in stage.pivot_routes:
+        for item in harvested["pivot_routes"]:
             if not isinstance(item, dict): continue
             destination = self._string(item.get("destination_host") or item.get("target_host"))
             if not destination: continue
@@ -93,13 +93,12 @@ class PhaseTwoResultApplier:
             refs.append(self._push(state, ReplanRequestedEvent(operation_id=state.operation_id, request_id=request.request_id, reason=request.reason, task_ids=request.task_ids, scope=request.scope)))
         return refs
 
-    def _record_runtime_metadata(self, stage: ExecutionResult, state: RuntimeState) -> None:
+    def _record_runtime_metadata(self, stage: ExecutionResult, state: RuntimeState, harvested: dict[str, list[dict[str, Any]]]) -> None:
         hints = stage.runtime_hints
         if "goal_satisfied" in hints:
             state.execution.metadata["goal_state"] = {"goal_satisfied": bool(hints["goal_satisfied"]), "goal_summary": hints.get("goal_summary", stage.summary), "goal_evidence_refs": list(hints.get("goal_evidence_refs") or []), "source_task_id": stage.execution_id}
-        for name, values in (("capabilities", stage.capabilities_gained), ("failed_hypotheses", stage.failed_hypotheses), ("findings", stage.findings), ("evidence_artifacts", stage.evidence)):
-            if values: state.execution.metadata.setdefault(name, []).extend(dict(v) for v in values if isinstance(v, dict))
-        for item in stage.credentials:
+        if stage.findings: state.execution.metadata.setdefault("findings", []).extend(dict(v) for v in stage.findings if isinstance(v, dict))
+        for item in harvested["credentials"]:
             if not isinstance(item, dict): continue
             credential_id = self._string(item.get("credential_id") or item.get("id"))
             if not credential_id: continue
@@ -109,18 +108,43 @@ class PhaseTwoResultApplier:
             if status: self._credentials.record_validation(state, credential_id, status=status, target_id=self._string(item.get("target_id")), metadata={"source_task_id": stage.execution_id})
         state.record_outcome(OutcomeCacheEntry(outcome_id=stage.result_id, task_id=stage.execution_id, outcome_type=stage.capability, summary=stage.summary, payload_ref=f"runtime://execution-results/{stage.execution_id}", metadata={"status": stage.status, "agent": stage.agent_name}))
 
-    def _harvest_runtime_facts(self, stage: ExecutionResult) -> None:
-        seen_sessions = {str(x.get("session_id")) for x in stage.sessions if isinstance(x, dict)}
-        seen_routes = {str(x.get("route_id")) for x in stage.pivot_routes if isinstance(x, dict)}
+    def _harvest_runtime_facts(self, stage: ExecutionResult) -> dict[str, list[dict[str, Any]]]:
+        """Derive runtime facts (sessions / pivot routes / credentials) SOLELY from
+        successful tool traces — channel ①, the tool is the authority.
+
+        The former channel-② self-report fields (ExecutionResult.sessions/
+        pivot_routes/credentials) are gone; this single deterministic bridge is now
+        the only path that materializes runtime objects. Tools emit the facts as
+        ``parsed_output.runtime_hints`` (session_open/register_pivot_route/
+        credential_id), so canned and real tools both feed it identically."""
+
+        sessions: list[dict[str, Any]] = []
+        routes: list[dict[str, Any]] = []
+        credentials: list[dict[str, Any]] = []
+        seen_sessions: set[str] = set()
+        seen_routes: set[str] = set()
+        seen_creds: set[str] = set()
         for trace in stage.tool_trace:
             hints = trace.parsed_output.get("runtime_hints") if trace.success else None
             if not isinstance(hints, dict) or hints.get("blocked_by"): continue
             session_id = self._string(hints.get("session_id"))
             if session_id and session_id not in seen_sessions:
-                stage.sessions.append({k: hints[k] for k in ("session_id", "bound_identity", "bound_target", "lease_seconds", "reuse_policy") if k in hints}); seen_sessions.add(session_id)
+                sessions.append({k: hints[k] for k in ("session_id", "bound_identity", "bound_target", "lease_seconds", "reuse_policy") if k in hints}); seen_sessions.add(session_id)
             route_id = self._string(hints.get("route_id"))
             if hints.get("register_pivot_route") and route_id and route_id not in seen_routes:
-                stage.pivot_routes.append(dict(hints)); seen_routes.add(route_id)
+                routes.append(dict(hints)); seen_routes.add(route_id)
+            credential_id = self._string(hints.get("credential_id"))
+            if credential_id and credential_id not in seen_creds:
+                credentials.append({
+                    "credential_id": credential_id,
+                    "principal": hints.get("principal"),
+                    "kind": hints.get("kind") or "password",
+                    "secret_ref": hints.get("secret_ref"),
+                    "status": hints.get("credential_status") or hints.get("status"),
+                    "target_id": hints.get("bind_target") or hints.get("target_service_id"),
+                })
+                seen_creds.add(credential_id)
+        return {"sessions": sessions, "pivot_routes": routes, "credentials": credentials}
 
     def _fact_deltas(self, stage: ExecutionResult) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = [dict(x) for x in stage.discovered_entities if isinstance(x, dict)]

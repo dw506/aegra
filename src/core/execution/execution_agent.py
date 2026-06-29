@@ -316,7 +316,6 @@ class _ExecutionLoop:
             status="partial",
             summary=f"{self.agent_name} reached max_steps for {self._request_id(request)}",
             observations=observations,
-            evidence=evidence,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             runtime_hints={"cycle_index": request.cycle_index, "max_steps_exhausted": True},
@@ -659,15 +658,9 @@ class _ExecutionLoop:
             status=status,  # type: ignore[arg-type]
             summary=str(payload.get("summary") or f"{self.agent_name} finished"),
             observations=observations,
-            evidence=self._normalized_evidence(payload),
             findings=findings,
             discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
             discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
-            capabilities_gained=list(payload.get("capabilities_gained") or []),
-            credentials=list(payload.get("credentials") or []),
-            sessions=list(payload.get("sessions") or []),
-            pivot_routes=list(payload.get("pivot_routes") or []),
-            failed_hypotheses=list(payload.get("failed_hypotheses") or []),
             evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
             tool_trace=list(tool_traces),
             confidence=float(payload.get("confidence") or 0.5),
@@ -828,34 +821,6 @@ class _ExecutionLoop:
             "need_replan": "needs_replan",
         }.get(status, status)
 
-    @classmethod
-    def _normalized_evidence(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        evidence = cls._normalized_dict_list(payload.get("evidence"), default_kind="stage_evidence")
-        if evidence:
-            return evidence
-        refs = payload.get("evidence_refs")
-        normalized: list[dict[str, Any]] = []
-        for index, item in enumerate(refs if isinstance(refs, list) else []):
-            if isinstance(item, dict):
-                normalized.append(
-                    {
-                        "evidence_id": str(item.get("evidence_id") or item.get("id") or f"stage-evidence-{index}"),
-                        "kind": str(item.get("kind") or "stage_evidence"),
-                        "summary": str(item.get("summary") or item.get("description") or item),
-                        "payload_ref": str(item.get("payload_ref") or item.get("raw_output_ref") or item.get("evidence_id") or ""),
-                    }
-                )
-            elif item:
-                normalized.append(
-                    {
-                        "evidence_id": f"stage-evidence-{index}",
-                        "kind": "stage_evidence_ref",
-                        "summary": str(item),
-                        "payload_ref": str(item),
-                    }
-                )
-        return normalized
-
     @staticmethod
     def _normalized_dict_list(value: Any, *, default_kind: str) -> list[dict[str, Any]]:
         if value is None:
@@ -933,7 +898,6 @@ class _ExecutionLoop:
                 status="partial",
                 summary=f"{self.agent_name}: tools succeeded, LLM postprocess failed - {summary}",
                 observations=observations,
-                evidence=evidence,
                 evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
                 tool_trace=list(tool_traces),
                 runtime_hints={
@@ -953,7 +917,6 @@ class _ExecutionLoop:
             status="needs_replan",
             summary=summary,
             observations=observations,
-            evidence=evidence,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             replan_recommendation=str((decision or {}).get("replan_reason") or summary),
@@ -992,7 +955,7 @@ class _ExecutionLoop:
                 "status": result.status,
                 "summary": result.summary,
                 "findings_count": len(result.findings),
-                "evidence_count": len(result.evidence),
+                "evidence_count": len(result.evidence_refs),
                 "replan_recommendation": result.replan_recommendation,
             },
         )
