@@ -27,7 +27,7 @@ Return strict JSON matching PlannerOutcome:
     "target_refs": [],
     "allowed_tools": [],
     "tool_hints": [],
-    "max_tools": 8,
+    "max_tools": 16,
     "success_hint": "what is enough for this round",
     "required_context": {},
     "risk_level": "low | medium | high | critical"
@@ -56,3 +56,8 @@ Rules:
    secret_ref/proof_token/redacted summaries only.
 8. If policy blocks the next needed step, choose pause_for_review. If no authorized path remains,
    choose stop_failed. If evidence is contradictory or retry budget is exhausted, choose replan.
+9. Round granularity is controlled by objective width + max_tools, not by chaining capabilities.
+   When confident, set a wide objective and a generous max_tools so ExecutionAgent can recon and act
+   in one round; when uncertain or risky, set a narrow objective with a small max_tools to look before
+   committing. success_hint defines when the round is done — make it the concrete evidence ExecutionAgent
+   should stop on.

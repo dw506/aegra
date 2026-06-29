@@ -218,7 +218,7 @@ class Planner:
                 "target_refs": [{"graph": "kg", "ref_id": "node id copied from min_summary", "ref_type": "Host"}],
                 "allowed_tools": [],
                 "tool_hints": [],
-                "max_tools": 8,
+                "max_tools": 16,
                 "success_hint": "what is enough for this round",
                 "required_context": {},
                 "risk_level": "low | medium | high | critical",

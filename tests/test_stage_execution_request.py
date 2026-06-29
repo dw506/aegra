@@ -418,3 +418,94 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
 
     assert mcp.calls == []
     assert result.tool_trace[0].exit_code == "tool_server_unavailable"
+
+
+class FailingMCP:
+    """MCP stub whose every call reports failure (drives the no-progress guard)."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def call_tool(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        return {"success": False, "stdout": "", "stderr": "boom", "exit_code": 1, "metadata": {}}
+
+
+def test_no_progress_guard_stops_round_before_max_steps() -> None:
+    # LLM keeps calling tools; every call fails, so the guard must bail out after
+    # NO_PROGRESS_LIMIT unproductive calls rather than burning all max_steps.
+    call_decision = {
+        "action": "call_mcp_tool",
+        "server_id": "pentest-tools",
+        "tool_name": "nmap_scan",
+        "arguments": {"target": "10.0.0.5"},
+    }
+    llm = FakeStageLLM([dict(call_decision) for _ in range(10)])
+    mcp = FailingMCP()
+    request = ExecutionRequest(
+        operation_id="op-no-progress",
+        cycle_index=1,
+        agent_name="recon_agent",
+        capability="recon",
+        objective="Probe service",
+        max_steps=10,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
+    )
+
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
+
+    assert result.status == "needs_replan"
+    # Stopped at the guard (3 calls), well short of max_steps=10.
+    assert len(mcp.calls) == 3
+    assert "no progress" in result.summary
+
+
+def test_capability_absent_from_executor_decision_context() -> None:
+    request = ExecutionRequest(
+        operation_id="op-cap",
+        cycle_index=1,
+        agent_name="recon_agent",
+        capability="exploit",
+        objective="Collect service evidence",
+        success_criteria=["service evidence recorded"],
+        max_steps=1,
+    )
+    agent = ExecutionAgent(llm_client=FakeStageLLM([]))
+    messages = agent._agent._build_messages(request, [])
+    context = json.loads(messages[1]["content"])
+
+    assert "capability" not in context
+    assert context["planner_objective"] == "Collect service evidence"
+    assert context["success_criteria"] == ["service evidence recorded"]
+
+
+def test_active_session_transport_is_stamped_onto_tool_call() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "server_id": "pentest-tools",
+                "tool_name": "nmap_scan",
+                "arguments": {"target": "10.0.0.5"},
+            },
+            {"action": "finish", "status": "succeeded", "summary": "scan completed"},
+        ]
+    )
+    mcp = RecordingMCP()
+    request = ExecutionRequest(
+        operation_id="op-transport",
+        cycle_index=1,
+        agent_name="recon_agent",
+        capability="recon",
+        objective="Operate through the active foothold",
+        max_steps=2,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
+        sessions=[{"session_id": "sess-1", "status": "active"}],
+        pivot_routes=[{"route_id": "route-9", "status": "active"}],
+    )
+
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
+
+    assert result.status == "succeeded"
+    assert mcp.calls[0]["arguments"]["session_id"] == "sess-1"
+    assert mcp.calls[0]["arguments"]["route_id"] == "route-9"

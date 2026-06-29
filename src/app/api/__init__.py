@@ -88,7 +88,7 @@ class OperationCycleRequest(BaseModel):
 class OperationRunRequest(OperationCycleRequest):
     """Request payload for bounded multi-cycle operation execution."""
 
-    max_cycles: int = Field(default=5, ge=1, le=50)
+    max_cycles: int = Field(default=12, ge=1, le=50)
     stop_when_quiescent: bool = True
     max_replans: int = Field(default=3, ge=0, le=20)
     consecutive_llm_rejections: int = Field(default=3, ge=1, le=20)

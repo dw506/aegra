@@ -97,8 +97,10 @@ class ExecutionAgent:
             objective=directive.objective,
             target_refs=list(directive.target_refs),
             required_context={
+                # capability is intentionally NOT propagated into the request's
+                # decision context (Step 4 / cg.md E.4): it must stay an AG label,
+                # not steer the executor. It is stamped onto the result separately.
                 **dict(directive.required_context),
-                "round_capability": directive.capability,
                 "tool_hints": list(directive.tool_hints),
             },
             success_criteria=[directive.success_hint] if directive.success_hint else [],
@@ -146,6 +148,9 @@ class _ExecutionLoop:
     agent_name: str = "execution_agent"
     role_prompt: str = ""
     context_builder_name: str = "execution_agent_context"
+    # Consecutive unproductive (failed or duplicate) tool calls tolerated before
+    # the no-progress guard stops the round early (Step 4 / cg.md E.3).
+    NO_PROGRESS_LIMIT: int = 3
 
     def __init__(
         self,
@@ -195,6 +200,8 @@ class _ExecutionLoop:
 
         memory: list[dict[str, Any]] = []
         tool_traces: list[ToolTrace] = []
+        seen_signatures: set[str] = set()
+        unproductive_streak = 0
         messages = self._build_messages(request, memory)
         for step in range(1, request.max_steps + 1):
             try:
@@ -231,6 +238,36 @@ class _ExecutionLoop:
                 trace = self._call_mcp_tool(step=step, request=request, decision=decision, logger=logger)
                 tool_traces.append(trace)
                 memory.append({"decision": decision, "tool_trace": trace.model_dump(mode="json")})
+                # No-progress guard: a step is "productive" only if the tool
+                # succeeded AND its (tool, arguments) signature is new. A run of
+                # failing/duplicate calls means the executor is stuck — bail out
+                # instead of burning the rest of max_steps (Step 4 / cg.md E.3).
+                signature = self._tool_call_signature(trace)
+                if trace.success and signature not in seen_signatures:
+                    unproductive_streak = 0
+                else:
+                    unproductive_streak += 1
+                seen_signatures.add(signature)
+                if unproductive_streak >= self.NO_PROGRESS_LIMIT:
+                    logger.write_block(
+                        "NO_PROGRESS_GUARD",
+                        "no-progress guard tripped",
+                        {
+                            "step_index": step,
+                            "unproductive_streak": unproductive_streak,
+                            "tool_count": len(tool_traces),
+                        },
+                    )
+                    result = self._replan_result(
+                        request,
+                        f"no progress after {unproductive_streak} unproductive tool call(s) "
+                        f"(repeated or failing); stopping before max_steps",
+                        memory,
+                        tool_traces,
+                        decision=decision,
+                    )
+                    self._log_execution_finish(logger, request, result)
+                    return result
                 messages = self._build_messages(request, memory)
                 continue
 
@@ -331,6 +368,7 @@ class _ExecutionLoop:
         )
         call = self._normalize_tool_call_arguments(call=call, request=request)
         call = self._with_trace_arguments(call=call, request=request, step=step)
+        call = self._with_transport_context(call=call, request=request, logger=logger, step=step)
         server_metadata = self._lookup_server(request.mcp_tool_catalog, server_id=call.server_id)
         tool_metadata = self._lookup_tool(request.mcp_tool_catalog, server_id=call.server_id, tool_name=call.tool_name)
         logger.write_block(
@@ -478,8 +516,15 @@ class _ExecutionLoop:
         system_prompt = (
             "You are Aegra's bounded ExecutionAgent for an authorized assessment. "
             "Return strict JSON only. Allowed actions are call_mcp_tool, finish, need_replan. "
+            "Reason from planner_objective and success_criteria ONLY; there is no phase/capability "
+            "label to follow — pick whatever tools the objective needs. "
+            "success_criteria is your stop condition: the moment the gathered tool evidence satisfies it, "
+            "emit finish immediately (do not keep calling tools past the objective just because budget "
+            "remains). If you cannot make progress toward it — tools keep failing, the needed input is "
+            "missing, or you are repeating calls without new evidence — emit need_replan rather than "
+            "burning the remaining budget. "
             "Call only tools present in mcp_tool_catalog (every tool listed there is in-scope and callable). "
-            "Prefer the tools in recommended_tool_names for this round's capability, but you MAY call any "
+            "Prefer the tools in recommended_tool_names for this round, but you MAY call any "
             "other catalog tool when it advances the objective — the authorization boundary is scope policy, "
             "not the tool menu. Prefer argv for run_command. "
             "When matching vulnerability profiles, set product to the observed application/framework "
@@ -491,7 +536,10 @@ class _ExecutionLoop:
         )
         context = {
             "agent_name": request.agent_name,
-            "capability": request.capability,
+            # NOTE: capability is deliberately omitted here (Step 4 / cg.md E.4).
+            # The executor reasons from objective + success_criteria only; the
+            # capability tag survives on the request/result for AG labelling and
+            # logging, but must not bias tool selection.
             "role_prompt": self.role_prompt,
             "planner_objective": request.objective,
             "task_brief": request.task_brief,
@@ -996,6 +1044,62 @@ class _ExecutionLoop:
         return call.model_copy(update={"arguments": arguments})
 
     @classmethod
+    def _with_transport_context(
+        cls,
+        *,
+        call: _ExecutionToolCall,
+        request: ExecutionRequest,
+        logger: TxtTraceLogger,
+        step: int,
+    ) -> _ExecutionToolCall:
+        """Reserve the execution-plane transport axis for the tool call (Step 4 / cg.md E.5).
+
+        When the round carries active sessions / pivot routes, stamp the active
+        ``session_id`` / ``route_id`` onto the call so a transport-aware tool
+        boundary can run it through the established foothold instead of from the
+        operator host. Real live-shell execution lands in Step 5; for now this is
+        plumbing only — the hints are resolved behind the call, never surfaced to
+        the LLM, and never override values the tool already carries.
+        """
+
+        session_id = cls._active_transport_id(request.sessions, ("session_id", "id"))
+        route_id = cls._active_transport_id(request.pivot_routes, ("route_id", "id"))
+        if not session_id and not route_id:
+            return call
+        arguments = dict(call.arguments)
+        if session_id:
+            arguments.setdefault("session_id", session_id)
+        if route_id:
+            arguments.setdefault("route_id", route_id)
+        logger.write_block(
+            "TRANSPORT_CONTEXT",
+            "execution-plane transport reserved",
+            {
+                "step_index": step,
+                "tool_name": call.tool_name,
+                "session_id": session_id,
+                "route_id": route_id,
+            },
+        )
+        return call.model_copy(update={"arguments": arguments})
+
+    @staticmethod
+    def _active_transport_id(entries: list[dict[str, Any]], keys: tuple[str, ...]) -> str | None:
+        """Return the id of the most recently recorded active session/route, if any."""
+
+        for entry in reversed(entries or []):
+            if not isinstance(entry, dict):
+                continue
+            status = str(entry.get("status") or "active").strip().lower()
+            if status not in {"active", "open", "established", ""}:
+                continue
+            for key in keys:
+                value = entry.get(key)
+                if value not in (None, ""):
+                    return str(value)
+        return None
+
+    @classmethod
     def _normalize_tool_call_arguments(cls, *, call: _ExecutionToolCall, request: ExecutionRequest) -> _ExecutionToolCall:
         if call.tool_name in {"http_probe", "web_fingerprint", "whatweb_fingerprint", "nuclei_scan"}:
             arguments = dict(call.arguments)
@@ -1083,6 +1187,22 @@ class _ExecutionLoop:
         if port is not None and ":" not in target:
             netloc = f"{target}:{int(port)}"
         return f"{scheme}://{netloc}{path}"
+
+    @staticmethod
+    def _tool_call_signature(trace: ToolTrace) -> str:
+        """Stable identity of a tool call for duplicate detection.
+
+        Excludes the per-step trace plumbing (operation_id/trace_id) so that
+        re-issuing the same logical call against the same arguments counts as a
+        repeat even though its trace_id differs.
+        """
+
+        args = {k: v for k, v in trace.arguments.items() if k not in {"operation_id", "trace_id"}}
+        try:
+            arg_blob = json.dumps(args, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            arg_blob = str(sorted(args.items()))
+        return f"{trace.server_id}.{trace.tool_name}:{arg_blob}"
 
     @staticmethod
     def _summarize_arguments(arguments: dict[str, Any]) -> str:

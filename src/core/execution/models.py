@@ -54,7 +54,7 @@ class RoundDirective(BaseModel):
     target_refs: list[GraphRef] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
     tool_hints: list[dict[str, Any]] = Field(default_factory=list)
-    max_tools: int = Field(default=8, ge=1)
+    max_tools: int = Field(default=16, ge=1)
     success_hint: str | None = None
     required_context: dict[str, Any] = Field(default_factory=dict)
     risk_level: str = "medium"
@@ -103,7 +103,7 @@ class ExecutionRequest(BaseModel):
     required_context: dict[str, Any] = Field(default_factory=dict)
     success_criteria: list[str] = Field(default_factory=list)
     risk_level: str = "medium"
-    max_steps: int = Field(default=8, ge=1)
+    max_steps: int = Field(default=16, ge=1)
     graph_summary: dict[str, Any] = Field(default_factory=dict)
     graph_history: dict[str, Any] = Field(default_factory=dict)
     runtime_context: dict[str, Any] = Field(default_factory=dict)

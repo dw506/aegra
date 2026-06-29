@@ -838,7 +838,7 @@ class AppOrchestrator:
         planner_payload: dict[str, Any],
         feedback_payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-        max_cycles: int = 5,
+        max_cycles: int = 12,
         max_replans: int = 3,
         consecutive_llm_rejections: int = 3,
         stop_when_quiescent: bool = True,

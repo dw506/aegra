@@ -340,3 +340,58 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - `planner_loop` 的循环角色 Protocol 命名 `PlannerTurn`（`run_turn`），驱动参数 `planner`。
 - orchestrator/测试：`mission_planner` → `planner`。
 - 结果：`Planner.decide`（orchestrator 入口）+ `Planner.run_turn`（每轮，被循环回调），一个类、短名。
+
+---
+
+## 附录 E：Step 4 设计 —— executor 放开 + planner/executor 功能定义（动手前讨论）
+
+> 分支待建 `refactor/step4-executor`。本附录是动手前的设计定调，含 capability「误导」分析。
+
+### E.1 两个 agent 的功能分工
+一句话：**planner 管「打哪 + 何时停」（战略/全局），executor 管「怎么打透一轮」（战术/局部），图是两者间的真正通道。** 两者同形（`decide→act→observe` bounded 循环、LangGraph-ready）。
+
+| | Planner | Execution Agent |
+|---|---|---|
+| 职能 | 读图→决定下一个有界目标 / 停/重规划/暂停；唯一全局控制者 | 把一个 directive 打透：开放工具空间自主选工具、经立足点操作、写事实回图 |
+| 输入 | mission goal、图(读工具)、success_progress、policy、最近结果 | RoundDirective + 活立足点(sessions/routes) + 图读 + policy + 工具目录 |
+| 输出 | `PlannerOutcome`{execute(RoundDirective)/replan/pause/stop_success/stop_failed} | status + summary + **原始事实经 tool_trace→extractor→图** + 新立足点回写 + 薄信号 |
+| 独占 | 唯一发 stop_success/failed；全局节奏 | 工具选择+参数+经哪个立足点执行 |
+| 禁止 | 出 shell/工具参数/固定阶段序列 | 决定全局停/战略、按固定阶段走、返回胖报告 |
+
+契约：**向下给意图（RoundDirective），向上回事实（进图）+ 薄信号；真正状态交换在图里**（胖 ExecutionResult 随 C.3 溶解）。verify 独立：`SuccessConditionTracker` 读图算 `eligible_for_stop`，planner 只读它。
+
+### E.2 执行 agent 的动作模型（不写死阶段）
+两层自由度：
+- **控制动作（固定、小）**：每步三动词 `call_mcp_tool`/`finish`/`need_replan`（循环骨架，Step 6 LangGraph 托管这层）。
+- **工具选择（开放）**：`call_mcp_tool` 内自由从目录选任意 in-scope 工具 + 自定参数（agency 所在）。
+
+**不要**把 recon/exploit/pivot 设成控制动词或硬闸（= §0 轨道）。它们是**软 capability**：planner 读图自适应排序（不定死流程），executor 在其聚焦内自由选工具。防「乱调」靠 **objective + scope闸 + budget**，不靠写死阶段。
+
+### E.3 轮次限度 + 粒度
+- **限度（停止判据）**：`success_hint` 达成→`finish`（语义停）；`max_tools` 硬顶 + 无进展守卫兜底。
+- **粒度 = planner 的战略旋钮**：要不要「一轮 recon+exploit」由 planner 调 `objective` 范围决定（宽 objective + 够预算 = 一轮打透；窄 objective = 先看再决定）。confident 咬大口、risky 小步 verify。
+- **「一轮 recon+exploit」靠宽 objective，不靠多选 capability**——executor 工具空间开放，objective 承载多动作。
+
+### E.4 capability 的处置（误导分析）
+- **误导源精确定位**：`execution_agent.py:647` 把 `capability=...` 喂进 executor 决策 prompt → 暗示「这是 exploit 轮」，可能带偏（跳过该做的侦察）。
+- **修复（Step 4，聚焦）**：capability **移出 executor 决策上下文**；executor 只凭 `objective + success_hint` 推理。
+- **保留用途**：capability 作 **AG ATTACK_STEP 粗标签 / 日志**（一轮一步需要个名字），可由 planner 出或事后从主导工具派生——但**不喂给 executor 决策**。
+- **彻底删字段 = 后续大改**（织入 `CapabilityName` 类型、三个 model 字段、AG 标注、ResultApplier、~30 处、测试），随 C.3 的 `ExecutionResult` 瘦身一起收，**不在 Step 4**。
+
+### E.5 多主机执行设计
+- **target/route 是可选聚焦，非强绑**：侦察轮空 target、无 route 扫 zone；利用轮聚焦一主机。
+- **经执行平面操作**：工具能 `session_exec(session_id)`/`pivot_exec(route_id)` 在已控主机/穿 pivot 执行（真活 shell 是 Step 5；Step 4 预留传输轴，用 `ExecutionRequest` 已有的 sessions/pivot_routes）。
+- **图 = 共享立足点记忆**：executor 读活 session/route 集够到目标，新立足点写回图供复用。
+- **一个 execution agent，顺序推进**：跨机纵深 = planner 一轮轮选目标 + 图累积立足点「涌现」；**不开 per-host 子 agent**（并行留 Step 6 LangGraph 的 state 隔离）。
+
+### E.6 Step 4 范围
+做：① 放开预算（max_tools 8→更大/可配、max_cycles 5→更大或按进度）② `success_hint` 成为真正停止判据 + 无进展守卫 ③ **capability 移出 executor 决策（仅留 AG 标签）** ④ executor 能经 session/route 操作（传输预留）⑤（可选）executor 整理成与 planner 对称的三件套（利于 Step 6）。
+不做：真活 shell（Step 5）、并行子 agent（Step 6）、多主机成功判定（更后）、彻底删 capability 字段（随 C.3 收）。
+
+### E.7 Step 4 落地状态（branch `refactor/step4-executor`）
+- **① 放开预算（done）**：`RoundDirective.max_tools` 8→16、`ExecutionRequest.max_steps` 8→16（`execution/models.py`）；`run_until_quiescent max_cycles` 5→12（`orchestrator.py`）、API `max_cycles` default 5→12（`app/api/__init__.py`，`le=50` 不变）；planner 契约占位 + 提示词 `max_tools` 8→16，并加 rule 9：粒度由 objective 宽窄 + max_tools 调，不靠 chaining capability。
+- **② success_hint 真停止判据 + 无进展守卫（done）**：executor system prompt 明确「从 objective+success_criteria 推理、达成即 finish、卡住即 need_replan」；`_ExecutionLoop.run` 加无进展守卫——连续 `NO_PROGRESS_LIMIT=3` 次「失败或重复」工具调用即提前停（`_tool_call_signature` 去掉 operation_id/trace_id 后比对）。
+- **③ capability 移出 executor 决策（done）**：`_build_messages` context 删 `capability` 键；`required_context` 删死字段 `round_capability`。capability 仍在 request/result/日志中作 AG 标签，不入决策上下文。
+- **④ session/route 传输预留（done）**：`_with_transport_context` 在工具调用前从 `request.sessions`/`pivot_routes` 取最近 active 的 `session_id`/`route_id` 盖进 call 参数（不覆盖已有值、不暴露给 LLM、记 `TRANSPORT_CONTEXT` 日志）；真活 shell 仍待 Step 5 消费。
+- **⑤ 对称三件套（deferred）**：可选项，留待 Step 6 LangGraph 准备时做，避免本步引入大重构风险。
+- 测试：新增 `test_no_progress_guard_stops_round_before_max_steps` / `test_capability_absent_from_executor_decision_context` / `test_active_session_transport_is_stamped_onto_tool_call`；全量 142 passed, 1 skipped。
