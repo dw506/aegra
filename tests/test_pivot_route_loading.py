@@ -41,11 +41,6 @@ def test_named_mapping_pivot_route_loads(tmp_path, monkeypatch: pytest.MonkeyPat
     assert len(routes) == 1
     assert routes[0]["via_host"] == "10.20.0.50"
 
-    candidates = tools._pivot_route_candidates()
-    assert len(candidates) == 1
-    assert candidates[0]["via_host"] == "10.20.0.50"
-    assert candidates[0]["destination_cidr"] == "10.30.0.0/24"
-
     resolved = tools._resolve_pivot_route("route::pivot-ssh::internal")
     assert resolved is not None
     assert resolved["via_host"] == "10.20.0.50"

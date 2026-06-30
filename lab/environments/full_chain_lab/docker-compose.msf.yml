@@ -1,0 +1,29 @@
+# msfrpcd sidecar for the metasploit_exec / session_exec real exploit engine
+# (cg.md G.5 stage 1a: real exploit -> real Session). Opt-in override so the base
+# full_chain lab stays msf-free:
+#
+#   docker compose -p full_chain_lab \
+#     -f docker-compose.yml -f docker-compose.msf.yml up -d metasploit
+#
+# Sits on dmz_net at 10.20.0.60 so it can both reach the entry targets
+# (dmz-struts 10.20.0.10, dmz-thinkphp 10.20.0.11) AND be the LHOST that reverse
+# shells from those targets connect back to. mcp-tools talks to it over msgpack
+# RPC (port 55553, SSL off). The password/host/port match
+# configs/runtime_policy.full-chain.json adapter_policy.metasploit.
+services:
+  metasploit:
+    image: metasploitframework/metasploit-framework:latest
+    container_name: msf-rpc
+    # Foreground msfrpcd, SSL off (simpler client), no DB (single-shot exploits),
+    # known lab password. msfrpcd lives in the image WORKDIR, not on PATH.
+    entrypoint: ["sh", "-c"]
+    command: ["./msfrpcd -P labrpcpass -S -a 0.0.0.0 -p 55553 -f -n"]
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.0.60
+    restart: unless-stopped
+
+networks:
+  dmz_net:
+    external: true
+    name: full_chain_lab_dmz_net

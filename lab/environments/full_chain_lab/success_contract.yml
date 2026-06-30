@@ -102,46 +102,40 @@ condition_bindings:
       filters:
         zone_ref: entry
 
+  # Stage 2 (cg.md G.6): conditions that collapse the deprecated specialised node
+  # types into Evidence are discriminated by the ToolFact `kind` property, so each
+  # chain step reads a distinct fact and one Evidence node cannot falsely satisfy
+  # several conditions. Both the canned producers (VulnerabilityCandidate, ...) and
+  # the real tools (nuclei -> Evidence{kind:vuln_candidate}) stamp the same `kind`,
+  # so the type list stays broad while the kind filter does the disambiguation.
   vulnerability_candidate_recorded:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - VulnerabilityCandidate
-          - Vulnerability
-      filters: {}
+      type: Evidence
+      filters:
+        kind: vuln_candidate
 
   exploit_attempt_recorded:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - VulnerabilityCandidate
-          - Vulnerability
-          - Evidence
-      filters: {}
+      type: Evidence
+      filters:
+        kind: exploit_attempt
 
   exploit_success_recorded:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - ExploitCapability
-          - Vulnerability
-          - Session
+      type: Session
       filters: {}
 
   capability_or_session_recorded:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - ExploitCapability
-          - Session
+      type: Session
       filters: {}
 
   post_access_observation_recorded:
@@ -153,7 +147,8 @@ condition_bindings:
           - PostAccessObservation
           - Observation
           - Evidence
-      filters: {}
+      filters:
+        kind: post_access
 
   credential_or_pivot_hint_discovered:
     predicate: exists_node
@@ -164,7 +159,8 @@ condition_bindings:
           - Credential
           - Observation
           - Evidence
-      filters: {}
+      filters:
+        kind: credential
 
   pivot_route_recorded:
     predicate: exists_node

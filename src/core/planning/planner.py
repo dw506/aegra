@@ -101,6 +101,7 @@ class Planner:
             max_steps=self._config.max_steps,
         )
         outcome = run_planner_loop(state, planner=self, graph_tools=graph_tools)
+        outcome = _prefer_real_exploit_tools(outcome, seed.get("mcp_tool_catalog") or {})
 
         # Apply advisory write-tool calls the final turn emitted (record_finding,
         # record_attack_step, link_evidence). Machine facts are written elsewhere.
@@ -261,6 +262,8 @@ class Planner:
             "ExecutionAgent may autonomously choose allowed tools, including run_command, inside authorized scope. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
             "Do not use a fixed stage sequence and do not require every capability to run. "
+            "When choosing an exploit round and ToolCatalog contains metasploit_exec, put metasploit_exec "
+            "first in directive.allowed_tools/tool_hints for real session proof. "
             "Select the next capability from success_condition_progress.missing, min_summary, Policy, "
             "recent results, and ToolCatalog. "
             "Treat recent ExecutionResult control hints as hard constraints: if a recent result contains "
@@ -346,6 +349,42 @@ def _slim_tool_catalog(catalog: dict[str, Any]) -> dict[str, Any]:
             slim_tools.append(entry)
         slim[server_id] = {"tools": slim_tools}
     return slim
+
+
+def _prefer_real_exploit_tools(outcome: PlannerOutcome, catalog: dict[str, Any]) -> PlannerOutcome:
+    """Bias exploit rounds toward real session tooling while preserving the LLM decision."""
+
+    directive = outcome.directive
+    if outcome.action != "execute" or directive is None or directive.capability != "exploit":
+        return outcome
+    if not _catalog_has_tool(catalog, "metasploit_exec"):
+        return outcome
+    allowed = list(directive.allowed_tools)
+    for tool in ("metasploit_exec", "session_exec"):
+        if _catalog_has_tool(catalog, tool) and tool not in allowed:
+            allowed.insert(0 if tool == "metasploit_exec" else len(allowed), tool)
+    hints = list(directive.tool_hints)
+    hints.append(
+        {
+            "preferred_tool": "metasploit_exec",
+            "purpose": "real exploit/session proof",
+            "no_session_policy": "return evidence and replan/tune exploit parameters; do not fabricate success",
+        }
+    )
+    outcome.directive = directive.model_copy(update={"allowed_tools": allowed, "tool_hints": hints})
+    return outcome
+
+
+def _catalog_has_tool(catalog: dict[str, Any], tool_name: str) -> bool:
+    if not isinstance(catalog, dict):
+        return False
+    for server in catalog.values():
+        if not isinstance(server, dict):
+            continue
+        for tool in server.get("tools") or []:
+            if isinstance(tool, dict) and tool.get("name") == tool_name and tool.get("available") is not False:
+                return True
+    return False
 
 
 def _truncate_json(payload: dict[str, Any], max_chars: int) -> str:

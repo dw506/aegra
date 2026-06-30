@@ -198,27 +198,6 @@ class Goal(BaseNode):
     description: str | None = None
 
 
-class VulnerabilityCandidate(BaseNode):
-    type: Literal[NodeType.VULNERABILITY_CANDIDATE] = NodeType.VULNERABILITY_CANDIDATE
-    vuln_profile_id: str | None = None
-    target_ref: str | None = None
-    service_ref: str | None = None
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    matched_evidence: list[str] = Field(default_factory=list)
-    contradictions: list[str] = Field(default_factory=list)
-    recommended_next_action: str | None = None
-    exploit_profile_id: str | None = None
-    zone_ref: str | None = None
-
-
-class ExploitCapability(BaseNode):
-    type: Literal[NodeType.EXPLOIT_CAPABILITY] = NodeType.EXPLOIT_CAPABILITY
-    vuln_ref: str | None = None
-    target_ref: str | None = None
-    exploit_profile_id: str | None = None
-    zone_ref: str | None = None
-
-
 class PostAccessObservation(BaseNode):
     type: Literal[NodeType.POST_ACCESS_OBSERVATION] = NodeType.POST_ACCESS_OBSERVATION
     target_ref: str | None = None
@@ -333,8 +312,6 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.FINDING: Finding,
     NodeType.NETWORK_ZONE: NetworkZone,
     NodeType.GOAL: Goal,
-    NodeType.VULNERABILITY_CANDIDATE: VulnerabilityCandidate,
-    NodeType.EXPLOIT_CAPABILITY: ExploitCapability,
     NodeType.POST_ACCESS_OBSERVATION: PostAccessObservation,
     NodeType.GOAL_CHECK: GoalCheck,
     NodeType.GOAL_PROOF: GoalProof,

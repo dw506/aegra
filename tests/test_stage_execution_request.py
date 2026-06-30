@@ -21,7 +21,7 @@ class RecordingMCP:
             "stdout": "{\"precheck\": true}",
             "stderr": "",
             "exit_code": 0,
-            "metadata": {"parsed_output": {"runtime_hints": {"validation_precheck_passed": True}}},
+            "metadata": {"parsed_output": {"runtime_hints": {"probe_passed": True}}},
         }
 
 
@@ -81,31 +81,30 @@ def test_execution_agent_main_path_has_no_task_graph_dependency() -> None:
     assert "src.core.models.tg" not in source
 
 
-def test_exploit_validation_precheck_infers_missing_target_url() -> None:
+def test_http_probe_infers_missing_url_from_target_ref() -> None:
     llm = FakeStageLLM(
         [
             {
                 "action": "call_mcp_tool",
                 "server_id": "pentest-tools",
-                "tool_name": "validation_precheck",
-                "arguments": {"profile_id": "struts2-s2-045"},
-                "reasoning_summary": "run bounded precheck",
+                "tool_name": "http_probe",
+                "arguments": {},
+                "reasoning_summary": "probe the entry service",
             },
-            {"action": "finish", "status": "succeeded", "summary": "validation precheck completed"},
+            {"action": "finish", "status": "succeeded", "summary": "http probe completed"},
         ]
     )
     mcp = RecordingMCP()
     request = ExecutionRequest(
-        operation_id="op-validation-url",
+        operation_id="op-http-url",
         cycle_index=3,
-        agent_name="exploit_validation_agent",
-        capability="exploit",
-        objective="Safely validate Struts2 candidate",
+        agent_name="execution_agent",
+        capability="recon",
+        objective="Probe the Struts2 entry service",
         target_refs=[
             GraphRef(graph="kg", ref_id="service::10.20.0.22:8080/tcp", ref_type="Service"),
         ],
-        required_context={"profile_id": "struts2-s2-045"},
-        success_criteria=["validation precheck receives a target_url"],
+        success_criteria=["http_probe receives a url"],
         risk_level="medium",
         max_steps=2,
         graph_summary={},
@@ -116,9 +115,9 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
             "pentest-tools": {
                 "tools": [
                     {
-                        "name": "validation_precheck",
-                        "category": "vuln",
-                        "requires_authorization": True,
+                        "name": "http_probe",
+                        "category": "recon",
+                        "requires_authorization": False,
                     }
                 ]
             }
@@ -128,8 +127,8 @@ def test_exploit_validation_precheck_infers_missing_target_url() -> None:
     result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
 
     assert result.status == "succeeded"
-    assert mcp.calls[0]["arguments"]["target_url"] == "http://10.20.0.22:8080/"
-    assert result.tool_trace[0].arguments["target_url"] == "http://10.20.0.22:8080/"
+    assert mcp.calls[0]["arguments"]["url"] == "http://10.20.0.22:8080/"
+    assert result.tool_trace[0].arguments["url"] == "http://10.20.0.22:8080/"
 
 
 def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
@@ -509,3 +508,37 @@ def test_active_session_transport_is_stamped_onto_tool_call() -> None:
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["session_id"] == "sess-1"
     assert mcp.calls[0]["arguments"]["route_id"] == "route-9"
+
+
+def test_metasploit_exec_gets_outer_timeout_buffer() -> None:
+    llm = FakeStageLLM(
+        [
+            {
+                "action": "call_mcp_tool",
+                "server_id": "pentest-tools",
+                "tool_name": "metasploit_exec",
+                "arguments": {
+                    "module": "exploit/multi/http/struts2_content_type_ognl",
+                    "target": "10.20.0.10",
+                    "timeout_seconds": 120,
+                },
+            },
+            {"action": "finish", "status": "succeeded", "summary": "attempt recorded"},
+        ]
+    )
+    mcp = RecordingMCP()
+    request = ExecutionRequest(
+        operation_id="op-msf-timeout",
+        cycle_index=1,
+        agent_name="execution_agent",
+        capability="exploit",
+        objective="Open a real session with metasploit_exec",
+        max_steps=2,
+        mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "metasploit_exec"}]}},
+    )
+
+    result = ExecutionAgent(llm_client=llm, mcp_client=mcp).run(request)
+
+    assert result.status == "succeeded"
+    assert mcp.calls[0]["arguments"]["timeout_seconds"] == 120
+    assert mcp.calls[0]["timeout_seconds"] == 150

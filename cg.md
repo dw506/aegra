@@ -429,3 +429,122 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 
 ### F.5 权衡：罐头兼作离线测试 fixture
 罐头让套件无需真 msf/docker 离线确定性跑通。去罐头后：executor 层测试不受影响（`RecordingMCP`/`FakeStageLLM` mock）；`test_mcp_lab.py` 直测罐头实现的用例 F3 要重写；建议保留**最小 mock MCP server**（只回固定字节，无 profile 判断逻辑）供 CI，而非保留罐头业务逻辑。2 个 deferred option-C exploit-execute 红测随 F3 删罐头自然消失。
+
+## 附录 G：工具 × KG 节点 × 合约 统一迁移矩阵（去罐头的"读侧"维度）
+
+> 附录 F 只盯**工具**维度；本附录补上缺的一维——**KG 节点类型的去留**。核心洞察：**工具与节点是同一根绳的两头**。工具产 fact → 决定哪些专用 NodeType 还有生产者；合约读节点 → 决定哪些 NodeType 还有消费者。罐头工具一删，专用节点多半失去生产者（真工具自然产的是 `Evidence` 或真 `Session`），于是节点该塌缩/删除。**但删除顺序是死的，节点永远最后删。**
+
+### G.1 决定性证据：合约自己在 OR-collapse
+`success_contract.yml`（full_chain v1）的 13 条 `require_all` 里，多条把**专用类型 OR 通用 Evidence**：`exploit_success: [ExploitCapability, Vulnerability, Session]`、`post_access: [PostAccessObservation, Observation, Evidence]`、`credential: [Credential, Observation, Evidence]`、`vuln_candidate: [VulnerabilityCandidate, Vulnerability]`。合约作者**已愿意接受 Evidence 兜底**——等于承认专用类型很多时候只是「带 `kind` 的 Evidence」，不需要独立 NodeType。这是节点冗余的根证据，也是删 identity/privilege/credential-reuse schema（[[kg-access-chain-schema-deprecated]]）的同款手法。
+
+### G.2 统一迁移矩阵（按 require_chain 攻击链顺序）
+
+| # | 合约条件 | 需要节点 | 现产出工具 | 真工具替代 | 真产 | 节点结局 |
+|---|---|---|---|---|---|---|
+| 1 | target_imported | Goal | 导入(非工具) | — | — | **留**(骨架) |
+| 2 | entry_host | Host@entry | `nmap_scan` ✅真 | 无需换 | Host | **留** |
+| 3 | entry_service | Service@entry | `nmap_scan`/`http_probe` ✅真 | 无需换 | Service | **留** |
+| 4 | fingerprint | Evidence@entry | `web_fingerprint` ✅真 | 无需换 | Evidence | **留** |
+| 5 | vuln_candidate | VulnerabilityCandidate | `vuln_profile_match` 🥫 | `nuclei`/`whatweb`/LLM | Evidence | **塌缩** `Evidence{kind:vuln_candidate}` |
+| 6 | exploit_attempt | VulnCand/Evidence | `vuln_profile_match` 🥫 | msf/sqlmap 尝试 | Evidence | **塌缩** `Evidence{kind:exploit_attempt}` |
+| 7 | exploit_success | ExploitCapability/Session | `lab_authorized_exploit_execute` 🥫 | msfrpcd→meterpreter | **真 Session** | **删** ExploitCapability(Session 顶上) |
+| 8 | capability_or_session | ExploitCapability/Session | 同上 🥫 | 同上 | 真 Session | 同上 |
+| 9 | post_access | PostAccessObservation/Evidence | `post_access_observe` 🥫 | `run_command`/`pivot_exec` 读文件 | Evidence | **塌缩** `Evidence{kind:post_access}` |
+| 10 | credential_hint | Credential/Evidence | `credential_check` 🥫 | loot 读取/netexec/mimikatz | Credential | **留** Credential(真工具会产) |
+| 11 | pivot_route | PivotRoute(runtime) | `pivot_route_register` 🥫 / `pivot_exec` ✅真 | `pivot_exec`(已就位) | PivotRoute | **留** |
+| 12 | restricted_service | service_via_route | `internal_service_discover`/`pivoted_nmap_scan` 🥫 | `pivot_exec(route,[nmap…])` ⚠️**需改 extractor** | Service@restricted | **留** Service，但要新增 pivot_exec→内网Service 解析路 |
+| 13 | database_proof | ControlledDataReadProof | `controlled_data_read_proof` ✅真 | 无需换 | ControlledDataReadProof | **留**(真终态证明) |
+
+> 🥫=罐头(channel②)　✅真=已是真工具。注意 #12：`pivot_exec` 虽真，但其 extractor 现只映射 `_extract_pivot_route`(只产 PivotRoute)，**不**把内部 nmap 输出解析成内网 Service——所以 #12 删罐头前必须给 `pivot_exec` 加内网 Service 解析路，否则该条无源。
+
+### G.3 KG 节点（17 个 NodeType）最终去留
+- **留（骨架 + 真产）**：`Host` `Service` `Goal` `Evidence` `PivotRoute` `NetworkZone` `Credential` `Session` `ControlledDataReadProof`
+- **删（真 Session 替代，非塌缩——本就是罐头凭空声明的抽象）**：`ExploitCapability`。例外：要表达「RCE 已证实但无交互 shell」则降级 `Evidence{kind:rce_proven}`，仍不留独立 type。
+- **塌缩进 `Evidence{kind}`**：`VulnerabilityCandidate` `PostAccessObservation`
+- **随 F3-KG（self-report 写路一删即无生产者）**：`Observation` `Finding` `Vulnerability`（`ToolTraceFactExtractor` 从不产 Observation/Finding，它们目前**只**由 LLM 自述路径写入）
+- **随 oracle 决策单独评估（先解三重身份）**：`GoalProof` `GoalCheck`（当前 full_chain 合约一个条件都没绑定它们，终态走 ControlledDataReadProof；但 `predicate_engine.goal_proof_valid` + tracker 仍读，goal-oracle 式合约会用——删是场景决策，非全局安全。`GoalCheck` 还有 KG-NodeType / AG-process-node / finding-`kind` 三重身份纠缠，要先解开）
+
+### G.4 罐头工具删除分批
+- **阶段0a（本分支已落，零契约风险）**：`validation_precheck` `safe_vuln_validate`——纯"安全验证姿态"(v3 已反转)、不在 extractor、不喂 pivot/runtime。
+- **阶段0b（待删，跟 pivot 批一起）**：`identity_context_probe` `privilege_context_probe`——纯 echo 声明上下文；但 `identity_context_probe` 经 `_pivot_route_candidates()` 给 full_chain 喂**活的 pivot 发现信息**，删它改运行时行为，故按顺序铁律跟 pivot 工具同批删。
+- **F2 真引擎就位后删**：`vuln_profile_match` `lab_authorized_exploit_execute` `session_open_lab` `internal_service_discover` `pivoted_nmap_scan` `credential_check` `session_probe` `pivot_route_probe` `pivot_route_register`。
+- **保留（本就是真工具）**：`run_command` `nmap_scan` `http_probe` `web_fingerprint` `web_discover` `dns_lookup` `tls_probe` `tcp_connect_probe` `pivot_exec` `controlled_data_read_proof` `nuclei_scan` `whatweb_fingerprint` `ffuf_discover` + goal/marker/artifact 类。
+
+### G.5 接真工具（F2 三件，按合约缺口排）
+1. **msfrpcd→meterpreter session**（补 #7/#8）—— `pivot_exec` 外新增 `session_exec` 原语；extractor 加 msf→`Session`。解锁 option-C 两红的关键。
+2. **pivot_exec 跑内网 nmap→内网 Service**（补 #12）—— `_TOOL_EXTRACTORS["pivot_exec"]` 拆出能识别 argv 里 nmap 并解析 stdout 成 `Service@restricted` 的路（或新 `_extract_pivot_exec` 走两路）。
+3. **nuclei/whatweb→`Evidence{kind:vuln_candidate}`**（补 #5/#6）—— 真工具已在 catalog，缺 extractor 把命中映射成带 kind 的 Evidence。
+
+### G.6 全局执行顺序（删除永远最后）
+```
+阶段0a  现在 ── 删 validation_precheck + safe_vuln_validate（零契约风险，本分支已落）
+阶段1   F2  ── 接真工具 + 写 extractor 映射：(a) msf→Session (b) pivot_exec→内网Service (c) nuclei→Evidence{kind}
+              ▲ 真假工具并存、新旧节点并存、合约不动 → 逐工具验证
+阶段2   合约迁移（唯一技术难点）── 条件从「读 NodeType」改「读 Evidence + filters.kind」或「读 Session」；
+              require_chain 改用 kind 区分阶段（candidate→exploit 不能再靠 type 分）；跑 full_chain E2E 全绿
+阶段3   删罐头工具（含 0b + F2 批）── 真工具已扛起所有合约条件
+阶段4   删孤儿 NodeType ── ExploitCapability + 塌缩掉的两个 + F3-KG 的 Observation/Finding
+```
+**铁律重申**：真工具就位 → 合约改读侧 → 删罐头工具 → 删孤儿节点。任何一步提前都让 full_chain 合约翻红。G.3 的塌缩/删除全部归到 **F4 ToolFact vocab**（合约从「读 NodeType」迁到「读 ToolFact kind」），NodeType 表回归只剩骨架。
+
+### G.7 落地记录（branch `refactor/step5-node-collapse`）
+
+**阶段0a DONE（2026-06-30，suite 144 passed/1 skip，零回归）**：删 `validation_precheck` + `safe_vuln_validate`——纯"安全验证姿态"(v3 已反转)、不在 `_TOOL_EXTRACTORS`、不喂 pivot/runtime、不背任何合约条件。改动：`tools.py`(2 spec + 2 dispatch + 2 impl + 2 专属 helper `_run_profile_prechecks`/`_validation_payload` + import 去 `ValidationPlan`/`ValidationResult` 留 `VulnerabilityProfile`)；`execution_agent.py` 删 `_normalize_tool_call_arguments` 的 validation_precheck/safe_vuln_validate target_url 特例；4 测试文件改写（删 `test_lab_safe_vuln_validate_rejects_unsafe_mode`；`test_exploit_validation_precheck_infers_missing_target_url`→`test_http_probe_infers_missing_url_from_target_ref`；allowlist 2 测试 fixture `safe_vuln_validate`→`nuclei_scan`；catalog 名单去 2 名）。
+
+**阶段0b 改判 → defer（核实后修正原计划）**：原计划"阶段0 删 4 探针"。核实发现 **`identity_context_probe` 经 `_pivot_route_candidates()` 给 full_chain 喂活的 pivot 发现信息**——它把 runtime policy 的 pivot 路由（redacted）回显给 agent，是当前运行时 pivot 发现的一条活路径。删它会**改变运行时行为**（agent 失去 pivot 候选发现的 affordance，需改由 `run_command`/`pivot_exec` 读 loot 凭证替代）。按顺序铁律（真替代就位前不删），**`identity_context_probe` + `privilege_context_probe` 改判为跟 pivot 工具同批删（阶段3/0b）**，不在阶段0a 动。
+
+**阶段1（extractor 映射半）DONE（2026-06-30）**：阶段1 = G.5 三件。(a) **msf→Session 需 live 环境**（msfrpcd/二进制/靶机），离线不落，仍 deferred。(b)(c) 两件是纯 extractor 映射（pivot_exec 真工具 F1 已就位），离线已落：
+- **(b) `pivot_exec`→内网 Service（补 #12）**：`_TOOL_EXTRACTORS["pivot_exec"]` 由 `_extract_pivot_route` 改为新 `_extract_pivot_exec`——仍先产 PivotRoute（route 活的因果证明，#11 不变），当 argv 跑了 nmap 再经 `_internal_services_from_nmap_stdout` 把 raw stdout 解析成 `Service@restricted{internal:True}`（复刻 `_extract_internal_discovery` 节点形态，保证 `service_discovered_via_route` 谓词等价解析）。这给 #12 一条**独立于 `internal_service_discover` 的真源**——是删那个罐头的前置。
+- **(c) `nuclei_scan`→`Evidence{kind:vuln_candidate}`、`whatweb_fingerprint`→fingerprint Evidence**：新 `_extract_nuclei_scan`（命中→带 `kind`/`template_id`/`severity` 的 Evidence；空跑→`kind:vuln_scan`）；whatweb 映射到现成 `_extract_web_fingerprint`。这是 G.3「VulnerabilityCandidate 塌缩进 Evidence{kind}」的真源前置，等阶段2 合约改读 `filters.kind`。
+- 全部**additive**（不删节点/不改合约/PivotRoute 行为不变），符合铁律。新增 `tests/test_tool_trace_fact_extractor.py`（5 测试，此前该模块零直测——顺带补 extractor 覆盖）。suite 全绿。
+- **阶段1 剩余**：~~(a) msf→Session（live env）~~ 已落（见下）；之后进阶段2 合约迁移。
+
+**阶段1(a) msf→Session DONE + live e2e 验证通过（2026-06-30，suite 152 passed/1 skip，零回归）**：用户选 msfrpcd RPC 路线。**架构**：msf 本体跑在独立 sidecar（`metasploitframework/metasploit-framework` 镜像，`docker-compose.msf.yml`，dmz_net @ 10.20.0.60），mcp-tools 只装薄客户端 pymetasploit3 经 msgpack RPC 连它——msf 不进 mcp-tools 镜像。落地：
+- `tools.py` 新增 `metasploit_exec`（跑 exploit 模块→开真 session，只回 session_id）+ `session_exec`（在 session 里跑命令）；连接配置读 `runtime_policy.full-chain.json` 新增的 `adapter_policy.metasploit`（host/port/ssl/password/lhost，复用 `_load_runtime_pivot_routes` 范式）；薄客户端 `_msf_client` 隔离便于测试 monkeypatch；可用性 gate `_msf_available`（配置存在 + pymetasploit3 可导入），`lab_tool_specs` 对 `MSF_TOOLS` 特判 unavailable。
+- extractor `_TOOL_EXTRACTORS["metasploit_exec"]=_extract_session`（读 `parsed.session_id`→KG `Session`，无需改 `_extract_session`）。
+- `requirements.txt` +pymetasploit3。新 `docker-compose.msf.yml`（external dmz_net、msfrpcd 前台/SSL off/no-db）。
+- 测试：`test_mcp_lab` +2（mock `_msf_client`/`_load_msf_config` 验开 session + 无配置阻断）、`test_tool_trace_fact_extractor` +1（metasploit_exec→Session）。
+- **live e2e**：`call_lab_tool('metasploit_exec')` 真实代码 → 真 msfrpcd → S2-045 打 `dmz-struts 10.20.0.10` → 真 shell session → extractor 产 `Session('2',bound=10.20.0.10)`，`E2E_OK`。
+- **durability 缺口**：pymetasploit3 是临时 pip 装在 mcp-tools（requirements 已改但镜像未 rebuild）；mcp-tools 重启即失，需 **rebuild mcp-tools 镜像**才持久。sidecar 用 `docker run` 起的，长期应 `docker compose -f docker-compose.yml -f docker-compose.msf.yml` 起。
+
+**阶段2 合约迁移 DONE（2026-06-30，suite 153 passed/1 skip，零回归）—— NodeType→ToolFact `kind` 判据**：核心机制——`exists_node` 的 `_match_filters` 本就按任意 key 匹配 `node`/`node.properties`，故 `filters:{kind:X}` **零谓词引擎改动**即生效。`_check_chain_integrity` 按**条件名**判（非节点），所以若多个条件都读「任意 Evidence」，一个 Evidence 节点会同时假满足它们——这正是 kind 判据要解决的。落地：
+- **合约** `success_contract.yml`：把塌缩进 Evidence 的 4 个条件加 `kind` 过滤——#5 `vuln_candidate`、#6 `exploit_attempt`、#9 `post_access`、#10 `credential`（type 列表保持宽，kind 做区分）。#7/#8 仍按 `Session`/`ExploitCapability` 类型判（干净类型、无假满足风险）。
+- **extractor 双向 stamp `kind`**（罐头+真工具同 kind，符合顺序铁律——罐头仍满足合约）：`_extract_vuln_profile_match`→`kind:vuln_candidate`、`_extract_exploit_execute` Evidence→`kind:exploit_attempt`、`_extract_credential`→`kind:credential`（`_extract_post_access` 本就产 `kind:post_access`；nuclei 本就 `kind:vuln_candidate`）。新 `_extract_msf`（metasploit_exec 改映射）：真 exploit = 一次 attempt，产 `Session`(#7/#8)+`Evidence{kind:exploit_attempt}`(#6)。
+- **验证**：gate 测试 `test_success_contract_referenced_gate.py` 驱动**真合约+真 tracker**，fixture 升级到 kind 约定后全过；新增反向测试证明 fingerprint-only Evidence **不再越权**满足 exploit/credential 条件（kind 区分防假满足 = 阶段2 核心价值）。
+- **未做（诚实记录）**：(a) 真 full_chain E2E（编排器+LLM+aegra-api 整跑）—— gate 测试是强代理但非活跑；(b) #9 post_access/#10 credential 暂仍只有罐头产对应 kind（真 run_command 读文件→generic Evidence kind:tool_output，不匹配），按顺序铁律罐头留着；(c) require_chain 仍是弱 set-membership（强因果边 #5b 仍 deferred，非阶段2 范围）。
+
+**阶段3 删罐头 —— 逐工具 channel-① 核对（DONE 子集 2026-06-30，suite 152 passed/1 skip，零回归）**：关键纪律——删罐头前必须确认真工具发齐它的 channel-① facts（不只 KG 节点，还有 runtime session/route 经 `result_applier._harvest_runtime_facts` 的 `runtime_hints` 桥）。**逐工具门禁表**：
+
+| 罐头工具 | channel-① 真替代状态 | 处置 |
+|---|---|---|
+| `session_open_lab` `session_probe` | ✅ msf 全覆盖：KG `Session`(`_extract_msf`) + **runtime session 桥**(`result_applier:130` 读 `runtime_hints.session_id`，metasploit_exec 已发) | **已删** |
+| `lab_authorized_exploit_execute` | ✅ msf 替代，但删除级联大（`configs/exploit_profiles/*` next_tools 引用 + post_access_capability 机制 + `_extract_exploit_execute` 的 ExploitCapability 分支 + 2 测试）→ 单独一块，宜 E2E 后做 | defer |
+| `pivot_route_register` `pivot_route_probe` | ⚠️ #11/#12 读 **runtime** PivotRoute，注册需 `runtime_hints.register_pivot_route=True`+route_id；`_pivot_exec` **没发**（只产 KG PivotRoute + `via_pivot_route` hint）→ 先给 pivot_exec 补 register_pivot_route hint（+目的 zone/cidr 供 `pivot_routes_for_zone`），才可删 | defer（需先补 hint） |
+| `internal_service_discover` `pivoted_nmap_scan` | ⚠️ 内网 Service 由 pivot_exec+nmap 覆盖，但依赖上面的 runtime 路由先就位 | defer（随 pivot 批） |
+| `vuln_profile_match` | ⚠️ #5 真源 = nuclei，但 **nuclei 没装进 mcp-tools**（需 image rebuild）→ 删则 #5 无 live producer | defer（需装 nuclei） |
+| `post_access_observe` `credential_check` | ⚠️ #9/#10 暂无真 producer（真 run_command 读文件→generic Evidence，不带 kind:post_access/credential） | defer（需真工具） |
+| `identity_context_probe` `privilege_context_probe` | ⚠️ 0b：`identity_context_probe` 经 `_pivot_route_candidates()` 喂 full_chain 活 pivot 发现，删改运行时行为 | defer（随 pivot 批） |
+
+- **已删**：`session_open_lab`+`session_probe`（specs+dispatch+impl+`SessionReusePolicy` orphan import+extractor map 两条+`test_lab_session_open_returns_runtime_hints` 删+`test_tool_runtime_harvest` fixture tool_name→metasploit_exec，桥是 tool-name-agnostic）。
+- **阶段4 删孤儿节点 = 全 defer**：`ExploitCapability` 要等 `lab_authorized_exploit_execute` 删后才孤儿；`VulnerabilityCandidate`/`PostAccessObservation` 要等对应罐头删后；且节点删除有 enum 反序列化 caveat + 级联 contract/gate-fixture，按框架铁律是**最后一步**，应在真 E2E 之后。
+- **下一步建议**=真 full_chain E2E（起 aegra-api+编排器）验真工具实跑产齐 kind + runtime facts → 再批量推进剩余删除；其中 pivot 批先补 `_pivot_exec` 的 register_pivot_route hint、vuln 批先装 nuclei。
+
+**planner advisory write-tool 降级（2026-06-30，低风险护栏）**：live run `full-chain-local-1782809627` 在 cycle 6 planning 阶段因 `record_attack_step` advisory write-tool schema 错误暂停（LLM 多传 `operation_id/cycle_index`、漏 `status`）。按当前纪律，机器事实由执行工具 trace/extractor 写图，planner write-tool 只是判断性附记，不应影响主控制流。已先做最小护栏：`PlannerGraphTools.apply_tool_calls` 捕获 advisory write-tool 的 validation/runtime error，写入 `planner_graph_tool_results` + audit metadata，planner 原始 outcome 继续生效。**后续删除项**：`record_attack_step` 与 `ResultApplier` 自动写 `ATTACK_STEP` 职责重叠，应在下一轮清理中从 prompt/tool manifest/API surface 移除；`record_finding`/`link_evidence` 暂留，待 F3-KG self-report 写路收敛时统一评估。
+
+### G.8 策略转向：框架优先、删全部罐头（2026-06-30，supersedes G.7 的 defer 门禁表）
+
+**触发**：live E2E（`full-chain-local-1782809627`）暴露两点 → C.2 渐进保护前提失效：(1) **罐头掩盖真路**——agent 优先用 `lab_authorized_exploit_execute`(产 ExploitCapability)而非 msf，只要罐头在 catalog，LLM 就走捷径，真工具永远验不到；(2) full_chain 本就 blocked（entry_service 红[nmap_scan 大范围+-sV timeout→0 Service] + pivot 链没起）。**决策（与 user 定）**：弃 C.2 渐进、改**框架优先**——删全部 simulation 罐头逼出真路，full_chain E2E 暂时红可接受，工具缺口后置为独立"工具硬化"阶段。
+
+**Phase 1：删 9 个 simulation/judgment 罐头（DONE，suite 151 passed/1 skip）**
+- 删：`vuln_profile_match`/`lab_authorized_exploit_execute`/`credential_check`/`identity_context_probe`/`privilege_context_probe`/`pivot_route_probe`/`pivot_route_register`/`internal_service_discover`/`pivoted_nmap_scan`。**保留真 I/O**：`post_access_observe`/`controlled_data_read_proof`/`read_lab_marker`/goal 检查/`pivot_exec`/`metasploit_exec`/`session_exec`。
+- 区分原则：**删 simulation/judgment（关键字判断、假利用、回显声明、bespoke 探针），留 real I/O（真发包/真读文件/真 SSH/真 msf）**。
+- 手法：脚本结构化删 spec+impl(628 行)→ 迭代孤儿清除器删 8 个**专属** helper（`_profile`/`_load_vuln_profiles`/`_pivot_route_candidates`/`_probe_tcp_via_configured_pivot` 等；**共享** helper `_run_via_configured_pivot`/`_resolve_pivot_route` 等正确保留）→ 删死常量 `SAFE_VALIDATION_PROFILES`/`_VULN_PROFILE_CACHE` + `VulnerabilityProfile`/`urlencode` import + 未用 `exec_result` → extractor 删 10 死映射 + 4 死函数 → planner `_prefer_real_exploit_tools` 去 avoid-逻辑 + 3 处提示词 → 删 8 废测试 + 修 3 断言集 + 改 planner fixture。pyflakes 干净、残留 0。
+- **"helper" 定义**：工具 impl 内部私有辅助函数（非工具/不在 spec·dispatch），删工具时区分共享(留) vs 专属(删孤儿)。
+
+**Phase 2：删孤儿 NodeType + 合约纯真形态（DONE，suite 149 passed/1 skip，gate 4/4）**
+- 删孤儿 NodeType `ExploitCapability`/`VulnerabilityCandidate`（删罐头后无 producer）：`kg_enums.py`(16→14) + `kg.py`(2 类+映射) + `kg_store.py`(2 死边别名+注释)。CAVEAT：旧快照含该 type 反序列化失败（refactor 分支接受）。
+- 合约 `success_contract.yml` 改纯真：#5→`Evidence{kind:vuln_candidate}`、#6→`Evidence{kind:exploit_attempt}`、#7/#8→`Session`（去掉所有罐头 NodeType OR 分支）。gate fixture：vc-1→`Evidence{kind}`、cap-1→`Session`。
+- 删孤儿 matcher 子系统（同名不同 class，pre-v3 死代码）：`src/core/vuln_candidates/`(包) + `models/vulnerability_candidate.py` + `models/fingerprint.py`(闭环只被前者引用) + `test_vulnerability_candidate_matcher.py`。
+- **框架收口达成**：合约只读 `Evidence{kind}`/`Session`/`Host`/`Service`/`PivotRoute`/`ControlledDataReadProof`/`Goal` —— 无罐头工具、无罐头 NodeType、无罐头 OR 分支。
+
+**独立"工具硬化"阶段（后置，full_chain E2E 在此之前保持红）**：nuclei 装进 mcp-tools（#5）；真 post_access/credential 工具（#9/#10）；`_pivot_exec` 补 `register_pivot_route` runtime hint（#11/#12）；`nmap_scan` 大范围 timeout（快扫策略）；permissive zone 兜底 #7。F3-KG（删 LLM 自报写 KG 路 + `Observation`/`Finding` NodeType）仍 deferred。

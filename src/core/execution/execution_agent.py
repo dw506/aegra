@@ -526,10 +526,13 @@ class _ExecutionLoop:
             "Prefer the tools in recommended_tool_names for this round, but you MAY call any "
             "other catalog tool when it advances the objective — the authorization boundary is scope policy, "
             "not the tool menu. Prefer argv for run_command. "
-            "When matching vulnerability profiles, set product to the observed application/framework "
+            "For objectives that require real exploit success, shell/session proof, or post-exploit command "
+            "execution, prefer metasploit_exec when it is present in the catalog. If metasploit_exec returns "
+            "no session, report that bounded result or tune the real exploit parameters. "
+            "When identifying a target's vulnerability, reason about the observed application/framework "
             "(inferred from page title, X-Powered-By and other response headers, body markers, or "
             "characteristic paths), NOT the web server or servlet container (e.g. Jetty, Apache httpd, "
-            "nginx, OpenSSH) — server/container banners rarely map to a bounded vulnerability profile, so "
+            "nginx, OpenSSH) — server/container banners rarely pinpoint an exploitable flaw, so "
             "probe deeper to identify the framework before giving up on a candidate. "
             "Do not invent facts; base findings on KG/Runtime/evidence/tool results."
         )
@@ -1064,6 +1067,13 @@ class _ExecutionLoop:
 
     @classmethod
     def _normalize_tool_call_arguments(cls, *, call: _ExecutionToolCall, request: ExecutionRequest) -> _ExecutionToolCall:
+        if call.tool_name == "metasploit_exec":
+            arguments = dict(call.arguments)
+            requested_timeout = int(arguments.get("timeout_seconds") or call.timeout_seconds)
+            arguments["timeout_seconds"] = requested_timeout
+            # Give the tool process room to return a structured no-session result
+            # before the outer MCP call timeout fires.
+            return call.model_copy(update={"arguments": arguments, "timeout_seconds": requested_timeout + 30})
         if call.tool_name in {"http_probe", "web_fingerprint", "whatweb_fingerprint", "nuclei_scan"}:
             arguments = dict(call.arguments)
             url = cls._url_from_ref(arguments.get("url")) or cls._url_from_http_arguments(arguments)
@@ -1074,12 +1084,6 @@ class _ExecutionLoop:
                 arguments.pop("target", None)
                 return call.model_copy(update={"arguments": arguments})
             return call
-        if call.tool_name in {"validation_precheck", "safe_vuln_validate"} and not call.arguments.get("target_url"):
-            inferred = cls._infer_target_url(request)
-            if inferred:
-                arguments = dict(call.arguments)
-                arguments["target_url"] = inferred
-                return call.model_copy(update={"arguments": arguments})
         return call
 
     @classmethod

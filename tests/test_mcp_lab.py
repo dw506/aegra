@@ -34,20 +34,11 @@ def test_lab_tool_specs_include_v1_tools() -> None:
         "nuclei_scan",
         "whatweb_fingerprint",
         "ffuf_discover",
-        "vuln_profile_match",
-        "validation_precheck",
-        "safe_vuln_validate",
-        "credential_check",
-        "session_probe",
-        "session_open_lab",
-        "identity_context_probe",
-        "privilege_context_probe",
-        "pivot_route_probe",
-        "internal_service_discover",
-        "pivoted_nmap_scan",
         "chain_goal_check",
         "controlled_data_read_proof",
         "pivot_exec",
+        "metasploit_exec",
+        "session_exec",
     }
 
 
@@ -392,243 +383,6 @@ def test_lab_tcp_connect_probe_reports_unreachable(monkeypatch) -> None:
     assert payload["parsed"]["runtime_hints"]["reachable"] is False
 
 
-def test_lab_safe_vuln_validate_rejects_unsafe_mode(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-
-    payload = call_lab_tool(
-        "safe_vuln_validate",
-        {"target_url": "http://127.0.0.1", "profile_id": "lab-http-accessible", "safe_mode": False},
-    )
-
-    assert payload["success"] is False
-    assert payload["exit_code"] == "unsafe_mode_rejected"
-    assert payload["parsed"]["runtime_hints"]["blocked_by"] == "unsafe_mode_rejected"
-
-
-def test_lab_session_open_returns_runtime_hints(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-
-    payload = call_lab_tool(
-        "session_open_lab",
-        {"session_id": "sess-1", "bound_target": "host-1", "bound_identity": "alice", "reuse_policy": "shared"},
-    )
-
-    assert payload["success"] is True
-    assert payload["parsed"]["runtime_hints"]["open_session"] is True
-    assert payload["parsed"]["runtime_hints"]["session_id"] == "sess-1"
-
-
-def test_lab_pivot_route_probe_returns_route_hints(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-
-    payload = call_lab_tool(
-        "pivot_route_probe",
-        {"route_id": "route-1", "destination_host": "127.0.0.1", "destination_port": 1, "timeout_seconds": 1},
-    )
-
-    assert payload["success"] is False
-    assert payload["parsed"]["runtime_hints"]["register_pivot_route"] is True
-    assert payload["parsed"]["runtime_hints"]["route_id"] == "route-1"
-
-
-def test_lab_authorized_exploit_returns_post_access_observable_capability(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    monkeypatch.setattr(
-        mcp_tools,
-        "_open_url",
-        lambda *args, **kwargs: {"status": 200, "headers": {}, "body_excerpt": "uid=1000(pivot-lab)\n"},
-    )
-
-    payload = call_lab_tool(
-        "lab_authorized_exploit_execute",
-        {
-            "exploit_profile_id": "struts2-s2-045-lab-exploit",
-            "target_url": "http://10.20.0.10:8080/",
-            "extra_params": {"safe_command": "id", "success_contains": "uid="},
-        },
-    )
-
-    assert payload["success"] is True
-    hints = payload["parsed"]["runtime_hints"]
-    assert hints["exploit_executed"] is True
-    assert hints["capability_kind"] == "post_access_observable"
-    assert hints["post_access_observable"] is True
-    assert hints["observable_zones"] == ["hints", "loot"]
-    assert "post_access_observe" in hints["next_tools"]
-
-    capability = payload["parsed"]["entities"][0]
-    assert capability["type"] == "ExploitCapability"
-    assert capability["post_access_observable"] is True
-    assert capability["safe_paths"] == ["/opt/aegra/hints/", "/opt/aegra/loot/"]
-
-
-def test_thinkphp_lab_exploit_can_read_dmz_loot_file(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    captured: dict[str, str] = {}
-
-    def fake_open_url(url: str, **kwargs: Any) -> dict[str, Any]:
-        captured["url"] = url
-        return {
-            "status": 200,
-            "headers": {},
-            "body_excerpt": "PIVOT_HOST=10.20.0.50\nPIVOT_USER=pivot\nPIVOT_PASSWORD=pivotpass123\n",
-        }
-
-    monkeypatch.setattr(mcp_tools, "_open_url", fake_open_url)
-
-    payload = call_lab_tool(
-        "lab_authorized_exploit_execute",
-        {
-            "exploit_profile_id": "thinkphp-5-0-23-lab-exploit",
-            "target_url": "http://10.20.0.11",
-            "extra_params": {
-                "safe_func": "system",
-                "safe_arg": "cat /opt/aegra/loot/pivot_access.env",
-                "success_contains": "PIVOT_HOST=",
-            },
-        },
-    )
-
-    assert payload["success"] is True
-    assert captured["url"] == "http://10.20.0.11/?s=captcha"
-    stdout = json.loads(payload["stdout"])
-    assert stdout["body_excerpt_sha256"]
-    assert payload["parsed"]["runtime_hints"]["post_access_observable"] is True
-
-
-def test_internal_service_discover_uses_configured_pivot_for_restricted_data_service(monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    monkeypatch.setenv("AEGRA_LAB_PIVOT_HOST", "pivot.example")
-    monkeypatch.setenv("AEGRA_LAB_PIVOT_USER", "pivot")
-    monkeypatch.setenv("AEGRA_LAB_PIVOT_PASSWORD", "hidden")
-    monkeypatch.setattr(mcp_tools, "_tcp_connect_probe", lambda arguments: {"success": False, "parsed": mcp_tools._default_parsed()})
-    monkeypatch.setattr(mcp_tools, "_probe_tcp_via_configured_pivot", lambda **kwargs: {"reachable": True, "stderr": ""})
-
-    payload = call_lab_tool(
-        "internal_service_discover",
-        {"host": "10.0.2.50", "port": 5432, "route_id": "route-1", "timeout_seconds": 1},
-    )
-
-    assert payload["success"] is True
-    assert payload["parsed"]["services"][0]["service_name"] == "postgres"
-    assert payload["parsed"]["services"][0]["via_pivot_route"] == "route-1"
-    # The tool reports only the raw service/evidence fact. Deciding whether this
-    # satisfies a success condition is the tracker's job (reading the graph);
-    # the tool must never emit success-contract condition names.
-    assert "satisfied_conditions" not in payload["parsed"]["runtime_hints"]
-
-
-def test_pivoted_scan_uses_agent_supplied_credentials_over_env(monkeypatch) -> None:
-    """Credentials recovered by the agent (passed as pivot_username/pivot_password)
-    must reach the SSH egress and win over the env fallback — the "loot the host,
-    then pivot with what you found" chain works without any pre-seeded password."""
-
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    monkeypatch.setenv("AEGRA_LAB_PIVOT_USER", "envuser")
-    monkeypatch.setenv("AEGRA_LAB_PIVOT_PASSWORD", "envpass")
-    monkeypatch.setattr(mcp_tools, "_resolve_pivot_route", lambda route_id: {"route_id": route_id, "via_host": "10.20.0.50"})
-    monkeypatch.setattr(mcp_tools, "_pivot_transport_available", lambda *a, **k: True)
-
-    captured: dict[str, list[str]] = {}
-
-    def fake_run(argv, **kwargs):
-        captured["argv"] = argv
-        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(mcp_tools.subprocess, "run", fake_run)
-
-    call_lab_tool(
-        "pivoted_nmap_scan",
-        {
-            "target": "10.30.0.0/24",
-            "route_id": "route-1",
-            "pivot_username": "pivot",
-            "pivot_password": "pivotpass123",
-            "timeout_seconds": 5,
-        },
-    )
-
-    argv = captured["argv"]
-    # sshpass -p <password> ssh ... pivot@10.20.0.50 <remote>
-    assert argv[0] == "sshpass"
-    assert argv[2] == "pivotpass123"  # agent-supplied, NOT the env "envpass"
-    assert "pivot@10.20.0.50" in argv  # agent-supplied user, NOT "envuser"
-
-
-def test_identity_context_probe_exposes_redacted_pivot_candidates(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    policy_path = tmp_path / "policy.json"
-    policy_path.write_text(
-        json.dumps(
-            {
-                "adapter_policy": {
-                    "pivot": {
-                        "default_route": {
-                            "route_id": "route-1",
-                            "source_host": "10.0.1.10",
-                            "via_host": "10.0.1.30",
-                            "destination_cidr": "10.0.2.0/24",
-                            "protocol": "ssh",
-                            "transport": {"adapter": "proxy_shell"},
-                        }
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("AEGRA_RUNTIME_POLICY_PATH", str(policy_path))
-
-    payload = call_lab_tool("identity_context_probe", {})
-
-    candidates = payload["parsed"]["runtime_hints"]["pivot_route_candidates"]
-    assert candidates == [
-        {
-            "route_id": "route-1",
-            "source_host": "10.0.1.10",
-            "via_host": "10.0.1.30",
-            "destination_cidr": "10.0.2.0/24",
-            "destination_host": None,
-            "protocol": "ssh",
-            "transport_adapter": "proxy_shell",
-        }
-    ]
-    assert "password" not in json.dumps(payload).lower()
-
-
-def test_pivoted_nmap_scan_reports_restricted_data_service_fact(monkeypatch) -> None:
-    class Completed:
-        returncode = 0
-        stdout = "\n".join(
-            [
-                "Nmap scan report for 10.0.2.50",
-                "Host is up.",
-                "PORT     STATE SERVICE    VERSION",
-                "5432/tcp open  postgresql PostgreSQL DB",
-            ]
-        )
-        stderr = ""
-
-    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
-    monkeypatch.setattr(mcp_tools, "_run_via_configured_pivot", lambda **kwargs: Completed())
-
-    payload = call_lab_tool(
-        "pivoted_nmap_scan",
-        {"target": "10.0.2.0/24", "ports": "5432", "route_id": "route-1", "timeout_seconds": 1},
-    )
-
-    assert payload["success"] is True
-    services = payload["parsed"]["services"]
-    # Tool returns the raw service fact (service discovered via the pivot route).
-    assert any(
-        "postgres" in str(s["service_name"]).lower() and s["via_pivot_route"] == "route-1"
-        for s in services
-    )
-    # It must not emit success-contract condition names; the tracker judges
-    # satisfaction by reading the graph.
-    assert "satisfied_conditions" not in payload["parsed"]["runtime_hints"]
-
-
 def test_controlled_data_read_proof_returns_redacted_hash(monkeypatch) -> None:
     monkeypatch.setenv("AEGRA_LAB_MODE", "1")
     monkeypatch.delenv("AEGRA_LAB_DB_USER", raising=False)
@@ -716,6 +470,115 @@ def test_pivot_exec_accepts_shell_string_argv(monkeypatch) -> None:
     assert captured["argv"] == ["cat", "/etc/passwd"]
     assert payload["success"] is False
     assert payload["exit_code"] == "pivot_exec_failed"
+
+
+class _FakeMsfSessions:
+    def __init__(self) -> None:
+        self._d: dict[str, Any] = {}
+
+    @property
+    def list(self) -> dict[str, Any]:
+        return dict(self._d)
+
+    def session(self, sid: str) -> "_FakeMsfShell":
+        return _FakeMsfShell()
+
+
+class _FakeMsfShell:
+    def write(self, data: str) -> None:
+        self._last = data
+
+    def read(self) -> str:
+        return "uid=0(root)\n"
+
+
+class _FakeMsfModule:
+    def __init__(self, sessions: _FakeMsfSessions) -> None:
+        self._sessions = sessions
+        self.opts: dict[str, Any] = {}
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.opts[key] = value
+
+    def execute(self, payload: Any = None) -> dict[str, Any]:
+        # Executing the exploit opens a real session in the live engine; the fake
+        # mirrors that by registering one keyed "1".
+        self._sessions._d["1"] = {
+            "type": "shell",
+            "target_host": self.opts.get("RHOSTS"),
+            "via_exploit": "struts2",
+        }
+        return {"job_id": 0, "uuid": "u"}
+
+
+class _FakeMsfModules:
+    def __init__(self, sessions: _FakeMsfSessions) -> None:
+        self._sessions = sessions
+
+    def use(self, mtype: str, mpath: str) -> _FakeMsfModule:
+        return _FakeMsfModule(self._sessions)
+
+
+class _FakeMsfClient:
+    def __init__(self) -> None:
+        self.sessions = _FakeMsfSessions()
+        self.modules = _FakeMsfModules(self.sessions)
+
+
+def test_metasploit_exec_opens_session_via_rpc(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(
+        mcp_tools,
+        "_load_msf_config",
+        lambda: {"host": "10.20.0.60", "port": 55553, "password": "x", "lhost": "10.20.0.60"},
+    )
+    monkeypatch.setattr(mcp_tools, "_msf_client", lambda config: _FakeMsfClient())
+
+    payload = call_lab_tool(
+        "metasploit_exec",
+        {"module": "exploit/multi/http/struts2_content_type_ognl", "target": "10.20.0.10", "rport": 8080},
+    )
+
+    assert payload["success"] is True
+    # session_id flows to parsed -> ToolTraceFactExtractor._extract_session -> KG Session.
+    assert payload["parsed"]["session_id"] == "1"
+    assert payload["parsed"]["runtime_hints"]["bound_target"] == "10.20.0.10"
+
+
+def test_metasploit_exec_without_config_is_blocked(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(mcp_tools, "_load_msf_config", lambda: None)
+
+    payload = call_lab_tool("metasploit_exec", {"module": "x", "target": "10.20.0.10"})
+
+    assert payload["success"] is False
+    assert payload["exit_code"] == "msf_not_configured"
+
+
+def test_metasploit_exec_no_session_returns_structured_attempt(monkeypatch) -> None:
+    monkeypatch.setenv("AEGRA_LAB_MODE", "1")
+    monkeypatch.setattr(
+        mcp_tools,
+        "_load_msf_config",
+        lambda: {"host": "10.20.0.60", "port": 55553, "password": "x", "lhost": "10.20.0.60"},
+    )
+    monkeypatch.setattr(mcp_tools, "_msf_client", lambda config: _FakeMsfClient())
+    monkeypatch.setattr(mcp_tools, "_msf_wait_for_session", lambda client, before, timeout: None)
+
+    payload = call_lab_tool(
+        "metasploit_exec",
+        {
+            "module": "exploit/multi/http/struts2_content_type_ognl",
+            "target": "10.20.0.10",
+            "rport": 8080,
+            "timeout_seconds": 10,
+        },
+    )
+
+    assert payload["success"] is True
+    assert payload["exit_code"] == "no_session"
+    assert payload["parsed"]["runtime_hints"]["exploit_executed"] is True
+    assert payload["parsed"]["runtime_hints"]["session_opened"] is False
 
 
 def _tool_names(catalog: dict[str, Any]) -> set[str]:

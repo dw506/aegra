@@ -53,8 +53,10 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
         summary="authorized pivot established",
         # NB: pivot_routes / sessions intentionally left empty here.
         tool_trace=[
+            # The runtime-session bridge is tool-name-agnostic; a real
+            # metasploit_exec emits the same runtime_hints.session_id shape.
             ToolTrace(
-                tool_name="session_open_lab",
+                tool_name="metasploit_exec",
                 success=True,
                 parsed_output={
                     "runtime_hints": {
@@ -204,44 +206,6 @@ def test_harvest_maps_zone_ref_hint_to_route_destination_zone() -> None:
 
     route = state.pivot_routes["route::10.20.0.11::10.20.0.50:22"]
     assert route.destination_zone == "restricted"
-
-
-def test_tool_reported_vulnerability_candidate_becomes_typed_kg_node() -> None:
-    """A tool-reported ``VulnerabilityCandidate`` entity is minted as a typed KG
-    node (not flattened into a generic Finding), satisfying the strongly-typed
-    ``vulnerability_candidate_recorded`` contract condition."""
-
-    stage = ExecutionResult(
-        operation_id="op-harvest",
-        execution_id="stage-op-harvest-1-vuln_analysis_agent",
-        capability="analysis",
-        agent_name="vuln_analysis_agent",
-        status="succeeded",
-        summary="vulnerability profile matched",
-        tool_trace=[
-            ToolTrace(
-                tool_name="vuln_profile_match",
-                success=True,
-                parsed_output={
-                    "entities": [
-                        {
-                            "type": "VulnerabilityCandidate",
-                            "candidate_id": "vuln-candidate::cve-2017-5638::10.20.0.10",
-                            "vulnerability_id": "cve-2017-5638",
-                            "confidence": 0.75,
-                        }
-                    ]
-                },
-            )
-        ],
-    )
-
-    state = _state()
-    kg = KnowledgeGraph()
-    PhaseTwoResultApplier().apply_execution_result(stage, state, kg, AttackGraph())
-
-    types = {node.model_dump(mode="json").get("type") for node in kg.list_nodes()}
-    assert "VulnerabilityCandidate" in types
 
 
 def test_cidr_resolution_satisfies_restricted_service_via_route() -> None:

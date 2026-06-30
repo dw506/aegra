@@ -11,8 +11,7 @@ def test_default_open_lab_tool_catalog_includes_all_core_lab_tools() -> None:
         "run_command",
         "nmap_scan",
         "http_probe",
-        "safe_vuln_validate",
-        "pivot_route_probe",
-        "internal_service_discover",
+        "pivot_exec",
+        "controlled_data_read_proof",
         "goal_check",
     } <= names

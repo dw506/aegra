@@ -146,6 +146,59 @@ def _extract_nmap_scan(trace: dict[str, Any]) -> list[ExtractedFact]:
     return facts
 
 
+def _extract_run_command(trace: dict[str, Any]) -> list[ExtractedFact]:
+    """Extract conservative service facts from generic command output.
+
+    ``run_command`` is intentionally freeform, so only parse well-known scanner
+    shapes: nmap output and simple host:port sweep lines. This covers live
+    bounded recon without inventing facts from arbitrary shell output.
+    """
+    args = trace.get("arguments") or {}
+    argv = args.get("argv")
+    command = str(args.get("command") or "")
+    argv_str = " ".join(str(item) for item in argv) if isinstance(argv, list) else str(argv or command)
+    stdout = str(trace.get("stdout") or "")
+    if "nmap" in argv_str.lower() or "Nmap scan report for" in stdout:
+        nmap_trace = dict(trace)
+        nmap_trace["tool_name"] = "nmap_scan"
+        return [
+            fact.model_copy(update={"source_tool": "run_command"})
+            for fact in _extract_nmap_scan(nmap_trace)
+        ]
+
+    facts: list[ExtractedFact] = []
+    seen_hosts: set[str] = set()
+    for line in stdout.splitlines():
+        match = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})\b", line)
+        if not match:
+            continue
+        host = match.group(1)
+        port = int(match.group(2))
+        if host not in seen_hosts:
+            seen_hosts.add(host)
+            facts.append(
+                ExtractedFact(
+                    fact_type="Host",
+                    entity_type="Host",
+                    label=f"host:{host}",
+                    properties={"address": host},
+                    confidence=0.75,
+                    source_tool="run_command",
+                )
+            )
+        facts.append(
+            ExtractedFact(
+                fact_type="Service",
+                entity_type="Service",
+                label=f"tcp:{port}@{host}",
+                properties={"address": host, "port": port, "protocol": "tcp"},
+                confidence=0.75,
+                source_tool="run_command",
+            )
+        )
+    return facts
+
+
 def _extract_http_probe(trace: dict[str, Any]) -> list[ExtractedFact]:
     """Extract WebService/Evidence facts from http_probe output."""
     facts: list[ExtractedFact] = []
@@ -228,113 +281,6 @@ def _extract_web_fingerprint(trace: dict[str, Any]) -> list[ExtractedFact]:
     return facts
 
 
-def _extract_vuln_profile_match(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract VulnerabilityCandidate from vulnerability profile match.
-
-    The tool declares matched candidates as typed ``parsed.entities``
-    (``type == VulnerabilityCandidate``); older/alt shapes used
-    ``matches``/``candidates``. Read the entities envelope first so a real match
-    becomes a VulnerabilityCandidate fact (this is the single KG source).
-    """
-    facts: list[ExtractedFact] = []
-    parsed = trace.get("parsed_output") or {}
-    args = trace.get("arguments") or {}
-    matches = [
-        item
-        for item in (parsed.get("entities") or [])
-        if isinstance(item, dict) and str(item.get("type") or "") == "VulnerabilityCandidate"
-    ]
-    if not matches:
-        matches = [m for m in (parsed.get("matches") or parsed.get("candidates") or []) if isinstance(m, dict)]
-    target = str(args.get("target") or args.get("target_url") or "")
-    zone_ref = str(args.get("zone_ref") or "")
-    if isinstance(matches, list):
-        for match in matches:
-            vuln_id = str(
-                match.get("vulnerability_id")
-                or match.get("matched_profile_id")
-                or match.get("vuln_profile_id")
-                or match.get("id")
-                or "unknown"
-            )
-            confidence = float(match.get("confidence") or 0.5)
-            facts.append(
-                ExtractedFact(
-                    fact_type="VulnerabilityCandidate",
-                    entity_type="VulnerabilityCandidate",
-                    label=f"vuln-candidate:{vuln_id}@{target}",
-                    properties={
-                        "vuln_profile_id": vuln_id,
-                        "target_ref": target,
-                        "status": "candidate",
-                        "zone_ref": zone_ref,
-                        **{k: v for k, v in match.items() if k not in ("vuln_profile_id",)},
-                    },
-                    confidence=confidence,
-                    source_tool="vuln_profile_match",
-                    zone_ref=zone_ref,
-                )
-            )
-    return facts
-
-
-def _extract_exploit_execute(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract ExploitCapability/Session from successful exploit execution.
-
-    Only creates ValidatedVulnerability / ExploitCapability if the exploit
-    explicitly succeeded (success=True on the trace).
-    """
-    facts: list[ExtractedFact] = []
-    parsed = trace.get("parsed_output") or {}
-    args = trace.get("arguments") or {}
-    target = str(args.get("target") or "")
-    vuln_id = str(args.get("exploit_profile_id") or args.get("vuln_profile_id") or "")
-    zone_ref = str(args.get("zone_ref") or "")
-    runtime_hints = parsed.get("runtime_hints") if isinstance(parsed.get("runtime_hints"), dict) else {}
-    exploit_success = parsed.get("exploit_success") or parsed.get("success") or trace.get("success")
-    if exploit_success:
-        facts.append(
-            ExtractedFact(
-                fact_type="ExploitCapability",
-                entity_type="ExploitCapability",
-                label=f"exploit-capability:{vuln_id}@{target}",
-                properties={
-                    "vuln_ref": vuln_id,
-                    "target_ref": target,
-                    "status": "active",
-                    "zone_ref": zone_ref,
-                    "exploit_profile_id": vuln_id,
-                    "capability_kind": runtime_hints.get("capability_kind"),
-                    "post_access_observable": bool(runtime_hints.get("post_access_observable")),
-                    "observable_zones": list(runtime_hints.get("observable_zones") or []),
-                    "next_tools": list(runtime_hints.get("next_tools") or []),
-                },
-                confidence=0.9,
-                source_tool="lab_authorized_exploit_execute",
-                zone_ref=zone_ref,
-            )
-        )
-    # Also record as Evidence regardless of exploit success/failure
-    facts.append(
-        ExtractedFact(
-            fact_type="Evidence",
-            entity_type="Evidence",
-            label=f"exploit-attempt:{vuln_id}@{target}",
-            properties={
-                "evidence_kind": "exploit_attempt",
-                "target": target,
-                "vuln_profile_id": vuln_id,
-                "outcome": "success" if exploit_success else "failure",
-                "zone_ref": zone_ref,
-            },
-            confidence=0.9,
-            source_tool="lab_authorized_exploit_execute",
-            zone_ref=zone_ref,
-        )
-    )
-    return facts
-
-
 def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
     """Extract a generic post-access fact from post-access tools.
 
@@ -385,54 +331,6 @@ def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
     return facts
 
 
-def _extract_credential(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract Credential facts from credential discovery tools."""
-    facts: list[ExtractedFact] = []
-    parsed = trace.get("parsed_output") or {}
-    args = trace.get("arguments") or {}
-    target = str(args.get("target") or "")
-    zone_ref = str(args.get("zone_ref") or "")
-    credentials = parsed.get("credentials") or parsed.get("results") or []
-    if isinstance(credentials, list) and credentials:
-        for cred in credentials:
-            cred_type = str(cred.get("type") or "password")
-            principal = str(cred.get("username") or cred.get("principal") or "unknown")
-            facts.append(
-                ExtractedFact(
-                    fact_type="Credential",
-                    entity_type="Credential",
-                    label=f"credential:{cred_type}:{principal}@{target}",
-                    properties={
-                        "credential_kind": cred_type,
-                        "principal": principal,
-                        "target_ref": target,
-                        "zone_ref": zone_ref,
-                    },
-                    confidence=0.8,
-                    source_tool=str(trace.get("tool_name") or ""),
-                    zone_ref=zone_ref,
-                )
-            )
-    elif not credentials:
-        # Still record a hint if credential discovery ran successfully
-        facts.append(
-            ExtractedFact(
-                fact_type="Evidence",
-                entity_type="Evidence",
-                label=f"credential-probe:{target}",
-                properties={
-                    "evidence_kind": "credential_probe",
-                    "target_ref": target,
-                    "zone_ref": zone_ref,
-                },
-                confidence=0.7,
-                source_tool=str(trace.get("tool_name") or ""),
-                zone_ref=zone_ref,
-            )
-        )
-    return facts
-
-
 def _extract_session(trace: dict[str, Any]) -> list[ExtractedFact]:
     """Extract Session facts from session management tools."""
     facts: list[ExtractedFact] = []
@@ -459,6 +357,36 @@ def _extract_session(trace: dict[str, Any]) -> list[ExtractedFact]:
                 zone_ref=zone_ref,
             )
         )
+    return facts
+
+
+def _extract_msf(trace: dict[str, Any]) -> list[ExtractedFact]:
+    """Extract facts from a metasploit_exec call.
+
+    Running the exploit module is itself an exploit attempt (recorded as
+    Evidence{kind:exploit_attempt} for contract #6, success or not); a successful
+    run additionally opens a real Session (via _extract_session, satisfying
+    #7/#8). cg.md G.6 stage 2: kind is the cross-cutting ToolFact discriminator.
+    """
+    facts: list[ExtractedFact] = list(_extract_session(trace))
+    args = trace.get("arguments") or {}
+    target = str(args.get("target") or "")
+    module = str(args.get("module") or "")
+    facts.append(
+        ExtractedFact(
+            fact_type="Evidence",
+            entity_type="Evidence",
+            label=f"exploit-attempt:{module}@{target}",
+            properties={
+                "kind": "exploit_attempt",
+                "evidence_kind": "exploit_attempt",
+                "module": module,
+                "target_ref": target,
+            },
+            confidence=0.9,
+            source_tool="metasploit_exec",
+        )
+    )
     return facts
 
 
@@ -491,51 +419,6 @@ def _extract_pivot_route(trace: dict[str, Any]) -> list[ExtractedFact]:
             zone_ref=zone_ref,
         )
     )
-    return facts
-
-
-def _extract_internal_discovery(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract Service facts for restricted-zone discovery."""
-    facts: list[ExtractedFact] = []
-    parsed = trace.get("parsed_output") or {}
-    args = trace.get("arguments") or {}
-    zone_ref = str(args.get("zone_ref") or "restricted")
-    hosts = parsed.get("hosts") or []
-    services = parsed.get("services") or []
-    for service in services:
-        port = service.get("port")
-        svc_name = str(service.get("service_name") or service.get("name") or "unknown")
-        addr = str(service.get("address") or service.get("host") or "")
-        facts.append(
-            ExtractedFact(
-                fact_type="Service",
-                entity_type="Service",
-                label=f"internal-service:{svc_name}:{port}@{addr}",
-                properties={
-                    "port": port,
-                    "service_name": svc_name,
-                    "address": addr,
-                    "zone_ref": zone_ref,
-                    "internal": True,
-                },
-                confidence=0.85,
-                source_tool=str(trace.get("tool_name") or ""),
-                zone_ref=zone_ref,
-            )
-        )
-    for host in hosts if isinstance(hosts, list) else []:
-        addr = str(host.get("address") or host.get("ip") or host)
-        facts.append(
-            ExtractedFact(
-                fact_type="Host",
-                entity_type="Host",
-                label=f"internal-host:{addr}",
-                properties={"address": addr, "zone_ref": zone_ref, "internal": True},
-                confidence=0.85,
-                source_tool=str(trace.get("tool_name") or ""),
-                zone_ref=zone_ref,
-            )
-        )
     return facts
 
 
@@ -614,34 +497,156 @@ def _extract_controlled_data_read(trace: dict[str, Any]) -> list[ExtractedFact]:
     return facts
 
 
+def _internal_services_from_nmap_stdout(trace: dict[str, Any]) -> list[ExtractedFact]:
+    """Parse raw nmap stdout into restricted-zone Host/Service facts.
+
+    Mirrors ``_extract_internal_discovery``'s node shape (zone_ref=restricted,
+    internal=True) so ``service_discovered_via_route`` resolves identically
+    whether the scan ran via the canned ``internal_service_discover`` or via the
+    generic ``pivot_exec`` transport primitive.
+    """
+    facts: list[ExtractedFact] = []
+    stdout = str(trace.get("stdout") or "")
+    zone_ref = "restricted"
+    current_host = ""
+    for line in stdout.splitlines():
+        hm = re.search(r"Nmap scan report for (?:[^()]*\()?(\d{1,3}(?:\.\d{1,3}){3})\)?", line)
+        if hm:
+            current_host = hm.group(1)
+            facts.append(
+                ExtractedFact(
+                    fact_type="Host",
+                    entity_type="Host",
+                    label=f"internal-host:{current_host}",
+                    properties={"address": current_host, "zone_ref": zone_ref, "internal": True},
+                    confidence=0.85,
+                    source_tool="pivot_exec",
+                    zone_ref=zone_ref,
+                )
+            )
+            continue
+        m = re.match(r"(\d+)/(tcp|udp)\s+open\s+(\S+)", line)
+        if m:
+            port = int(m.group(1))
+            proto = m.group(2)
+            svc = m.group(3)
+            facts.append(
+                ExtractedFact(
+                    fact_type="Service",
+                    entity_type="Service",
+                    label=f"internal-service:{svc}:{port}@{current_host}",
+                    properties={
+                        "port": port,
+                        "protocol": proto,
+                        "service_name": svc,
+                        "address": current_host or None,
+                        "zone_ref": zone_ref,
+                        "internal": True,
+                    },
+                    confidence=0.85,
+                    source_tool="pivot_exec",
+                    zone_ref=zone_ref,
+                )
+            )
+    return facts
+
+
+def _extract_pivot_exec(trace: dict[str, Any]) -> list[ExtractedFact]:
+    """Extract facts from the generic ``pivot_exec`` transport primitive.
+
+    A successful ``pivot_exec`` is causal proof the route is live (PivotRoute,
+    via ``_extract_pivot_route``). When the argv ran an nmap scan, also parse the
+    raw stdout into restricted-zone Service facts so internal service discovery
+    has a real-tool source — the freeform replacement for the bespoke
+    ``internal_service_discover`` / ``pivoted_nmap_scan`` (cg.md G.5 stage 1).
+    """
+    facts: list[ExtractedFact] = list(_extract_pivot_route(trace))
+    args = trace.get("arguments") or {}
+    argv = args.get("argv")
+    argv_str = " ".join(str(a) for a in argv) if isinstance(argv, list) else str(argv or "")
+    if "nmap" in argv_str.lower():
+        facts.extend(_internal_services_from_nmap_stdout(trace))
+    return facts
+
+
+def _extract_nuclei_scan(trace: dict[str, Any]) -> list[ExtractedFact]:
+    """Extract vulnerability-candidate Evidence from nuclei template hits.
+
+    A nuclei match is a real vulnerability signal; record it as generic
+    ``Evidence{kind:vuln_candidate}`` — the collapse target for the deprecated
+    ``VulnerabilityCandidate`` node type (cg.md G.3). The contract migration
+    (G.6 stage 2) will switch vuln_candidate conditions to read this kind.
+    """
+    facts: list[ExtractedFact] = []
+    parsed = trace.get("parsed_output") or {}
+    args = trace.get("arguments") or {}
+    url = str(args.get("url") or args.get("target") or "")
+    zone_ref = str(args.get("zone_ref") or "")
+    hits = parsed.get("findings") or parsed.get("results") or parsed.get("matches") or []
+    for hit in hits if isinstance(hits, list) else []:
+        if not isinstance(hit, dict):
+            continue
+        info = hit.get("info") if isinstance(hit.get("info"), dict) else {}
+        template = str(hit.get("template_id") or hit.get("template") or hit.get("id") or hit.get("name") or "nuclei-hit")
+        severity = str(hit.get("severity") or info.get("severity") or "")
+        facts.append(
+            ExtractedFact(
+                fact_type="Evidence",
+                entity_type="Evidence",
+                label=f"vuln-candidate:{template}@{url}",
+                properties={
+                    "kind": "vuln_candidate",
+                    "evidence_kind": "vuln_candidate",
+                    "template_id": template,
+                    "severity": severity,
+                    "url": url,
+                    "target_ref": url,
+                    "zone_ref": zone_ref,
+                },
+                confidence=0.8,
+                source_tool="nuclei_scan",
+                zone_ref=zone_ref,
+            )
+        )
+    if not facts and url:
+        # A completed scan with no hit is still fingerprint-grade Evidence.
+        facts.append(
+            ExtractedFact(
+                fact_type="Evidence",
+                entity_type="Evidence",
+                label=f"nuclei-scan:{url}",
+                properties={"kind": "vuln_scan", "evidence_kind": "vuln_scan", "url": url, "zone_ref": zone_ref},
+                confidence=0.6,
+                source_tool="nuclei_scan",
+                zone_ref=zone_ref,
+            )
+        )
+    return facts
+
+
 # ---------------------------------------------------------------------------
 # Tool name → extractor mapping
 # ---------------------------------------------------------------------------
 
 _TOOL_EXTRACTORS: dict[str, Any] = {
+    "run_command": _extract_run_command,
     "nmap_scan": _extract_nmap_scan,
     "http_probe": _extract_http_probe,
     "web_fingerprint": _extract_web_fingerprint,
     "web_discover": _extract_web_fingerprint,
+    "whatweb_fingerprint": _extract_web_fingerprint,
     "fingerprint_extract": _extract_web_fingerprint,
-    "vulnerability_profile_match": _extract_vuln_profile_match,
-    "vuln_profile_match": _extract_vuln_profile_match,
-    "lab_authorized_exploit_execute": _extract_exploit_execute,
-    "exploit_execute": _extract_exploit_execute,
+    "nuclei_scan": _extract_nuclei_scan,
     "post_access_observe": _extract_post_access,
     "read_lab_marker": _extract_post_access,
     "list_lab_hints": _extract_post_access,
-    "credential_discover_lab": _extract_credential,
-    "credential_check": _extract_credential,
-    "session_open_lab": _extract_session,
-    "session_probe": _extract_session,
-    "pivot_route_probe": _extract_pivot_route,
-    "pivot_route_register": _extract_pivot_route,
+    # Step 5 / G.5 stage 1a: a real metasploit_exec opens a real session (Session,
+    # #7/#8) and records the attempt (Evidence{kind:exploit_attempt}, #6).
+    "metasploit_exec": _extract_msf,
     # Step 5 generic transport primitive: a successful pivot_exec is causal proof
-    # the route is live, so record it as an active PivotRoute.
-    "pivot_exec": _extract_pivot_route,
-    "pivoted_nmap_scan": _extract_internal_discovery,
-    "internal_service_discover": _extract_internal_discovery,
+    # the route is live (PivotRoute); when its argv ran nmap it also yields
+    # restricted-zone Service facts (the real-tool source for #12).
+    "pivot_exec": _extract_pivot_exec,
     "goal_check": _extract_goal_check,
     "internal_goal_check": _extract_goal_check,
     "chain_goal_check": _extract_goal_check,

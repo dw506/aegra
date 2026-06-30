@@ -81,6 +81,102 @@ def test_planner_loop_drills_with_read_tools_then_decides() -> None:
     assert outcome.metadata.get("read_steps") == 2  # two read tools were executed
 
 
+def test_planner_advisory_write_tool_validation_failure_does_not_stop_decision() -> None:
+    state = RuntimeState(operation_id="op-loop", execution=OperationRuntime(operation_id="op-loop"))
+    tools = _tools(state)
+    client = ScriptedClient(
+        [
+            json.dumps(
+                {
+                    "action": "execute",
+                    "directive": {
+                        "operation_id": "op-loop",
+                        "cycle_index": 1,
+                        "capability": "pivot",
+                        "objective": "check whether any pivot route exists",
+                        "target_refs": [],
+                        "risk_level": "low",
+                    },
+                    "reason": "need pivot evidence",
+                    "metadata": {
+                        "planner_tool_calls": [
+                            {
+                                "tool": "record_attack_step",
+                                "arguments": {
+                                    "operation_id": "op-loop",
+                                    "cycle_index": 1,
+                                    "capability": "pivot",
+                                    "summary": "missing status and includes outer identity fields",
+                                },
+                            }
+                        ]
+                    },
+                }
+            )
+        ]
+    )
+    planner = Planner(client=client)
+
+    outcome = planner.decide(
+        goal="assess pivot",
+        graph_context={"operation_id": "op-loop", "cycle_index": 1},
+        graph_tools=tools,
+    )
+
+    assert outcome.action == "execute"
+    assert outcome.directive is not None
+    results = outcome.metadata["planner_graph_tool_results"]
+    assert results[0]["tool"] == "record_attack_step"
+    assert results[0]["error"] == "advisory_tool_validation_failed"
+    assert "planner_attack_step_records" not in state.execution.metadata
+
+
+def test_planner_exploit_round_prefers_metasploit_when_available() -> None:
+    state = RuntimeState(operation_id="op-loop", execution=OperationRuntime(operation_id="op-loop"))
+    tools = _tools(state)
+    client = ScriptedClient(
+        [
+            json.dumps(
+                {
+                    "action": "execute",
+                    "directive": {
+                        "operation_id": "op-loop",
+                        "cycle_index": 1,
+                        "capability": "exploit",
+                        "objective": "open a real session on the authorized Struts target",
+                        "target_refs": [],
+                        "allowed_tools": [],
+                        "risk_level": "medium",
+                    },
+                    "reason": "need real exploit success",
+                }
+            )
+        ]
+    )
+    planner = Planner(client=client)
+
+    outcome = planner.decide(
+        goal="assess exploit",
+        graph_context={
+            "operation_id": "op-loop",
+            "cycle_index": 1,
+            "mcp_tool_catalog": {
+                "pentest-tools": {
+                    "tools": [
+                        {"name": "metasploit_exec"},
+                        {"name": "session_exec"},
+                    ]
+                }
+            },
+        },
+        graph_tools=tools,
+    )
+
+    assert outcome.directive is not None
+    assert outcome.directive.allowed_tools[:2] == ["metasploit_exec", "session_exec"]
+    assert outcome.directive.tool_hints[-1]["preferred_tool"] == "metasploit_exec"
+
+
 def test_planner_loop_falls_back_to_replan_when_budget_exhausted() -> None:
     state = RuntimeState(operation_id="op-loop", execution=OperationRuntime(operation_id="op-loop"))
     tools = _tools(state)

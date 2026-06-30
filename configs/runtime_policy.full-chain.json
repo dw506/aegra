@@ -13,6 +13,14 @@
           "adapter": "ssh"
         }
       }
+    },
+    "metasploit": {
+      "host": "10.20.0.60",
+      "port": 55553,
+      "ssl": false,
+      "username": "msf",
+      "password": "labrpcpass",
+      "lhost": "10.20.0.60"
     }
   }
 }

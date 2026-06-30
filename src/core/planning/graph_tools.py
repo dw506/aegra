@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph, stable_node_id
@@ -281,14 +281,31 @@ class PlannerGraphTools:
             name = str(call.get("tool") or call.get("name") or "")
             args = call.get("arguments") if isinstance(call.get("arguments"), dict) else call.get("args")
             args = args if isinstance(args, dict) else {}
-            if name == "record_finding":
-                results.append({"tool": name, "result": self.record_finding(args)})
-            elif name == "link_evidence":
-                results.append({"tool": name, "result": self.link_evidence(args)})
-            elif name == "record_attack_step":
-                results.append({"tool": name, "result": self.record_attack_step(args)})
-            else:
-                results.append({"tool": name, "error": "unknown planner graph tool"})
+            try:
+                if name == "record_finding":
+                    results.append({"tool": name, "result": self.record_finding(args)})
+                elif name == "link_evidence":
+                    results.append({"tool": name, "result": self.link_evidence(args)})
+                elif name == "record_attack_step":
+                    results.append({"tool": name, "result": self.record_attack_step(args)})
+                else:
+                    results.append({"tool": name, "error": "unknown planner graph tool"})
+            except ValidationError as exc:
+                result = {
+                    "tool": name,
+                    "error": "advisory_tool_validation_failed",
+                    "message": str(exc),
+                }
+                results.append(result)
+                self._record_tool_audit(name, args, result)
+            except Exception as exc:  # noqa: BLE001 - advisory writes must not stop planning.
+                result = {
+                    "tool": name,
+                    "error": "advisory_tool_failed",
+                    "message": str(exc),
+                }
+                results.append(result)
+                self._record_tool_audit(name, args, result)
         return results
 
     def _record_tool_audit(self, tool: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
