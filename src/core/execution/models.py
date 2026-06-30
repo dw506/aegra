@@ -152,13 +152,9 @@ class ExecutionResult(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     tool_trace: list[ToolTrace] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    risk_level: Literal["low", "medium", "high", "critical"] = "medium"
-    policy_notes: list[str] = Field(default_factory=list)
-    retry_recommendation: str | None = None
     replan_recommendation: str | None = None
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
     writeback_hints: dict[str, Any] = Field(default_factory=dict)
-    created_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
     @model_validator(mode="before")
     @classmethod

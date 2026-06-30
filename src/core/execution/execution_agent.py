@@ -668,7 +668,6 @@ class _ExecutionLoop:
             tool_trace=list(tool_traces),
             confidence=float(payload.get("confidence") or 0.5),
             replan_recommendation=payload.get("replan_recommendation"),
-            retry_recommendation=payload.get("retry_recommendation"),
             runtime_hints=runtime_hints,
             writeback_hints=dict(payload.get("writeback_hints") or {}),
         )
