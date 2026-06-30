@@ -222,7 +222,7 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
     assert mcp.calls[0]["arguments"]["trace_id"] == "4-recon_agent-1-nmap_scan"
 
 
-def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output() -> None:
+def test_stage_agent_accepts_finish_data_alias_and_preserves_evidence() -> None:
     llm = FakeStageLLM(
         [
             {
@@ -251,14 +251,13 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_structured_output()
     result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
     assert result.status == "succeeded"
+    # The `data` finish wrapper is still unwrapped; tool-derived evidence_refs
+    # survive. The structured hosts_up/service_discovery self-report is no longer
+    # captured (channel-② removed) — KG facts come from tool_trace only.
     assert result.evidence_refs == ["runtime://tool-output/nmap"]
-    structured = [item for item in result.observations if item.get("category") == "stage_structured_output"]
-    assert structured
-    assert structured[0]["hosts_up"] == ["198.51.100.10"]
-    assert structured[0]["service_discovery"][0]["port"] == 8080
 
 
-def test_stage_agent_accepts_execution_result_alias_and_string_observations() -> None:
+def test_stage_agent_accepts_execution_result_alias_wrapper() -> None:
     llm = FakeStageLLM(
         [
             {
@@ -282,8 +281,10 @@ def test_stage_agent_accepts_execution_result_alias_and_string_observations() ->
 
     result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
 
+    # The execution_result wrapper is unwrapped; the self-report observations key
+    # is silently ignored now (channel-② removed).
     assert result.status == "succeeded"
-    assert result.observations == [{"type": "note", "detail": "Target remains within authorized DMZ scope."}]
+    assert result.summary == "recon noted scope"
 
 
 def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
@@ -319,54 +320,7 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
     assert len(llm.calls) == 2
     assert result.status == "succeeded"
     assert result.summary == "repaired payload"
-    assert result.observations == [{"type": "note", "detail": "Repaired without adding facts."}]
-
-
-def test_stage_agent_parses_json_summary_and_candidate_findings() -> None:
-    llm = FakeStageLLM(
-        [
-            {
-                "action": "finish",
-                "summary": json.dumps(
-                    {
-                        "status": "completed",
-                        "analysis": {
-                            "service_fingerprints": [
-                                {
-                                    "host": "198.51.100.20",
-                                    "port": 80,
-                                    "protocol": "http",
-                                    "improved_fingerprint": {"application": "Example App"},
-                                }
-                            ],
-                            "candidate_findings": [
-                                {
-                                    "target": "http://198.51.100.20/",
-                                    "type": "application_identification",
-                                    "statement": "Example App identified from page title.",
-                                }
-                            ],
-                        },
-                    }
-                ),
-            }
-        ]
-    )
-    request = ExecutionRequest(
-        operation_id="op-json-summary",
-        cycle_index=2,
-        agent_name="vuln_analysis_agent",
-        capability="analysis",
-        objective="Analyze fingerprints",
-        max_steps=1,
-    )
-
-    result = ExecutionAgent(llm_client=llm, mcp_client=RecordingMCP()).run(request)
-
-    assert result.status == "succeeded"
-    assert result.findings[0]["summary"] == "Example App identified from page title."
-    structured = [item for item in result.observations if item.get("category") == "stage_structured_output"]
-    assert structured[0]["analysis"]["service_fingerprints"][0]["port"] == 80
+    assert result.confidence == 0.7
 
 
 def test_stage_agent_empty_success_finish_requests_replan() -> None:

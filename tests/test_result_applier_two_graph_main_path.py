@@ -39,16 +39,15 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         agent_name="recon_agent",
         status="succeeded",
         summary="host discovered",
-        discovered_entities=[
-            {"id": "host-1", "type": "Host", "summary": "host 1", "confidence": 0.9}
-        ],
-        tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
+        tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok", raw_output_ref="runtime://tool-output/probe-1")],
     )
     stage_apply = applier.apply_execution_result(execution_result, state, kg, ag)
     assert stage_apply.ag_graph is not None
 
     assert state.execution.metadata["last_planner_outcome"]["action"] == "execute"
-    assert kg.get_node("host-1").label == "host 1"
+    # KG facts derive solely from tool_trace now: the probe mints a tool-evidence node.
+    evidence_nodes = [node for node in kg.list_nodes() if node.type.value == "Evidence"]
+    assert any(node.properties.get("tool_name") == "safe_probe" for node in evidence_nodes)
     # v3 result-tier AG: exactly one ATTACK_STEP per round, no process nodes.
     process_nodes = ag.find_process_nodes()
     step_nodes = [node for node in process_nodes if node.node_type.value == "ATTACK_STEP"]

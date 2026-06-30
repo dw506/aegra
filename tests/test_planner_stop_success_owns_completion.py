@@ -20,7 +20,6 @@ class GoalSatisfiedAgent:
             agent_name=self.agent_name,
             status="succeeded",
             summary="goal evidence satisfied",
-            findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
             evidence_refs=["evidence::goal"],
             runtime_hints={
                 "goal_satisfied": True,
@@ -41,7 +40,6 @@ class GoalWithoutExplicitSatisfiedHintAgent:
             agent_name=self.agent_name,
             status="succeeded",
             summary="goal stage succeeded but did not prove completion",
-            findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
             evidence_refs=["evidence::goal"],
         )
 

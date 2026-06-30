@@ -286,28 +286,16 @@ class _ExecutionLoop:
             self._log_execution_finish(logger, request, result)
             return result
 
-        result = self._partial_result_from_tool_memory(request, memory, tool_traces)
+        result = self._partial_result_from_tool_memory(request, tool_traces)
         self._log_execution_finish(logger, request, result)
         return result
 
     def _partial_result_from_tool_memory(
         self,
         request: ExecutionRequest,
-        memory: list[dict[str, Any]],
         tool_traces: list[ToolTrace],
     ) -> ExecutionResult:
         evidence = self._tool_trace_evidence(tool_traces)
-        observations = list(memory)
-        if tool_traces:
-            observations.append(
-                {
-                    "category": "execution_tool_trace_summary",
-                    "summary": f"{self.agent_name} reached max_steps after {len(tool_traces)} tool call(s); preserving tool evidence for writeback.",
-                    "tool_count": len(tool_traces),
-                    "successful_tool_count": sum(1 for trace in tool_traces if trace.success),
-                    "parsed_outputs": [trace.parsed_output for trace in tool_traces if trace.parsed_output],
-                }
-            )
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=self._request_id(request),
@@ -315,7 +303,6 @@ class _ExecutionLoop:
             agent_name=self.agent_name,
             status="partial",
             summary=f"{self.agent_name} reached max_steps for {self._request_id(request)}",
-            observations=observations,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             runtime_hints={"cycle_index": request.cycle_index, "max_steps_exhausted": True},
@@ -597,27 +584,20 @@ class _ExecutionLoop:
         tool_traces: list[ToolTrace],
     ) -> ExecutionResult:
         payload = self._normalized_finish_payload(payload)
-        observations = list(payload.get("observations") or memory)
-        observations.extend(self._structured_finish_observations(payload))
-        findings = self._normalized_findings(payload)
         status = self._normalized_status(payload.get("status"))
         if self._empty_success_needs_replan(
             status=status,
             summary=payload.get("summary"),
-            observations=observations,
-            findings=findings,
             evidence=payload.get("evidence"),
             evidence_refs=payload.get("evidence_refs"),
             tool_traces=tool_traces,
         ):
             status = "needs_replan"
-            payload.setdefault("replan_recommendation", "stage returned no tool results, evidence, findings, or structured output")
+            payload.setdefault("replan_recommendation", "stage returned no tool results, evidence, or structured output")
         try:
             return self._build_execution_result_from_finish(
                 request=request,
                 payload=payload,
-                observations=observations,
-                findings=findings,
                 status=status,
                 tool_traces=tool_traces,
             )
@@ -625,15 +605,10 @@ class _ExecutionLoop:
             repaired = self._repair_finish_payload(request=request, payload=payload, validation_error=str(exc))
             if repaired is not None:
                 repaired = self._normalized_finish_payload(repaired)
-                repaired_observations = list(repaired.get("observations") or observations or memory)
-                repaired_observations.extend(self._structured_finish_observations(repaired))
-                repaired_findings = self._normalized_findings(repaired)
                 try:
                     return self._build_execution_result_from_finish(
                         request=request,
                         payload=repaired,
-                        observations=repaired_observations,
-                        findings=repaired_findings,
                         status=self._normalized_status(repaired.get("status") or status),
                         tool_traces=tool_traces,
                     )
@@ -646,8 +621,6 @@ class _ExecutionLoop:
         *,
         request: ExecutionRequest,
         payload: dict[str, Any],
-        observations: list[dict[str, Any]],
-        findings: list[dict[str, Any]],
         status: str,
         tool_traces: list[ToolTrace],
     ) -> ExecutionResult:
@@ -660,10 +633,6 @@ class _ExecutionLoop:
             agent_name=self.agent_name,
             status=status,  # type: ignore[arg-type]
             summary=str(payload.get("summary") or f"{self.agent_name} finished"),
-            observations=observations,
-            findings=findings,
-            discovered_entities=self._normalized_dict_list(payload.get("discovered_entities"), default_kind="entity"),
-            discovered_relations=self._normalized_dict_list(payload.get("discovered_relations"), default_kind="relation"),
             evidence_refs=self._normalized_evidence_refs(payload.get("evidence_refs")),
             tool_trace=list(tool_traces),
             confidence=float(payload.get("confidence") or 0.5),
@@ -684,7 +653,7 @@ class _ExecutionLoop:
         repair_prompt = (
             "Repair this ExecutionResult finish payload into strict JSON only. "
             "Preserve facts; do not add new findings. Acceptable wrappers are result, execution_result, or direct fields. "
-            "If observations are strings, convert each to {\"type\":\"note\",\"detail\":\"...\"}.\n\n"
+            "Keep summary, status, evidence_refs, confidence, runtime_hints and writeback_hints.\n\n"
             f"operation_id={request.operation_id}\n"
             f"execution_id={self._request_id(request)}\n"
             f"capability={request.capability}\n"
@@ -726,91 +695,26 @@ class _ExecutionLoop:
                         merged["summary"] = parsed.get("status") or "structured stage output"
         return merged
 
-    @classmethod
-    def _normalized_findings(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        findings = cls._normalized_dict_list(payload.get("findings"), default_kind="stage_finding")
-        for key in ("candidate_findings", "findings_candidates"):
-            for item in cls._normalized_dict_list(payload.get(key), default_kind="candidate_finding"):
-                normalized = dict(item)
-                normalized.setdefault("kind", normalized.get("type") or "candidate_finding")
-                normalized.setdefault(
-                    "summary",
-                    normalized.get("statement") or normalized.get("title") or normalized.get("description") or str(item),
-                )
-                findings.append(normalized)
-        analysis = payload.get("analysis")
-        if isinstance(analysis, dict):
-            for item in cls._normalized_dict_list(analysis.get("candidate_findings"), default_kind="candidate_finding"):
-                normalized = dict(item)
-                normalized.setdefault("kind", normalized.get("type") or "candidate_finding")
-                normalized.setdefault(
-                    "summary",
-                    normalized.get("statement") or normalized.get("title") or normalized.get("description") or str(item),
-                )
-                findings.append(normalized)
-        return findings
-
     @staticmethod
     def _empty_success_needs_replan(
         *,
         status: str,
         summary: Any,
-        observations: list[dict[str, Any]],
-        findings: list[dict[str, Any]],
         evidence: Any,
         evidence_refs: Any,
         tool_traces: list[ToolTrace],
     ) -> bool:
+        # A "succeeded" finish that produced no tool evidence at all is a hollow
+        # self-report (the executor's only authority is now channel ① tool_trace +
+        # evidence_refs). Bounce it to needs_replan instead of trusting the claim.
         if status != "succeeded":
             return False
-        if tool_traces or observations or findings:
+        if tool_traces:
             return False
         if evidence not in (None, "", [], {}) or evidence_refs not in (None, "", [], {}):
             return False
         text = str(summary or "").strip().lower()
         return not text or text.endswith(" finished")
-
-    @staticmethod
-    def _structured_finish_observations(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        known_fields = {
-            "action",
-            "status",
-            "summary",
-            "observations",
-            "evidence",
-            "evidence_refs",
-            "findings",
-            "discovered_entities",
-            "discovered_relations",
-            "capabilities_gained",
-            "credentials",
-            "sessions",
-            "pivot_routes",
-            "next_capability_candidates",
-            "handoff_suggestion",
-            "confidence",
-            "replan_recommendation",
-            "result",
-            "execution_result",
-            "data",
-            "output",
-            "runtime_hints",
-            "writeback_hints",
-        }
-        structured = {
-            key: value
-            for key, value in payload.items()
-            if key not in known_fields and value not in (None, "", [], {})
-        }
-        if not structured:
-            return []
-        return [
-            {
-                "category": "stage_structured_output",
-                "summary": str(payload.get("summary") or "Structured stage output"),
-                **structured,
-            }
-        ]
 
     @staticmethod
     def _normalized_status(value: Any) -> str:
@@ -822,29 +726,6 @@ class _ExecutionLoop:
             "needs_replan": "needs_replan",
             "need_replan": "needs_replan",
         }.get(status, status)
-
-    @staticmethod
-    def _normalized_dict_list(value: Any, *, default_kind: str) -> list[dict[str, Any]]:
-        if value is None:
-            return []
-        if isinstance(value, dict):
-            return [dict(value)]
-        if isinstance(value, list):
-            normalized: list[dict[str, Any]] = []
-            for index, item in enumerate(value):
-                if isinstance(item, dict):
-                    normalized.append(dict(item))
-                elif item:
-                    normalized.append(
-                        {
-                            "type": default_kind,
-                            "summary": str(item),
-                            "value": item,
-                            "index": index,
-                        }
-                    )
-            return normalized
-        return [{"type": default_kind, "summary": str(value), "value": value}]
 
     @staticmethod
     def _normalized_evidence_refs(value: Any) -> list[str]:
@@ -874,20 +755,8 @@ class _ExecutionLoop:
         so ResultApplier can still extract and write back confirmed facts.
         """
         evidence = self._tool_trace_evidence(tool_traces)
-        observations = list(memory)
         successful_traces = [t for t in tool_traces if t.success]
         has_successful_tool = len(successful_traces) > 0
-
-        if tool_traces:
-            observations.append(
-                {
-                    "category": "execution_tool_trace_summary",
-                    "summary": f"{self.agent_name} {'has successful tools, preserving facts' if has_successful_tool else 'requested replanning'} after {len(tool_traces)} tool call(s).",
-                    "tool_count": len(tool_traces),
-                    "successful_tool_count": len(successful_traces),
-                    "parsed_outputs": [trace.parsed_output for trace in tool_traces if trace.parsed_output],
-                }
-            )
 
         # If tools succeeded but LLM post-processing failed, return partial (not needs_replan)
         # so that deterministic fact extraction can still run.
@@ -899,7 +768,6 @@ class _ExecutionLoop:
                 agent_name=self.agent_name,
                 status="partial",
                 summary=f"{self.agent_name}: tools succeeded, LLM postprocess failed - {summary}",
-                observations=observations,
                 evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
                 tool_trace=list(tool_traces),
                 runtime_hints={
@@ -918,7 +786,6 @@ class _ExecutionLoop:
             agent_name=self.agent_name,
             status="needs_replan",
             summary=summary,
-            observations=observations,
             evidence_refs=[item["payload_ref"] for item in evidence if item.get("payload_ref")],
             tool_trace=list(tool_traces),
             replan_recommendation=str((decision or {}).get("replan_reason") or summary),
@@ -956,7 +823,6 @@ class _ExecutionLoop:
                 "capability": request.capability,
                 "status": result.status,
                 "summary": result.summary,
-                "findings_count": len(result.findings),
                 "evidence_count": len(result.evidence_refs),
                 "replan_recommendation": result.replan_recommendation,
             },

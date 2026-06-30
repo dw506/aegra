@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import AttackProcessEdge, AttackProcessEdgeType, AttackProcessNodeType, AttackStepNode, stable_node_id
-from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState, utc_now
+from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.credential_manager import RuntimeCredentialManager
 from src.core.runtime.events import ReplanRequestedEvent, SessionOpenedEvent, event_to_ref
@@ -97,7 +97,6 @@ class PhaseTwoResultApplier:
         hints = stage.runtime_hints
         if "goal_satisfied" in hints:
             state.execution.metadata["goal_state"] = {"goal_satisfied": bool(hints["goal_satisfied"]), "goal_summary": hints.get("goal_summary", stage.summary), "goal_evidence_refs": list(hints.get("goal_evidence_refs") or []), "source_task_id": stage.execution_id}
-        if stage.findings: state.execution.metadata.setdefault("findings", []).extend(dict(v) for v in stage.findings if isinstance(v, dict))
         for item in harvested["credentials"]:
             if not isinstance(item, dict): continue
             credential_id = self._string(item.get("credential_id") or item.get("id"))
@@ -147,27 +146,24 @@ class PhaseTwoResultApplier:
         return {"sessions": sessions, "pivot_routes": routes, "credentials": credentials}
 
     def _fact_deltas(self, stage: ExecutionResult) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = [dict(x) for x in stage.discovered_entities if isinstance(x, dict)]
-        # Single KG machine-fact source: the deterministic ToolTraceFactExtractor.
-        # The tools' self-declared parsed.entities envelope is NOT re-ingested here
-        # (it used inconsistent id fields — candidate_id/capability_id/session_id —
-        # so typed nodes were silently dropped or duplicated against the extractor's
-        # synthesized ids). Every tool that yields a contract-relevant node has a
-        # dedicated _extract_* function; per-tool extractors own the id scheme.
+        # KG machine facts derive SOLELY from channel ① now: the deterministic
+        # ToolTraceFactExtractor over tool_trace, plus tool-derived evidence_refs
+        # and the goal-proof runtime hint. The former channel-② self-report inputs
+        # (discovered_entities/relations, observation payloads, self-declared
+        # findings) are gone — every tool that yields a contract-relevant node has
+        # a dedicated _extract_* function and owns its id scheme.
+        records: list[dict[str, Any]] = []
         for trace_result in self._facts.extract_all(stage.tool_trace):
             for fact in trace_result.facts:
                 records.append({"id": f"{fact.entity_type.lower()}::{self._hash({'label': fact.label, 'tool': fact.source_tool})}", "type": fact.entity_type, "label": fact.label, **fact.properties, "confidence": fact.confidence})
-        for observation in stage.observations:
-            if not isinstance(observation, dict): continue
-            records.extend(self._structured_records(observation, stage))
-        for item in stage.findings:
-            if isinstance(item, dict): records.append({"id": item.get("finding_id") or item.get("id"), "type": "Finding", "label": item.get("summary") or item.get("title") or "finding", **item})
         for evidence_ref in stage.evidence_refs:
             records.append({"id": evidence_ref, "type": "Evidence", "label": evidence_ref, "payload_ref": evidence_ref})
         hints = stage.runtime_hints
         if hints.get("goal_satisfied") and hints.get("goal_id"):
             records.append({"id": f"goal-proof::{hints['goal_id']}", "type": "GoalProof", "label": f"goal proof: {hints['goal_id']}", "goal_id": hints["goal_id"], "evidence_refs": list(hints.get("goal_evidence_refs") or hints.get("evidence_refs") or []), "proof_token": hints.get("proof_token"), "redacted_summary": hints.get("goal_summary") or stage.summary})
         deltas = [self._entity_delta(record, stage) for record in records if self._string(record.get("id")) and self._string(record.get("type"))]
+        # Synthesize HOSTS edges for any Service node the extractor produced (e.g.
+        # from nmap / run_command output), binding it to its host.
         for record in records:
             if str(record.get("type", "")).lower() != "service": continue
             host = self._string(record.get("address") or record.get("host"))
@@ -175,26 +171,7 @@ class PhaseTwoResultApplier:
                 host_id, service_id = f"host::{host}", self._string(record.get("id"))
                 if service_id:
                     deltas.append(self._relation_delta(host_id, service_id, {"type": "HOSTS", "id": f"hosts::{host_id}::{service_id}"}, stage))
-        for relation in stage.discovered_relations:
-            if isinstance(relation, dict):
-                source, target = self._string(relation.get("source") or relation.get("from")), self._string(relation.get("target") or relation.get("to"))
-                if source and target: deltas.append(self._relation_delta(source, target, relation, stage))
         return deltas
-
-    def _structured_records(self, payload: dict[str, Any], stage: ExecutionResult) -> list[dict[str, Any]]:
-        result: list[dict[str, Any]] = []
-        for host in payload.get("hosts_up") or payload.get("hosts") or []:
-            value = host.get("host") if isinstance(host, dict) else host
-            if value: result.append({"id": f"host::{value}", "type": "Host", "label": str(value), "address": str(value), **(host if isinstance(host, dict) else {})})
-        services = payload.get("service_discovery") or payload.get("services") or payload.get("analysis", {}).get("service_fingerprints", [])
-        for service in services if isinstance(services, list) else []:
-            if not isinstance(service, dict): continue
-            host, port, protocol = self._string(service.get("host") or service.get("address")), self._int(service.get("port")), self._string(service.get("protocol")) or "tcp"
-            if host and port:
-                fp = service.get("improved_fingerprint") if isinstance(service.get("improved_fingerprint"), dict) else {}
-                result.append({"id": f"service::{host}:{port}/{protocol}", "type": "Service", "label": f"{host}:{port}/{protocol}", "address": host, "port": port, "protocol": protocol, "service_name": service.get("service") or fp.get("application"), "version": service.get("version") or fp.get("application_version")})
-        for index, item in enumerate(payload.get("negative_evidence") or []): result.append({"id": f"evidence::{stage.execution_id}::negative_evidence::{index}", "type": "Evidence", "label": str(item), "summary": str(item)})
-        return result
 
     def _entity_delta(self, record: dict[str, Any], stage: ExecutionResult) -> dict[str, Any]:
         entity_id, entity_type = str(record["id"]), str(record["type"])
@@ -235,10 +212,6 @@ class PhaseTwoResultApplier:
     @staticmethod
     def _string(value: Any) -> str | None:
         text = str(value).strip() if value is not None else ""; return text or None
-    @staticmethod
-    def _int(value: Any) -> int | None:
-        try: return int(value)
-        except (TypeError, ValueError): return None
     @staticmethod
     def _float(value: Any) -> float | None:
         try: return float(value)

@@ -36,10 +36,7 @@ class FixedReconAgent:
             agent_name=self.agent_name,
             status="succeeded",
             summary="host discovered",
-            discovered_entities=[
-                {"id": "host-1", "type": "Host", "summary": "127.0.0.1", "address": "127.0.0.1", "confidence": 0.9}
-            ],
-            tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
+            tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok", raw_output_ref="runtime://tool-output/probe-1")],
         )
 
 
@@ -60,5 +57,10 @@ def test_two_graph_runtime_flow_creates_operation_imports_target_and_publishes_a
 
     state = result.runtime_state
     assert "task_graph" not in state.execution.metadata
-    assert orchestrator.graph_memory_store.load_kg("op-flow").get_node("host-1") is not None
+    # KG facts derive solely from tool_trace now: the probe mints a tool-evidence node.
+    kg = orchestrator.graph_memory_store.load_kg("op-flow")
+    assert any(
+        node.type.value == "Evidence" and node.properties.get("tool_name") == "safe_probe"
+        for node in kg.list_nodes()
+    )
     assert orchestrator.graph_memory_store.load_ag("op-flow").find_process_nodes()

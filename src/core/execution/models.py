@@ -135,20 +135,14 @@ class ExecutionResult(BaseModel):
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
     summary: str = Field(min_length=1)
 
-    # KG channel-② self-report (still load-bearing for KG until every fact type
-    # has a real-tool extractor — removal is Step 5 F3, gated on the C.2 ordering
-    # rule). observations/findings/discovered_* feed KG nodes/relations.
-    observations: list[dict[str, Any]] = Field(default_factory=list)
-    findings: list[dict[str, Any]] = Field(default_factory=list)
-    discovered_entities: list[dict[str, Any]] = Field(default_factory=list)
-    discovered_relations: list[dict[str, Any]] = Field(default_factory=list)
-
-    # Runtime facts (sessions/pivot_routes/credentials) and the
-    # capabilities_gained/failed_hypotheses/evidence display lists were channel-②
-    # LLM self-report. They are GONE: runtime sessions/routes/credentials now
-    # derive solely from tool_trace via PhaseTwoResultApplier._harvest_runtime_facts
-    # (channel ①, tool = authority). evidence_refs (tool-derived, load-bearing for
-    # success/oracle/AG) stays.
+    # All channel-② LLM self-report is GONE (Step 5 F3-KG / A2): observations,
+    # findings, discovered_entities/relations and the runtime
+    # sessions/pivot_routes/credentials lists no longer ride on the result. KG
+    # machine facts derive solely from tool_trace via the deterministic
+    # ToolTraceFactExtractor (channel ①, tool = authority); runtime
+    # sessions/routes/credentials derive from tool_trace via
+    # PhaseTwoResultApplier._harvest_runtime_facts. evidence_refs (tool-derived,
+    # load-bearing for success/oracle/AG) stays.
     evidence_refs: list[str] = Field(default_factory=list)
     tool_trace: list[ToolTrace] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -171,20 +165,6 @@ class ExecutionResult(BaseModel):
                 **nested,
             }
         return payload
-
-    @field_validator("observations", mode="before")
-    @classmethod
-    def normalize_observations(cls, value: Any) -> Any:
-        if isinstance(value, list):
-            return [
-                {"type": "note", "detail": item}
-                if isinstance(item, str)
-                else item
-                for item in value
-            ]
-        if isinstance(value, str):
-            return [{"type": "note", "detail": value}]
-        return value
 
 
 __all__ = [

@@ -38,21 +38,17 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         agent_name="recon_agent",
         status="succeeded",
         summary="host and service observed",
-        discovered_entities=[
-            {"id": "host-1", "type": "Host", "summary": "10.0.0.5", "address": "10.0.0.5", "confidence": 0.9},
-            {"id": "svc-1", "type": "Service", "summary": "http service", "port": 80, "protocol": "http"},
-            {"id": "evidence-1", "type": "Evidence", "summary": "probe output"},
-        ],
-        tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok")],
+        tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok", raw_output_ref="runtime://tool-output/probe-1")],
     )
     applier.apply_execution_result(execution_result, state, kg, ag)
 
     # v3 result-tier AG: one ATTACK_STEP per round; legacy process nodes are gone.
     process_types = {node.node_type for node in ag.find_process_nodes()}
     assert process_types == {AttackProcessNodeType.ATTACK_STEP}
-    assert kg.get_node("host-1") is not None
-    assert kg.get_node("svc-1") is not None
-    assert kg.get_node("evidence-1") is not None
+    # KG facts derive SOLELY from tool_trace now (channel ①): the successful probe
+    # mints a tool-evidence node. The former discovered_entities self-report is gone.
+    evidence_nodes = [node for node in kg.list_nodes() if node.type.value == "Evidence"]
+    assert any(node.properties.get("tool_name") == "safe_probe" for node in evidence_nodes)
     assert "task_graph" not in state.execution.metadata
 
 
@@ -101,88 +97,6 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     assert payload["type"] == "GoalProof"
     assert payload["goal_id"] == "final_internal_goal"
     assert "evidence::db-proof" in payload["evidence_refs"]
-
-
-def test_result_applier_extracts_generic_stage_recon_shapes_to_kg() -> None:
-    state = RuntimeState(operation_id="op-structured", execution=OperationRuntime(operation_id="op-structured"))
-    kg = KnowledgeGraph()
-    ag = AttackGraph()
-    applier = PhaseTwoResultApplier()
-
-    execution_result = ExecutionResult(
-        operation_id="op-structured",
-        execution_id="stage-op-structured-1-recon_agent",
-        capability="recon",
-        agent_name="recon_agent",
-        status="succeeded",
-        summary="structured recon output",
-        observations=[
-            {
-                "category": "stage_structured_output",
-                "summary": "structured recon output",
-                "hosts_up": ["198.51.100.10"],
-                "service_discovery": [
-                    {"host": "198.51.100.10", "port": 8080, "protocol": "tcp", "service": "http"}
-                ],
-                "negative_evidence": ["no UDP services were confirmed"],
-            }
-        ],
-        findings=[{"finding_id": "finding::service-discovery", "summary": "service discovery completed"}],
-        evidence_refs=["runtime://tool-output/nmap"],
-    )
-
-    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
-
-    assert apply_result.kg_apply_result is not None
-    assert kg.get_node("host::198.51.100.10").address == "198.51.100.10"
-    service = kg.get_node("service::198.51.100.10:8080/tcp")
-    assert service.port == 8080
-    assert service.protocol == "tcp"
-    assert kg.get_edge("hosts::host::198.51.100.10::service::198.51.100.10:8080/tcp") is not None
-    assert kg.get_node("finding::service-discovery") is not None
-    assert kg.get_node("evidence::stage-op-structured-1-recon_agent::negative_evidence::0") is not None
-
-
-def test_result_applier_extracts_service_fingerprints_to_kg() -> None:
-    state = RuntimeState(operation_id="op-fingerprint", execution=OperationRuntime(operation_id="op-fingerprint"))
-    kg = KnowledgeGraph()
-    ag = AttackGraph()
-    applier = PhaseTwoResultApplier()
-
-    execution_result = ExecutionResult(
-        operation_id="op-fingerprint",
-        execution_id="stage-op-fingerprint-2-vuln_analysis_agent",
-        capability="analysis",
-        agent_name="vuln_analysis_agent",
-        status="succeeded",
-        summary="fingerprint analysis",
-        observations=[
-            {
-                "category": "stage_structured_output",
-                "summary": "fingerprint analysis",
-                "analysis": {
-                    "service_fingerprints": [
-                        {
-                            "host": "198.51.100.30",
-                            "port": 8443,
-                            "protocol": "https",
-                            "improved_fingerprint": {
-                                "application": "Example Console",
-                                "application_version": "2.0",
-                            },
-                        }
-                    ]
-                },
-            }
-        ],
-    )
-
-    apply_result = applier.apply_execution_result(execution_result, state, kg, ag)
-
-    assert apply_result.kg_apply_result is not None
-    service = kg.get_node("service::198.51.100.30:8443/https")
-    assert service.service_name == "Example Console"
-    assert service.properties["version"] == "2.0"
 
 
 def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -> None:
@@ -284,34 +198,3 @@ def test_apply_patch_batch_tolerates_one_bad_delta() -> None:
     assert result["errors"]
 
 
-def test_result_applier_preserves_rich_host_when_service_shares_host() -> None:
-    """C6: the minimal service-loop host skeleton must not clobber rich host attributes."""
-
-    state = RuntimeState(operation_id="op-merge", execution=OperationRuntime(operation_id="op-merge"))
-    kg = KnowledgeGraph()
-    ag = AttackGraph()
-    applier = PhaseTwoResultApplier()
-
-    execution_result = ExecutionResult(
-        operation_id="op-merge",
-        execution_id="stage-op-merge-1-recon_agent",
-        capability="recon",
-        agent_name="recon_agent",
-        status="succeeded",
-        summary="host with hostname plus a service",
-        observations=[
-            {
-                "category": "stage_structured_output",
-                "summary": "recon",
-                "hosts": [{"host": "203.0.113.7", "hostname": "web.example.test"}],
-                "services": [{"host": "203.0.113.7", "port": 443, "protocol": "tcp", "service": "https"}],
-            }
-        ],
-    )
-
-    applier.apply_execution_result(execution_result, state, kg, ag)
-
-    host = kg.get_node("host::203.0.113.7")
-    # hostname 是 Host 的模型字段，富属性必须在 service 处理后仍被保留（C6）。
-    assert host.hostname == "web.example.test"
-    assert kg.get_node("service::203.0.113.7:443/tcp") is not None
