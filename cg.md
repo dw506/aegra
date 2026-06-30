@@ -147,11 +147,11 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
    - 做：工具不再 emit 合约条件名，成功评估全移到 `SuccessConditionTracker` 纯读图，无 bindings 直接报错。
    - 为什么第一：它是 DAG 的**根**——无上游依赖，却被所有下游依赖（planner objective 从合约 missing 派生，§0；合约若还认识 lab 里程碑名，agent 化必继承 lab 轨道）。纯减法、局部、不依赖新框架、可独立回归。
 
-2. **收信封 + 事实词汇通用化（吸收原 1-B）** ← 下一步
-   - 做（减法为主）：砍 `pipeline_results` 及 `ExecutionResult→RoundResult→PipelineResult→StageResult` 信封串（§4 病根）；核心 `ToolTraceFactExtractor` 停止按 lab 工具名分发、停造 `LabFlag/LabHint`。
-   - 做（最小加法）：定 canonical 模型（`ToolFact` / 图 delta / 一个 `PlannerDecision`）；extractor 改按工具声明的 `fact_kind` 分发；`LabFlag/LabHint`→通用 `Evidence/Proof`(带 `kind`)，合约 binding 同步。
+2. **收信封 + 事实词汇通用化（吸收原 1-B）** — **[大半已完成，见 G.9]**
+   - ⚠️ **纠偏**：§4 点名的 `pipeline_results` / `ExecutionResult→RoundResult→PipelineResult→StageResult` 信封串、`StageResultAdapter`、decision-history observer **早已删**（grep `src/` 无果），并非本步待办。本步剩下的真实工作 = 把 `ExecutionResult` 的 channel-② 自报字段删净（附录 C 的债）。
+   - **已落（G.9）**：A1 删装饰字段（`bff0e83`）；A2 删 channel-② 自报 `observations`/`findings`/`discovered_*`（`ecdecb2`）→ KG 机器事实现只走 channel ①（`ToolTraceFactExtractor` + `evidence_refs` + goal proof）。事实词汇通用化（`Evidence{kind}`）已在 Step 5 阶段1/2 做掉（G.7）。
    - 为什么在 1 之后 / 3 之前：成功评估去耦后数据流才收敛成「读图→决策→工具回事实→写图」，canonical 形状才清晰可定；而 agent（Step 3）操作的就是这套数据，得先定干净。
-   - **验收约束**（设计时必须满足，非现在设计）：核心不认识 lab 工具名/节点类型；Host→Session→PivotRoute 因果边可表达（多主机成功判定的前置）。
+   - **验收约束**：核心不认识 lab 工具名/节点类型（✅ Step 5 达成）；Host→Session→PivotRoute 因果边可表达（多主机成功判定的前置，部分——强因果边 #5b 仍 deferred）。
 
 3. **planner agent 化**
    - 做：`propose_next_decision` 单发预言机 → 真 tool-use 循环（读图工具进循环 + 多步迭代）；清 `advisor` 化石命名与死接口（附录 A）。
@@ -547,4 +547,27 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - 删孤儿 matcher 子系统（同名不同 class，pre-v3 死代码）：`src/core/vuln_candidates/`(包) + `models/vulnerability_candidate.py` + `models/fingerprint.py`(闭环只被前者引用) + `test_vulnerability_candidate_matcher.py`。
 - **框架收口达成**：合约只读 `Evidence{kind}`/`Session`/`Host`/`Service`/`PivotRoute`/`ControlledDataReadProof`/`Goal` —— 无罐头工具、无罐头 NodeType、无罐头 OR 分支。
 
-**独立"工具硬化"阶段（后置，full_chain E2E 在此之前保持红）**：nuclei 装进 mcp-tools（#5）；真 post_access/credential 工具（#9/#10）；`_pivot_exec` 补 `register_pivot_route` runtime hint（#11/#12）；`nmap_scan` 大范围 timeout（快扫策略）；permissive zone 兜底 #7。F3-KG（删 LLM 自报写 KG 路 + `Observation`/`Finding` NodeType）仍 deferred。
+**独立"工具硬化"阶段（后置，full_chain E2E 在此之前保持红）**：nuclei 装进 mcp-tools（#5）；真 post_access/credential 工具（#9/#10）；`_pivot_exec` 补 `register_pivot_route` runtime hint（#11/#12）；`nmap_scan` 大范围 timeout（快扫策略）；permissive zone 兜底 #7。
+
+> **F3-KG 更新（见 G.9 Step 2 / A2）**：原"删 LLM 自报写 KG 路 + `Observation`/`Finding` NodeType"这条已部分落地并修正——**LLM 自报写 KG 路已删**（A2 删 ExecutionResult `observations`/`findings`/`discovered_*` 四字段 + 全部生产消费者，KG 机器事实现只走 channel ①）；但 **`Observation`/`Finding` NodeType 不删**（核实后修正：planner `record_finding` 写工具仍产 `Finding`、`kg_store` 别名/约束仍用 `Observation`，非孤儿）。
+
+### G.9 Step 2 信封收敛 —— 实证分析 + C/A1/A2 落地（branch `refactor/step5-node-collapse`）
+
+> **前置纠偏：§4/§8 的信封分析已过时，以实际代码为准。** §4 点名的 `ExecutionResult→RoundResult→PipelineResult→StageResult` 信封串、`pipeline_results`、`StageResultAdapter`、decision-history observer（`LLMDecisionObserver`）—— **grep `src/` 全部无果，早已删**。当前执行链只剩 `RoundDirective→ExecutionRequest→ExecutionResult` 三个各有职责的薄信封，非冗余。所以 Step 2「收信封」剩下的真实工作 = 把 `ExecutionResult` 上的 channel-② 自报字段删干净（附录 C 的债），不是再砍一串信封类。
+
+**LangGraph 顺序结论（与 user 定，修正 §8）**：数据层删除（C/A1/A2，纯减法、缩 state、别把 cruft 包进图）**必须先于** LangGraph；但 tools-vs-LangGraph 可倒（§8 让 Step5 先，是为多主机合约设计的依赖，非 LangGraph 依赖）。故修正顺序 = **C/A1/A2 → LangGraph（其 checkpoint 取代事件溯源 B，跳过手工补 B）→ 工具硬化**。LangGraph 靠单测验证，不依赖 green full_chain。
+
+**C（agent_protocol 死形状）= no-op**：核实 `agent_protocol.py` 只剩 `GraphRef`/`GraphScope`/`utc_now`，`Agent*` 死形状在更早几轮已删——本步无可删。
+
+**A1（删 ExecutionResult 装饰字段）DONE（committed `bff0e83`，suite 149/1 skip）**：删 `risk_level`/`policy_notes`/`retry_recommendation`/`created_at` 四个装饰字段 + executor 的 `retry_recommendation=` setter + 过时提示词。**保留**：`confidence`（`result_applier:204` 取做 delta 置信度）、`replan_recommendation`、`runtime_hints`、`writeback_hints`。
+
+**A2（删 channel-② 自报）DONE（committed `ecdecb2`，suite 145/1 skip，−347 net）**：删 ExecutionResult `observations`/`findings`/`discovered_entities`/`discovered_relations` 四字段 + 全部生产者/消费者。**KG 机器事实现只走 channel ①**：`ToolTraceFactExtractor`(tool_trace) + tool-derived `evidence_refs` + goal-proof runtime hint。
+- **models.py**：删 4 字段 + `normalize_observations` validator（`field_validator`/`model_validator` 仍被 RoundDirective/normalize 用，留）。
+- **execution_agent.py**：删 `_normalized_findings`/`_structured_finish_observations`/`_normalized_dict_list` + `_finish_result`/`_replan_result`/`_partial_result_from_tool_memory` 的 observations 构建。`_empty_success_needs_replan` 改**只看 tool_trace/evidence**判空成功（签名去 observations/findings）——这是 A2 唯一的行为判据改动。
+- **result_applier.py**：`_fact_deltas` 只读 extractor facts + `evidence_refs` + goal proof；**保留 service→HOSTS 合成**（现作用于 extractor 产的 `Service`，非自报）；删 `_structured_records`、`stage.findings→metadata` 拷贝(`:100`)、孤儿 `_int` helper、死 `utc_now` import。
+- **orchestrator.py**：`_COMPACTED_RESULT_LISTS` 收到只剩 `evidence_refs`/`tool_trace`。
+- **测试**：「discovered_entities/observations→KG 节点」测试改判 tool-derived `Evidence`（extractor generic fallback 对任意成功 trace 产 `Evidence{tool_name}`）；删纯 channel-② 解析前提的测试（candidate_findings / service_fingerprints / host-service merge）；清 `test_planner_stop_success` 两处死 `findings=` kwarg。
+- **关键坑：ExecutionResult `extra=forbid`** —— 任何残留 `observations=`/`findings=` 构造现在抛 `ValidationError`，编排器把它**静默吞成 `paused`**（非显错，是初跑 2 个失败的根因）。已全库 grep 扫净。3 个 E2E 脚本（`blackbox_success_contract_e2e`/`aegra_vulhub_single_round_smoke`/`test_full_real_chain_vulhub_12615`）仍构造删字段，但它们**早已 import-broken**（引 `StageResult`/`AgentTaskResult` 等更早删的符号），非 A2 新坏，属延后的 E2E/工具硬化。
+- **follow-up（不阻断）**：`report_generator.findings()` 读 `metadata["findings"]`，生产代码现只有（已删的）`result_applier:100` 写它，故报告 findings 现只剩测试种入；改读 KG `Finding` 节点是后续小任务。
+
+**下一步 = B（事件溯源）聚焦 pass**：删 `reducer.py` + 大多 `events.py` 类型 + `store.apply_event` + `prepare_state_for_resume` resume 逻辑 + RuntimeState task/worker/lock/checkpoint/events 字段（缠持久化恢复 + graph_serializer）。删它为 LangGraph checkpoint 让位（故也可直接随 LangGraph 一并处理，不必手工补 B）。
