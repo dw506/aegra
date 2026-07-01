@@ -74,8 +74,6 @@ class BaseGraphEntity(BaseModel):
     # Finding/evaluation models all already use). The former evidence_ids was
     # dead on the KG write path (ResultApplier only ever emitted evidence_refs).
     evidence_refs: list[str] = Field(default_factory=list)
-    source_task_id: str | None = None
-    source_refs: list[GraphEntityRef] = Field(default_factory=list)
     first_seen: datetime = Field(default_factory=utc_now)
     last_seen: datetime = Field(default_factory=utc_now)
 

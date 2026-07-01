@@ -35,7 +35,6 @@ class KnowledgeGraph:
         self._edge_type_index: dict[str, set[str]] = defaultdict(set)
         self._outgoing_index: dict[str, set[str]] = defaultdict(set)
         self._incoming_index: dict[str, set[str]] = defaultdict(set)
-        self._source_ref_index: dict[str, set[str]] = defaultdict(set)
         self._delta = GraphDelta()
         self._version: int = 0
         self._last_patch_batch_id: str | None = None
@@ -140,7 +139,6 @@ class KnowledgeGraph:
             raise DuplicateEntityError(f"node '{node.id}' already exists")
         self._nodes[node.id] = node
         self._node_type_index[node.type.value].add(node.id)
-        self._index_source_refs("node", node.id, node.source_refs)
         self._record_change(ChangeOperation.CREATE, node.to_ref("node"), None, node)
         return node
 
@@ -164,9 +162,7 @@ class KnowledgeGraph:
             payload["properties"] = merged_properties
         updated = current.__class__.model_validate(payload)
 
-        self._unindex_source_refs("node", current.id, current.source_refs)
         self._nodes[node_id] = updated
-        self._index_source_refs("node", updated.id, updated.source_refs)
         self._record_change(ChangeOperation.UPDATE, updated.to_ref("node"), current, updated)
         return updated
 
@@ -188,7 +184,6 @@ class KnowledgeGraph:
         self._edge_type_index[edge.type.value].add(edge.id)
         self._outgoing_index[edge.source].add(edge.id)
         self._incoming_index[edge.target].add(edge.id)
-        self._index_source_refs("edge", edge.id, edge.source_refs)
         self._record_change(ChangeOperation.CREATE, edge.to_ref("edge"), None, edge)
         return edge
 
@@ -259,7 +254,6 @@ class KnowledgeGraph:
             node = parse_node(node_data)
             graph._nodes[node.id] = node
             graph._node_type_index[node.type.value].add(node.id)
-            graph._index_source_refs("node", node.id, node.source_refs)
         for edge_data in payload.get("edges", []):
             edge = parse_edge(edge_data)
             graph._validate_edge_constraints(edge)
@@ -267,7 +261,6 @@ class KnowledgeGraph:
             graph._edge_type_index[edge.type.value].add(edge.id)
             graph._outgoing_index[edge.source].add(edge.id)
             graph._incoming_index[edge.target].add(edge.id)
-            graph._index_source_refs("edge", edge.id, edge.source_refs)
         if "delta" in payload:
             graph._delta = GraphDelta.model_validate(payload["delta"])
         graph._version = int(payload.get("version", graph._delta.version))
@@ -314,13 +307,12 @@ class KnowledgeGraph:
         model_attrs, property_attrs = self._split_patch_attributes(
             node_cls,
             patch.get("attributes") or {},
-            reserved={"id", "type", "label", "source_refs", "properties"},
+            reserved={"id", "type", "label", "properties"},
         )
         payload = {
             "id": entity_id,
             "type": entity_type.value,
             "label": patch.get("label") or entity_id,
-            "source_refs": self._normalize_source_refs(patch.get("source_refs") or []),
             **model_attrs,
             "properties": {
                 **dict((patch.get("attributes") or {}).get("properties") or {}),
@@ -340,7 +332,7 @@ class KnowledgeGraph:
         model_attrs, property_attrs = self._split_patch_attributes(
             edge_cls,
             patch.get("attributes") or {},
-            reserved={"id", "type", "label", "source", "target", "source_refs", "properties"},
+            reserved={"id", "type", "label", "source", "target", "properties"},
         )
         payload = {
             "id": relation_id,
@@ -348,7 +340,6 @@ class KnowledgeGraph:
             "label": patch.get("label") or relation_type.value.lower(),
             "source": str(patch["source"]),
             "target": str(patch["target"]),
-            "source_refs": self._normalize_source_refs(patch.get("source_refs") or []),
             **model_attrs,
             "properties": {
                 **dict((patch.get("attributes") or {}).get("properties") or {}),
@@ -364,12 +355,10 @@ class KnowledgeGraph:
             self._edge_type_index[current.type.value].discard(current.id)
             self._outgoing_index[current.source].discard(current.id)
             self._incoming_index[current.target].discard(current.id)
-            self._unindex_source_refs("edge", current.id, current.source_refs)
             self._edges[relation_id] = updated
             self._edge_type_index[updated.type.value].add(updated.id)
             self._outgoing_index[updated.source].add(updated.id)
             self._incoming_index[updated.target].add(updated.id)
-            self._index_source_refs("edge", updated.id, updated.source_refs)
             self._record_change(ChangeOperation.UPDATE, updated.to_ref("edge"), current, updated)
             return updated
         return self.add_edge(parse_edge(payload))
@@ -400,61 +389,6 @@ class KnowledgeGraph:
                 property_attrs[key] = value
         return model_attrs, property_attrs
 
-    def _index_source_refs(
-        self,
-        entity_kind: str,
-        entity_id: str,
-        source_refs: list[GraphEntityRef],
-    ) -> None:
-        storage_key = self._storage_key(entity_kind, entity_id)
-        for ref in source_refs:
-            self._source_ref_index[ref.key()].add(storage_key)
-
-    def _unindex_source_refs(
-        self,
-        entity_kind: str,
-        entity_id: str,
-        source_refs: list[GraphEntityRef],
-    ) -> None:
-        storage_key = self._storage_key(entity_kind, entity_id)
-        for ref in source_refs:
-            ref_key = ref.key()
-            self._source_ref_index[ref_key].discard(storage_key)
-            if not self._source_ref_index[ref_key]:
-                del self._source_ref_index[ref_key]
-
-    @staticmethod
-    def _normalize_source_refs(raw_refs: list[Any]) -> list[GraphEntityRef]:
-        """把 agent 层 GraphRef 形式规范化为 KG 自己的 GraphEntityRef。"""
-
-        normalized: list[GraphEntityRef] = []
-        for raw in raw_refs:
-            if isinstance(raw, GraphEntityRef):
-                normalized.append(raw)
-                continue
-            if not isinstance(raw, dict):
-                continue
-            if "entity_id" in raw:
-                normalized.append(GraphEntityRef.model_validate(raw))
-                continue
-            ref_id = raw.get("ref_id")
-            if not ref_id:
-                continue
-            ref_type = raw.get("ref_type")
-            entity_kind = "edge" if str(ref_type or "").isupper() else "node"
-            normalized.append(
-                GraphEntityRef(
-                    entity_id=str(ref_id),
-                    entity_kind=entity_kind,
-                    entity_type=str(ref_type) if ref_type is not None else None,
-                    label=raw.get("label"),
-                )
-            )
-        return normalized
-
-    @staticmethod
-    def _storage_key(entity_kind: str, entity_id: str) -> str:
-        return f"{entity_kind}:{entity_id}"
 
     @staticmethod
     def _node_type_key(value: str | NodeType) -> str:

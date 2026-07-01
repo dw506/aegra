@@ -216,7 +216,6 @@ class PlannerGraphTools:
                     "severity": payload.severity,
                     "affected_asset_refs": [payload.host_ref],
                     "evidence_refs": list(payload.evidence_refs),
-                    "source_task_id": f"planner::{self.operation_id}::{self.cycle_index}",
                     "confidence": 0.8,
                 },
             },
@@ -247,7 +246,7 @@ class PlannerGraphTools:
                 "source": payload.node_ref,
                 "target": payload.evidence_ref,
                 "label": "supported by",
-                "attributes": {"source_task_id": f"planner::{self.operation_id}::{self.cycle_index}"},
+                "attributes": {},
             },
         }
         result = self.kg.apply_patch_batch(

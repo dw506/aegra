@@ -230,8 +230,6 @@ class AttackGraph:
         refs: list[GraphRef] = []
         if isinstance(node, AttackProcessNode):
             refs.extend(node.refs)
-        if hasattr(node, "source_refs"):
-            refs.extend(node.source_refs)
         unique: dict[str, GraphRef] = {ref.key(): ref for ref in refs}
         return list(unique.values())
 
