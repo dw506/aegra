@@ -192,7 +192,7 @@ class ConfiguredMCPClient:
                 success=False,
                 exit_code="mcp_error",
                 stderr=json.dumps(raw["error"], ensure_ascii=True, sort_keys=True),
-                metadata={"server_id": server_id, "raw_mcp": raw},
+                metadata={"server_id": server_id},
             )
         result = raw.get("result")
         content = self._structured_content(result)
@@ -219,7 +219,6 @@ class ConfiguredMCPClient:
             exit_code=exit_code,
             metadata={
                 "server_id": server_id,
-                "raw_mcp": raw,
                 "parsed_output": parsed_output or {},
                 **metadata,
             },

@@ -521,7 +521,10 @@ class _ExecutionLoop:
             },
             raw_output_ref=raw_output_ref,
             parsed_output=parsed_output,
-            metadata={**dict(result.metadata), "content": result.content},
+            # parsed_output rides as a top-level field; don't duplicate it (or the
+            # whole raw MCP content) into metadata — the trace is dumped into the
+            # executor's own stage_memory prompt, so keep it lean.
+            metadata={key: value for key, value in result.metadata.items() if key != "parsed_output"},
         )
         self._log_tool_result(logger, trace)
         return trace
