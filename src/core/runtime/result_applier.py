@@ -183,7 +183,7 @@ class PhaseTwoResultApplier:
         return {"id": f"entity::{entity_id}", "payload": {"patch_kind": "entity"}, "patch": {"entity_kind": "node", "entity_id": entity_id, "entity_type": entity_type, "label": str(record.get("label") or record.get("summary") or entity_id), "attributes": attributes, "confidence": float(record.get("confidence") or stage.confidence)}}
 
     def _relation_delta(self, source: str, target: str, relation: dict[str, Any], stage: ExecutionResult) -> dict[str, Any]:
-        relation_type = str(relation.get("relation_type") or relation.get("type") or "RELATED_TO")
+        relation_type = str(relation.get("relation_type") or relation.get("type") or "HOSTS")
         relation_id = str(relation.get("id") or f"{relation_type.lower()}::{source}::{target}")
         return {"id": f"relation::{relation_id}", "payload": {"patch_kind": "relation"}, "patch": {"entity_kind": "edge", "relation_id": relation_id, "relation_type": relation_type, "source": source, "target": target, "label": relation.get("label") or relation_type, "attributes": {k: v for k, v in relation.items() if k not in {"id", "source", "from", "target", "to", "type", "relation_type", "label"}}}}
 

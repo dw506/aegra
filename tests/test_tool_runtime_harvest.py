@@ -247,7 +247,7 @@ def test_addressless_evidence_stays_permissive_for_zone_filter() -> None:
     ctx = PredicateContext(profile=profile, kg_nodes=kg_nodes)
     result = PredicateEngine().evaluate(
         "exists_node",
-        {"graph": "kg", "type": {"in": ["Evidence", "Observation", "Finding"]}, "filters": {"zone_ref": "entry"}},
+        {"graph": "kg", "type": {"in": ["Evidence", "Finding"]}, "filters": {"zone_ref": "entry"}},
         ctx,
     )
     assert result.satisfied is True

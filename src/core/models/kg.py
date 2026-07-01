@@ -124,39 +124,10 @@ class Service(BaseNode):
     protocol: str | None = None
 
 
-class Credential(BaseNode):
-    type: Literal[NodeType.CREDENTIAL] = NodeType.CREDENTIAL
-    credential_kind: str | None = None
-    principal: str | None = None
-
-
 class Session(BaseNode):
     type: Literal[NodeType.SESSION] = NodeType.SESSION
     session_kind: str | None = None
     session_state: str | None = None
-
-
-class Vulnerability(BaseNode):
-    type: Literal[NodeType.VULNERABILITY] = NodeType.VULNERABILITY
-    vulnerability_name: str | None = None
-    cve: str | None = None
-    cwe: str | None = None
-    advisory_refs: list[str] = Field(default_factory=list)
-    cvss: float | None = Field(default=None, ge=0.0, le=10.0)
-    epss: float | None = Field(default=None, ge=0.0, le=1.0)
-    kev: bool = False
-    validation_status: str | None = None
-    indicators: list[str] = Field(default_factory=list)
-    remediation: str | None = None
-    safe_payload_summary: str | None = None
-    summary: str | None = None
-
-
-class Observation(BaseNode):
-    type: Literal[NodeType.OBSERVATION] = NodeType.OBSERVATION
-    observation_kind: str | None = None
-    observed_at: datetime = Field(default_factory=utc_now)
-    summary: str | None = None
 
 
 class Evidence(BaseNode):
@@ -239,58 +210,9 @@ class BelongsToZoneEdge(BaseEdge):
     type: Literal[EdgeType.BELONGS_TO_ZONE] = EdgeType.BELONGS_TO_ZONE
 
 
-class SessionOnEdge(BaseEdge):
-    type: Literal[EdgeType.SESSION_ON] = EdgeType.SESSION_ON
-
-
-class AppliesToHostEdge(BaseEdge):
-    type: Literal[EdgeType.APPLIES_TO_HOST] = EdgeType.APPLIES_TO_HOST
-
-
-class CanReachEdge(BaseEdge):
-    type: Literal[EdgeType.CAN_REACH] = EdgeType.CAN_REACH
-    source_host: str | None = None
-    target_host: str | None = None
-    target_service: str | None = None
-    protocol: str | None = None
-    port: int | None = Field(default=None, ge=1, le=65535)
-    via: Literal["direct", "session", "pivot", "inferred"] = "direct"
-    route_id: str | None = None
-    session_id: str | None = None
-    observed_by_task_id: str | None = None
-
-
-class PivotsToEdge(BaseEdge):
-    type: Literal[EdgeType.PIVOTS_TO] = EdgeType.PIVOTS_TO
-    source_host: str | None = None
-    via_host: str | None = None
-    destination_host: str | None = None
-    route_id: str | None = None
-    session_id: str | None = None
-    protocol: str | None = None
-    destination_zone: str | None = None
-    destination_cidr: str | None = None
-
-
-class ObservedOnEdge(BaseEdge):
-    type: Literal[EdgeType.OBSERVED_ON] = EdgeType.OBSERVED_ON
-
-
 class SupportedByEdge(BaseEdge):
     type: Literal[EdgeType.SUPPORTED_BY] = EdgeType.SUPPORTED_BY
     evidence_kind: str | None = None
-
-
-class DerivedFromEdge(BaseEdge):
-    type: Literal[EdgeType.DERIVED_FROM] = EdgeType.DERIVED_FROM
-
-
-class RelatedToEdge(BaseEdge):
-    type: Literal[EdgeType.RELATED_TO] = EdgeType.RELATED_TO
-
-
-class ContainsEdge(BaseEdge):
-    type: Literal[EdgeType.CONTAINS] = EdgeType.CONTAINS
 
 
 class TargetsEdge(BaseEdge):
@@ -300,10 +222,7 @@ class TargetsEdge(BaseEdge):
 NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.HOST: Host,
     NodeType.SERVICE: Service,
-    NodeType.CREDENTIAL: Credential,
     NodeType.SESSION: Session,
-    NodeType.VULNERABILITY: Vulnerability,
-    NodeType.OBSERVATION: Observation,
     NodeType.EVIDENCE: Evidence,
     NodeType.FINDING: Finding,
     NodeType.NETWORK_ZONE: NetworkZone,
@@ -318,15 +237,7 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
 EDGE_MODEL_BY_TYPE: dict[EdgeType, type[BaseEdge]] = {
     EdgeType.HOSTS: HostsEdge,
     EdgeType.BELONGS_TO_ZONE: BelongsToZoneEdge,
-    EdgeType.SESSION_ON: SessionOnEdge,
-    EdgeType.APPLIES_TO_HOST: AppliesToHostEdge,
-    EdgeType.CAN_REACH: CanReachEdge,
-    EdgeType.PIVOTS_TO: PivotsToEdge,
-    EdgeType.OBSERVED_ON: ObservedOnEdge,
     EdgeType.SUPPORTED_BY: SupportedByEdge,
-    EdgeType.DERIVED_FROM: DerivedFromEdge,
-    EdgeType.RELATED_TO: RelatedToEdge,
-    EdgeType.CONTAINS: ContainsEdge,
     EdgeType.TARGETS: TargetsEdge,
 }
 

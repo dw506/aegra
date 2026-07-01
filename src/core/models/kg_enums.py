@@ -20,10 +20,7 @@ class NodeType(str, Enum):
 
     HOST = "Host"
     SERVICE = "Service"
-    CREDENTIAL = "Credential"
     SESSION = "Session"
-    VULNERABILITY = "Vulnerability"
-    OBSERVATION = "Observation"
     EVIDENCE = "Evidence"
     FINDING = "Finding"
     NETWORK_ZONE = "NetworkZone"
@@ -40,15 +37,7 @@ class EdgeType(str, Enum):
 
     HOSTS = "HOSTS"
     BELONGS_TO_ZONE = "BELONGS_TO_ZONE"
-    SESSION_ON = "SESSION_ON"
-    APPLIES_TO_HOST = "APPLIES_TO_HOST"
-    CAN_REACH = "CAN_REACH"
-    PIVOTS_TO = "PIVOTS_TO"
-    OBSERVED_ON = "OBSERVED_ON"
     SUPPORTED_BY = "SUPPORTED_BY"
-    DERIVED_FROM = "DERIVED_FROM"
-    RELATED_TO = "RELATED_TO"
-    CONTAINS = "CONTAINS"
     TARGETS = "TARGETS"
 
 

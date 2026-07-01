@@ -51,7 +51,7 @@ def _full_chain_kg_nodes() -> list[dict[str, Any]]:
         {"id": "ea-1", "type": "Evidence", "kind": "exploit_attempt"},
         {"id": "cap-1", "type": "Session"},
         {"id": "pao-1", "type": "PostAccessObservation", "kind": "post_access"},
-        {"id": "cred-1", "type": "Credential", "kind": "credential"},
+        {"id": "cred-1", "type": "Evidence", "kind": "credential"},
         {"id": "isvc-1", "type": "Service", "zone_ref": "restricted"},
         {
             "id": "db-proof-1",

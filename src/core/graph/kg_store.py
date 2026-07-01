@@ -274,8 +274,6 @@ class KnowledgeGraph:
             raise ValidationConstraintError(f"edge target '{edge.target}' does not exist")
         if edge.type == EdgeType.SUPPORTED_BY and self._nodes[edge.target].type != NodeType.EVIDENCE:
             raise ValidationConstraintError("SUPPORTED_BY target must be Evidence")
-        if edge.type == EdgeType.OBSERVED_ON and self._nodes[edge.source].type != NodeType.OBSERVATION:
-            raise ValidationConstraintError("OBSERVED_ON source must be Observation")
 
     def _record_change(
         self,
@@ -401,12 +399,9 @@ class KnowledgeGraph:
         # capabilities are no longer first-class node types: real tools record them
         # as Evidence{kind:...} / Session, which the success contract reads directly.
         aliases = {
-            "Fingerprint": NodeType.OBSERVATION,
             "WebEndpoint": NodeType.SERVICE,
             "CandidateRejected": NodeType.FINDING,
             "NeedMoreEvidence": NodeType.FINDING,
-            "ValidationPlan": NodeType.OBSERVATION,
-            "ValidationProfile": NodeType.OBSERVATION,
         }
         alias = aliases.get(value)
         return alias if alias is not None else NodeType(value)
@@ -418,8 +413,6 @@ class KnowledgeGraph:
             "HOST_HAS_SERVICE": EdgeType.HOSTS,
             "SERVICE_ON_HOST": EdgeType.HOSTS,
             "HAS_SERVICE": EdgeType.HOSTS,
-            "HAS_FINGERPRINT": EdgeType.RELATED_TO,
-            "FINGERPRINTS": EdgeType.RELATED_TO,
             "SUPPORTED_BY_EVIDENCE": EdgeType.SUPPORTED_BY,
         }
         alias = aliases.get(value)

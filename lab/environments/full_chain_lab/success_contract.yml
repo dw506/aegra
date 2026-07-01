@@ -97,7 +97,6 @@ condition_bindings:
       type:
         in:
           - Evidence
-          - Observation
           - Finding
       filters:
         zone_ref: entry
@@ -145,7 +144,6 @@ condition_bindings:
       type:
         in:
           - PostAccessObservation
-          - Observation
           - Evidence
       filters:
         kind: post_access
@@ -154,11 +152,7 @@ condition_bindings:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - Credential
-          - Observation
-          - Evidence
+      type: Evidence
       filters:
         kind: credential
 
