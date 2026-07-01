@@ -224,12 +224,7 @@ Planner 拥有全部判断（选目标/停/成功）；Executor 只管"这轮目
 - `PackyLLMClient` — `complete_chat`/`chat`（httpx 调 base_url，`_post_with_retry` 重试、`_estimate_cost_usd` 计费、usage ledger）。
 - `PackyLLMConfig`(api_key/base_url/model + `from_env`)、`PackyLLMResponse`、`ToolSpec`/`ToolCall`/`Message`、`PackyLLMError`、`load_llm_env_file`、usage ledger 一组函数。
 
-### `src/core/validation/` —— ⚠️ 死代码（罐头验证时代残留，已核实**零活引用**）
-`validation_plan.py`/`validation_result.py`/`vulnerability_profile.py`/`evidence_normalizer.py` — 安全验证 profile/plan/result 模型 + evidence 规整。mcp_lab 删除后全仓无 importer（src/tests 均 0）→ **可整包删除**（下一个清理项）。
-
-### 其它
-- `src/core/actions/__init__.py` — 仅 docstring 的空包（AG 驱动自动化占位）。
-- `src/integrations/__init__.py` — 仅 docstring（罐头 `mcp_lab` 已删，真工具在外部 MCP server）。
+> 已删的死代码包：`src/core/validation/`（罐头验证 profile/plan/result，零活引用）、`src/core/actions/`、`src/integrations/`（mcp_lab 删除后仅剩空 `__init__.py`）—— 均已整包删除。真工具在外部 MCP server。
 
 ---
 
