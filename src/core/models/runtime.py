@@ -69,50 +69,6 @@ class BaseRuntimeModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-class RuntimeEventRef(BaseRuntimeModel):
-   #Runtime event 的轻量引用
-
-    event_id: str = Field(min_length=1)
-    event_type: str = Field(min_length=1)
-    created_at: datetime = Field(default_factory=utc_now)
-    cursor: int = Field(default=0, ge=0)      # 事件游标，用来排序或增量处理
-    summary: str | None = None
-    payload_ref: str | None = None           #事件完整 payload 的引用地址
-    metadata: dict[str, Any] = Field(default_factory=dict)    #扩展信息
-
-#定义用于事件 replay 或恢复流程
-class ReplayPlanStatus(str, Enum):
-
-    NOT_REQUIRED = "not_required"
-    PLANNED = "planned"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-#记录一次 replay 的窗口
-class ReplayPlanRuntime(BaseRuntimeModel):
-
-    plan_id: str = Field(min_length=1)
-    created_at: datetime = Field(default_factory=utc_now)
-    replay_status: ReplayPlanStatus = ReplayPlanStatus.PLANNED
-    replay_reason: str | None = None
-    last_replayed_cursor: int = Field(default=0, ge=0)
-    start_cursor: int = Field(default=0, ge=0)
-    end_cursor: int = Field(default=0, ge=0)
-    replay_candidate_event_ids: list[str] = Field(default_factory=list)
-    pending_event_count: int = Field(default=0, ge=0)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_cursor_window(self) -> "ReplayPlanRuntime":
-        """Ensure the replay cursor window remains monotonic."""
-
-        if self.end_cursor < self.start_cursor:
-            raise ValueError("end_cursor must be greater than or equal to start_cursor")
-        if self.start_cursor < self.last_replayed_cursor:
-            raise ValueError("start_cursor must be greater than or equal to last_replayed_cursor")
-        return self
-
 #最近任务结果的缓存条目
 class OutcomeCacheEntry(BaseRuntimeModel):
 
@@ -247,11 +203,21 @@ class RuntimeState(BaseRuntimeModel):
     credentials: dict[str, CredentialRuntime] = Field(default_factory=dict)   #当前发现/验证过的凭据
     pivot_routes: dict[str, PivotRouteRuntime] = Field(default_factory=dict)  #当前发现/验证过的跳板路径
     budgets: BudgetRuntime = Field(default_factory=BudgetRuntime)             # 执行预算
-    pending_events: list[RuntimeEventRef] = Field(default_factory=list)       # 待处理事件
     recent_outcomes: list[OutcomeCacheEntry] = Field(default_factory=list)     #最近执行结果缓存
     replan_requests: list[ReplanRequest] = Field(default_factory=list)          #重规划请求
-    event_cursor: int = Field(default=0, ge=0)                               #事件游标
     last_updated: datetime = Field(default_factory=utc_now)                   #  最近更新时间
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_event_sourcing_fields(cls, value: Any) -> Any:
+        """Accept old snapshots written before event-sourcing fields were removed."""
+
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        payload.pop("pending_events", None)
+        payload.pop("event_cursor", None)
+        return payload
 
     @model_validator(mode="after")
     def validate_operation_identity(self) -> "RuntimeState":
@@ -261,15 +227,6 @@ class RuntimeState(BaseRuntimeModel):
             raise ValueError("execution.operation_id must match operation_id")
         return self
 
-    #新增一个 runtime event，并推进 event cursor
-    def push_event(self, event_ref: RuntimeEventRef) -> RuntimeEventRef:
-        """Append one pending runtime event and advance the local cursor."""
-
-        self.pending_events.append(event_ref)
-        self.event_cursor = max(self.event_cursor, event_ref.cursor)
-        self.last_updated = utc_now()
-        return event_ref
-    
     #记录最近执行结果，默认最多保留 50 条
     def record_outcome(self, outcome: OutcomeCacheEntry, keep_last: int = 50) -> OutcomeCacheEntry:
         """Append an outcome cache entry and keep only the most recent entries."""
@@ -299,10 +256,7 @@ __all__ = [
     "OutcomeCacheEntry",
     "PivotRouteRuntime",
     "PivotRouteStatus",
-    "ReplayPlanRuntime",
-    "ReplayPlanStatus",
     "ReplanRequest",
-    "RuntimeEventRef",
     "RuntimeState",
     "RuntimeStatus",
     "SessionRuntime",

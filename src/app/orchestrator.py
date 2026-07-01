@@ -99,7 +99,6 @@ class OperationSummary(BaseModel):
     last_cycle_phase: str | None = None
     unclean_shutdown: bool = False
     audit_event_count: int = 0
-    pending_event_count: int = 0
     last_updated: str
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -317,7 +316,6 @@ class AppOrchestrator:
             last_cycle_phase=str(last_phase_checkpoint.get("phase")) if last_phase_checkpoint.get("phase") is not None else None,
             unclean_shutdown=bool(recovery.get("unclean_shutdown", False)),
             audit_event_count=len(state.execution.metadata.get("audit_log", [])),
-            pending_event_count=len(state.pending_events),
             last_updated=state.last_updated.isoformat(),
             metadata=dict(state.execution.metadata),
         )
@@ -704,7 +702,7 @@ class AppOrchestrator:
                 "agent": execution_result.agent_name,
                 "execution_status": execution_result.status,
                 "kg_delta_count": len(stage_apply.kg_state_deltas or []),
-                "runtime_event_count": len(stage_apply.runtime_event_refs or []),
+                "runtime_update_count": len(stage_apply.runtime_updates or []),
                 "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
                 "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
                 "evidence_refs": list(execution_result.evidence_refs),
@@ -1579,7 +1577,7 @@ class AppOrchestrator:
         status: str,
         selected_task_ids: list[str] | None = None,
         applied_task_ids: list[str] | None = None,
-        runtime_event_count: int | None = None,
+        runtime_update_count: int | None = None,
         step_count: int | None = None,
         success: bool | None = None,
         stopped: bool | None = None,
@@ -1595,7 +1593,7 @@ class AppOrchestrator:
             status=status,
             selected_task_ids=selected_task_ids,
             applied_task_ids=applied_task_ids,
-            runtime_event_count=runtime_event_count,
+            runtime_update_count=runtime_update_count,
             step_count=step_count,
             success=success,
             stopped=stopped,

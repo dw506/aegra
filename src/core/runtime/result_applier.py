@@ -11,10 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.attack_process import AttackProcessEdge, AttackProcessEdgeType, AttackProcessNodeType, AttackStepNode, stable_node_id
-from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeEventRef, RuntimeState
+from src.core.models.runtime import OutcomeCacheEntry, ReplanRequest, RuntimeState
 from src.core.planning.models import PlannerOutcome
 from src.core.runtime.credential_manager import RuntimeCredentialManager
-from src.core.runtime.events import ReplanRequestedEvent, SessionOpenedEvent, event_to_ref
 from src.core.runtime.observability import append_audit_log
 from src.core.runtime.pivot_route_manager import RuntimePivotRouteManager
 from src.core.runtime.session_manager import RuntimeSessionManager
@@ -24,7 +23,7 @@ from src.core.execution.models import ExecutionResult
 
 class PhaseTwoApplyResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    runtime_event_refs: list[RuntimeEventRef] = Field(default_factory=list)
+    runtime_updates: list[dict[str, Any]] = Field(default_factory=list)
     kg_state_deltas: list[dict[str, Any]] = Field(default_factory=list)
     kg_apply_result: dict[str, Any] | None = None
     kg_write_diagnostics: dict[str, Any] = Field(default_factory=dict)
@@ -59,7 +58,7 @@ class PhaseTwoResultApplier:
        
         harvested = self._harvest_runtime_facts(execution_result)
         result = PhaseTwoApplyResult()
-        result.runtime_event_refs.extend(self._apply_runtime(execution_result, state, harvested))
+        result.runtime_updates.extend(self._apply_runtime(execution_result, state, harvested))
         self._record_runtime_metadata(execution_result, state, harvested)
         deltas = self._fact_deltas(execution_result)
         result.kg_state_deltas = self._ordered(deltas)
@@ -73,25 +72,28 @@ class PhaseTwoResultApplier:
         self._audit(execution_result, state)
         return result
 
-    def _apply_runtime(self, stage: ExecutionResult, state: RuntimeState, harvested: dict[str, list[dict[str, Any]]]) -> list[RuntimeEventRef]:
-        refs: list[RuntimeEventRef] = []
+    def _apply_runtime(self, stage: ExecutionResult, state: RuntimeState, harvested: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        updates: list[dict[str, Any]] = []
         for item in harvested["sessions"]:
             if not isinstance(item, dict): continue
             session_id = self._string(item.get("session_id")) or f"session::{stage.execution_id}"
             session = self._sessions.open_session(state, session_id, self._string(item.get("bound_identity") or item.get("identity")), self._string(item.get("bound_target") or item.get("target_id") or item.get("host_id")), lease_seconds=int(item.get("lease_seconds") or 300), reusability=str(item.get("reuse_policy") or "shared"))
             self._sessions.bind_task_to_session(state, stage.execution_id, session_id)
-            refs.append(self._push(state, SessionOpenedEvent(operation_id=state.operation_id, session_id=session.session_id, bound_identity=session.bound_identity, bound_target=session.bound_target, lease_expiry=session.lease_expiry, reusability=session.reusability)))
+            updates.append({"type": "session_opened", "session_id": session.session_id, "bound_target": session.bound_target})
         for item in harvested["pivot_routes"]:
             if not isinstance(item, dict): continue
             destination = self._string(item.get("destination_host") or item.get("target_host"))
             if not destination: continue
             route = self._routes.register_candidate(state, self._string(item.get("route_id")) or f"route::{stage.execution_id}", destination, source_host=self._string(item.get("source_host")), via_host=self._string(item.get("via_host")), session_id=self._string(item.get("session_id")), protocol=self._string(item.get("protocol")), destination_zone=self._string(item.get("destination_zone") or item.get("zone_ref")), destination_cidr=self._string(item.get("destination_cidr")), allowed_ports=self._as_set(item.get("allowed_ports") or item.get("port")), protocols=self._as_set(item.get("protocols")), confidence=self._float(item.get("confidence")), metadata={"source_task_id": stage.execution_id})
             if item.get("active") or item.get("reachable"): self._routes.activate_route(state, route.route_id)
+            updates.append({"type": "pivot_route_registered", "route_id": route.route_id, "destination_host": route.destination_host})
         if stage.status in {"blocked", "need_more_info", "needs_replan"}:
             request = ReplanRequest(request_id=f"replan::{stage.result_id}", reason=stage.replan_recommendation or stage.summary, task_ids=[stage.execution_id], scope="local")
             state.request_replan(request)
-            refs.append(self._push(state, ReplanRequestedEvent(operation_id=state.operation_id, request_id=request.request_id, reason=request.reason, task_ids=request.task_ids, scope=request.scope)))
-        return refs
+            updates.append({"type": "replan_requested", "request_id": request.request_id, "scope": request.scope})
+        if updates:
+            append_audit_log(state, {"event_type": "runtime_state_updated", "source_task_id": stage.execution_id, "updates": updates})
+        return updates
 
     def _record_runtime_metadata(self, stage: ExecutionResult, state: RuntimeState, harvested: dict[str, list[dict[str, Any]]]) -> None:
         hints = stage.runtime_hints
@@ -206,9 +208,6 @@ class PhaseTwoResultApplier:
     def _kg_refs(items: list[dict[str, Any]]) -> list[str]: return [str(x["patch"].get("entity_id")) for x in items if x.get("patch", {}).get("entity_id")]
     @staticmethod
     def _write_summary(count: int, value: dict[str, Any]) -> dict[str, Any]: return {"status": "partial_write" if value.get("failed_delta_ids") else "ok", "delta_count": count, "failed_delta_count": len(value.get("failed_delta_ids") or [])}
-    @staticmethod
-    def _push(state: RuntimeState, event: Any) -> RuntimeEventRef:
-        ref = event_to_ref(event, cursor=state.event_cursor + 1); state.push_event(ref); return ref
     @staticmethod
     def _string(value: Any) -> str | None:
         text = str(value).strip() if value is not None else ""; return text or None

@@ -6,9 +6,6 @@ import re
 from typing import Any
 
 from src.core.models.runtime import (
-    ReplayPlanRuntime,
-    ReplayPlanStatus,
-    RuntimeEventRef,
     RuntimeState,
     SessionStatus,
     utc_now,
@@ -75,11 +72,9 @@ def build_audit_report(state: RuntimeState) -> dict[str, Any]:
         "operation_id": state.operation_id,
         "exported_at": utc_now().isoformat(),
         "operation_status": state.operation_status.value,
-        "event_cursor": state.event_cursor,
         "operation_log": list(state.execution.metadata.get("operation_log", [])),
         "audit_log": list(state.execution.metadata.get("audit_log", [])),
         "recent_outcomes": [item.model_dump(mode="json") for item in state.recent_outcomes],
-        "pending_events": [item.model_dump(mode="json") for item in state.pending_events],
         "control_cycle_history": list(state.execution.metadata.get("control_cycle_history", [])),
         "phase_checkpoints": list(state.execution.metadata.get("phase_checkpoints", [])),
     }
@@ -92,19 +87,16 @@ def build_audit_report(state: RuntimeState) -> dict[str, Any]:
 def build_recovery_snapshot(state: RuntimeState) -> dict[str, Any]:
     """Build one small recovery-oriented view for persistence and resume."""
 
-    recovery = _recovery_metadata(state)
+    recovery = _without_legacy_replay_keys(_recovery_metadata(state))
     return {
         "operation_id": state.operation_id,
         "captured_at": utc_now().isoformat(),
         "operation_status": state.operation_status.value,
-        "event_cursor": state.event_cursor,
         "last_updated": state.last_updated.isoformat(),
         "unclean_shutdown": bool(recovery.get("unclean_shutdown", False)),
         "inflight_task_ids": [],
-        "recovery_metadata": dict(recovery),
+        "recovery_metadata": recovery,
         "last_phase_checkpoint": dict(recovery.get("last_phase_checkpoint", {})),
-        "replay_plan": dict(state.execution.metadata.get("replay_plan", {})),
-        "pending_event_count": len(state.pending_events),
         "replan_request_count": len(state.replan_requests),
     }
 
@@ -117,7 +109,7 @@ def record_phase_checkpoint(
     status: str,
     selected_task_ids: list[str] | None = None,
     applied_task_ids: list[str] | None = None,
-    runtime_event_count: int | None = None,
+    runtime_update_count: int | None = None,
     step_count: int | None = None,
     success: bool | None = None,
     stopped: bool | None = None,
@@ -133,7 +125,7 @@ def record_phase_checkpoint(
         "at": now,
         "selected_task_ids": list(selected_task_ids or []),
         "applied_task_ids": list(applied_task_ids or []),
-        "runtime_event_count": int(runtime_event_count or 0),
+        "runtime_update_count": int(runtime_update_count or 0),
     }
     if step_count is not None:
         checkpoint["step_count"] = step_count
@@ -171,7 +163,6 @@ def prepare_state_for_resume(
     state: RuntimeState,
     *,
     reason: str,
-    event_refs: list[RuntimeEventRef] | None = None,
 ) -> dict[str, Any]:
     """Normalize in-flight runtime fields so the operation can safely resume."""
 
@@ -180,19 +171,6 @@ def prepare_state_for_resume(
     resumed_worker_ids: list[str] = []
     released_lock_ids: list[str] = []
     expired_session_ids: list[str] = []
-
-    # 中文注释：
-    # 当前阶段不做事件重放，但先把未消费事件标记成“待恢复/可回放”结构，
-    # 后续 replay 只需要消费这些 metadata，不必再倒推 crash 来源。
-    for event in state.pending_events:
-        recovery_meta = event.metadata.setdefault("recovery", {})
-        recovery_meta["resume_reason"] = reason
-        recovery_meta["recovered_at"] = now.isoformat()
-        recovery_meta["replay_ready"] = True
-        recovery_meta["requires_replay"] = True
-
-    recovered_event_count = len(state.pending_events)
-    replay_plan = plan_runtime_event_replay(state, reason=reason, event_refs=event_refs)
 
     # 中文注释：
     # 运行中的 session 句柄在 crash 后无法确认远端是否仍然可用，
@@ -217,24 +195,14 @@ def prepare_state_for_resume(
     metadata["resumed_worker_ids"] = resumed_worker_ids
     metadata["released_lock_ids"] = released_lock_ids
     metadata["expired_session_ids"] = expired_session_ids
-    metadata["recovered_event_count"] = recovered_event_count
-    metadata["pending_event_ids"] = [event.event_id for event in state.pending_events]
-    metadata["replay_cursor"] = replay_plan["start_cursor"]
-    metadata["last_replayed_cursor"] = replay_plan["last_replayed_cursor"]
-    metadata["replay_required"] = replay_plan["replay_required"]
-    metadata["replay_reason"] = replay_plan["replay_reason"]
-    metadata["replay_status"] = replay_plan["replay_status"]
-    metadata["replay_candidate_event_ids"] = list(replay_plan["replay_candidate_event_ids"])
+    _drop_legacy_replay_metadata(state)
     state.last_updated = now
     return {
         "resumed_task_ids": resumed_task_ids,
         "resumed_worker_ids": resumed_worker_ids,
         "released_lock_ids": released_lock_ids,
         "expired_session_ids": expired_session_ids,
-        "recovered_event_count": recovered_event_count,
         "last_resume_reason": reason,
-        "replay_status": replay_plan["replay_status"],
-        "replay_candidate_event_ids": list(replay_plan["replay_candidate_event_ids"]),
     }
 
 
@@ -261,131 +229,28 @@ def _recovery_metadata(state: RuntimeState) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def plan_runtime_event_replay(
-    state: RuntimeState,
-    *,
-    reason: str,
-    event_refs: list[RuntimeEventRef] | None = None,
-) -> dict[str, Any]:
-    """Build and persist one lightweight replay plan without replaying side effects."""
-
-    now = utc_now()
+def _drop_legacy_replay_metadata(state: RuntimeState) -> None:
+    state.execution.metadata.pop("replay_plan", None)
     recovery = _recovery_metadata(state)
-    last_replayed_cursor = _coerce_positive_int(recovery.get("last_replayed_cursor"), default=0)
-    ordered_pending_events = sorted(
-        state.pending_events,
-        key=lambda item: (item.cursor, item.created_at, item.event_id),
-    )
-    replay_window = sorted(
-        [
-            item.model_copy(deep=True)
-            for item in (event_refs or state.pending_events)
-            if item.cursor >= last_replayed_cursor
-        ],
-        key=lambda item: (item.cursor, item.created_at, item.event_id),
-    )
-    candidate_ids = [item.event_id for item in ordered_pending_events]
-    candidate_cursors = [item.cursor for item in ordered_pending_events if item.cursor >= 0]
-    window_cursors = [item.cursor for item in replay_window if item.cursor >= 0]
-    start_cursor = max(
-        last_replayed_cursor,
-        min(candidate_cursors + window_cursors, default=last_replayed_cursor),
-    )
-    end_cursor = max(window_cursors + [state.event_cursor, last_replayed_cursor], default=state.event_cursor)
-    status = ReplayPlanStatus.PLANNED if candidate_ids else ReplayPlanStatus.NOT_REQUIRED
-    plan = ReplayPlanRuntime(
-        plan_id=f"replay-plan-{_next_counter(state, key='_replay_plan_seq')}",
-        replay_status=status,
-        replay_reason=reason if candidate_ids else None,
-        last_replayed_cursor=last_replayed_cursor,
-        start_cursor=start_cursor,
-        end_cursor=end_cursor,
-        replay_candidate_event_ids=list(candidate_ids),
-        pending_event_count=len(state.pending_events),
-        metadata={
-            "planned_at": now.isoformat(),
-            "event_window_count": len(replay_window),
-        },
-    )
-
-    # 中文注释：
-    # 这里先把 replay planning 固化成独立结构，后续真正引入副作用重放时，
-    # 只需要消费这份 plan/status，而不必重新设计 recovery snapshot。
-    plan_payload = plan.model_dump(mode="json")
-    state.execution.metadata["replay_plan"] = plan_payload
-
-    candidate_rank_by_id = {
-        event_id: index + 1
-        for index, event_id in enumerate(candidate_ids)
-    }
-    for event in ordered_pending_events:
-        replay_meta = event.metadata.setdefault("replay", {})
-        replay_meta["plan_id"] = plan.plan_id
-        replay_meta["replay_status"] = status.value
-        replay_meta["replay_reason"] = reason
-        replay_meta["planned_at"] = now.isoformat()
-        replay_meta["candidate_rank"] = candidate_rank_by_id[event.event_id]
-        replay_meta["last_replayed_cursor"] = last_replayed_cursor
-        replay_meta["start_cursor"] = start_cursor
-
-    recovery["last_replayed_cursor"] = last_replayed_cursor
-    recovery["replay_required"] = bool(candidate_ids)
-    recovery["replay_reason"] = reason if candidate_ids else None
-    recovery["replay_status"] = status.value
-    recovery["replay_candidate_event_ids"] = list(candidate_ids)
-    recovery["replay_cursor"] = start_cursor
-    recovery["replay_plan_id"] = plan.plan_id
-    recovery["replay_planned_at"] = now.isoformat()
-    return {
-        "plan_id": plan.plan_id,
-        "last_replayed_cursor": last_replayed_cursor,
-        "start_cursor": start_cursor,
-        "end_cursor": end_cursor,
-        "replay_required": bool(candidate_ids),
-        "replay_reason": reason if candidate_ids else None,
-        "replay_status": status.value,
-        "replay_candidate_event_ids": list(candidate_ids),
-    }
+    for key in _LEGACY_REPLAY_KEYS:
+        recovery.pop(key, None)
 
 
-def build_event_log_replay_annotations(
-    state: RuntimeState,
-    event_refs: list[RuntimeEventRef],
-) -> dict[str, dict[str, Any]]:
-    """Build lightweight replay annotations for persisted event-log rows."""
+_LEGACY_REPLAY_KEYS = (
+        "last_replayed_cursor",
+        "pending_event_ids",
+        "replay_candidate_event_ids",
+        "replay_cursor",
+        "replay_plan_id",
+        "replay_planned_at",
+        "replay_required",
+        "replay_reason",
+        "replay_status",
+)
 
-    recovery = _recovery_metadata(state)
-    plan = state.execution.metadata.get("replay_plan", {})
-    if not isinstance(plan, dict):
-        plan = {}
-    last_replayed_cursor = _coerce_positive_int(recovery.get("last_replayed_cursor"), default=0)
-    candidate_ids = set(
-        item
-        for item in recovery.get("replay_candidate_event_ids", [])
-        if isinstance(item, str) and item
-    )
-    if not event_refs or not plan:
-        return {}
 
-    annotations: dict[str, dict[str, Any]] = {}
-    candidate_rank_by_id = {
-        event_id: index + 1
-        for index, event_id in enumerate(plan.get("replay_candidate_event_ids", []))
-        if isinstance(event_id, str) and event_id
-    }
-    for event in event_refs:
-        if event.cursor < last_replayed_cursor and event.event_id not in candidate_ids:
-            continue
-        annotations[event.event_id] = {
-            "plan_id": plan.get("plan_id"),
-            "last_replayed_cursor": last_replayed_cursor,
-            "start_cursor": plan.get("start_cursor", last_replayed_cursor),
-            "end_cursor": plan.get("end_cursor", state.event_cursor),
-            "replay_reason": recovery.get("replay_reason"),
-            "replay_status": "candidate" if event.event_id in candidate_ids else "replay_window",
-            "candidate_rank": candidate_rank_by_id.get(event.event_id),
-        }
-    return annotations
+def _without_legacy_replay_keys(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key not in _LEGACY_REPLAY_KEYS}
 
 
 def _control_plane_settings(state: RuntimeState) -> dict[str, Any]:
