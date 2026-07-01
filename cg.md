@@ -570,4 +570,13 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - **关键坑：ExecutionResult `extra=forbid`** —— 任何残留 `observations=`/`findings=` 构造现在抛 `ValidationError`，编排器把它**静默吞成 `paused`**（非显错，是初跑 2 个失败的根因）。已全库 grep 扫净。3 个 E2E 脚本（`blackbox_success_contract_e2e`/`aegra_vulhub_single_round_smoke`/`test_full_real_chain_vulhub_12615`）仍构造删字段，但它们**早已 import-broken**（引 `StageResult`/`AgentTaskResult` 等更早删的符号），非 A2 新坏，属延后的 E2E/工具硬化。
 - **follow-up（不阻断）**：`report_generator.findings()` 读 `metadata["findings"]`，生产代码现只有（已删的）`result_applier:100` 写它，故报告 findings 现只剩测试种入；改读 KG `Finding` 节点是后续小任务。
 
-**下一步 = B（事件溯源）聚焦 pass**：删 `reducer.py` + 大多 `events.py` 类型 + `store.apply_event` + `prepare_state_for_resume` resume 逻辑 + RuntimeState task/worker/lock/checkpoint/events 字段（缠持久化恢复 + graph_serializer）。删它为 LangGraph checkpoint 让位（故也可直接随 LangGraph 一并处理，不必手工补 B）。
+**B（事件溯源删除）DONE（committed `4a9598d`，suite 145/1 skip，−572 net）**：整个 event-sourcing 子系统是 test-only（orchestrator 只用 `save_state`/`snapshot`，从不 `apply_event`），全删——
+- `events.py`/`reducer.py` 整文件删除（RuntimeEvent 类型 + `RuntimeStateReducer`）。
+- `store.py`：删 `append_event`/`list_events`/`apply_event` + 文件事件日志（`_events_path`/`_load_event_log`/`_write_event_log`/`_next_cursor`）+ reducer 构造参数，`RuntimeStore` 现只存快照。
+- `observability.py`：删 `plan_runtime_event_replay`/`build_event_log_replay_annotations` + 整套 replay-plan 机器;`prepare_state_for_resume` 改为规整快照 + 清 legacy replay metadata 键。
+- `runtime.py`：删 `RuntimeEventRef`/`ReplayPlanRuntime`/`ReplayPlanStatus`/`RuntimeState.pending_events`/`event_cursor`/`push_event`;加 `drop_legacy_event_sourcing_fields` before-validator——旧快照带这些字段仍能反序列化（`extra=forbid` 否则会拒），比别处"接受重生"更稳。
+- `result_applier.py`：`runtime_event_refs`→`runtime_updates: list[dict]`;`_apply_runtime` 发普通 update dict + 一条 `runtime_state_updated` audit,替代 push `SessionOpened`/`ReplanRequested` 事件。
+- `orchestrator.py`：去 `OperationSummary.pending_event_count`;`runtime_event_count`→`runtime_update_count`。
+- 核验:零悬空引用;事件溯源测试早在 `b5657a7` 删净;task/worker/lock/checkpoint RuntimeState 字段亦早已无。
+
+**这条线现在只剩 LangGraph（Step 6）** —— B 已把 checkpoint 的位置腾好（持久化恢复现只规整最新快照,LangGraph checkpoint 直接接管）。数据层（C/A1/A2 + evidence 合并 + B）已删到终态,可开始 LangGraph 包裹一个 lean 的 state。
