@@ -118,7 +118,6 @@ class GraphInitializer:
                     "target": target.raw,
                     **self._target_properties(target),
                 },
-                tags={"initial_target", target.kind},
             )
         )
         kg.add_node(
@@ -135,7 +134,6 @@ class GraphInitializer:
                     "target_kind": target.kind,
                     "allowed": True,
                 },
-                tags={"scope", "initial_scope"},
             )
         )
         kg.add_node(
@@ -154,7 +152,6 @@ class GraphInitializer:
                     "target_host_id": host_id,
                     "scope_id": scope_id,
                 },
-                tags={"initial_goal"},
             )
         )
         kg.add_edge(

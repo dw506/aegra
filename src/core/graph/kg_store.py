@@ -204,22 +204,18 @@ class KnowledgeGraph:
         self,
         type: str | NodeType | None = None,
         status: str | EntityStatus | None = None,
-        tags: set[str] | list[str] | None = None,
     ) -> list[BaseNode]:
-        """List nodes filtered by type, status and tags."""
+        """List nodes filtered by type and status."""
 
         node_ids = (
             set(self._nodes)
             if type is None
             else set(self._node_type_index.get(self._node_type_key(type), set()))
         )
-        requested_tags = set(tags or [])
         result: list[BaseNode] = []
         for node_id in node_ids:
             node = self._nodes[node_id]
             if status is not None and node.status.value != self._status_key(status):
-                continue
-            if not requested_tags.issubset(node.tags):
                 continue
             result.append(node)
         return sorted(result, key=lambda item: item.id)
