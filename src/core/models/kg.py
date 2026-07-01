@@ -68,7 +68,12 @@ class BaseGraphEntity(BaseModel):
     properties: Properties = Field(default_factory=dict)
     status: EntityStatus = EntityStatus.OBSERVED
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    evidence_ids: list[str] = Field(default_factory=list)
+    # Single evidence-pointer field for every node/edge (was split evidence_ids
+    # vs the typed evidence_refs on Finding/GoalCheck/GoalProof — merged onto the
+    # project-wide `evidence_refs` name, which ExecutionResult/AttackStepNode/
+    # Finding/evaluation models all already use). The former evidence_ids was
+    # dead on the KG write path (ResultApplier only ever emitted evidence_refs).
+    evidence_refs: list[str] = Field(default_factory=list)
     evidence_chain: JsonDict = Field(default_factory=dict)
     source_task_id: str | None = None
     fact_kind: str | None = None
@@ -174,7 +179,6 @@ class Finding(BaseNode):
     affected_asset_refs: list[str] = Field(default_factory=list)
     service_ref: str | None = None
     vulnerability_ref: str | None = None
-    evidence_refs: list[str] = Field(default_factory=list)
     validation_status: str | None = None
     severity: str | None = None
     cvss: float | None = Field(default=None, ge=0.0, le=10.0)
@@ -212,7 +216,6 @@ class GoalCheck(BaseNode):
     passed: bool = False
     redacted_summary: str | None = None
     proof_token: str | None = None
-    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class GoalProof(BaseNode):
@@ -220,7 +223,6 @@ class GoalProof(BaseNode):
     goal_id: str | None = None
     proof_token: str | None = None
     redacted_summary: str | None = None
-    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class PivotRouteNode(BaseNode):

@@ -269,7 +269,7 @@ def _match_zone_ref(node: dict[str, Any], zone_ref: str, ctx: PredicateContext) 
 
 
 def _count_evidence(node: dict[str, Any]) -> int:
-    ev = node.get("evidence_ids") or node.get("evidence_refs") or []
+    ev = node.get("evidence_refs") or (node.get("properties") or {}).get("evidence_refs") or []
     return len(ev)
 
 
