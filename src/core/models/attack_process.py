@@ -8,21 +8,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.models.graph_common import GraphRef, stable_node_id, utc_now
+from src.core.models.graph_common import stable_node_id, utc_now
 
 
 class AttackProcessNodeType(str, Enum):
     """Result-tier node types stored in AG."""
 
     ATTACK_STEP = "ATTACK_STEP"
-    GOAL_OUTCOME = "GOAL_OUTCOME"
 
 
 class AttackProcessEdgeType(str, Enum):
     """Result-tier edge types connecting AG records."""
 
     NEXT = "NEXT"
-    ADVANCED = "ADVANCED"
 
 
 class AttackProcessNode(BaseModel):
@@ -39,7 +37,6 @@ class AttackProcessNode(BaseModel):
     agent_name: str | None = None
     status: str | None = None
     summary: str | None = None
-    refs: list[GraphRef] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     properties: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -56,12 +53,6 @@ class AttackStepNode(AttackProcessNode):
     node_type: Literal[AttackProcessNodeType.ATTACK_STEP] = AttackProcessNodeType.ATTACK_STEP
     capability: str | None = None
     kg_node_refs: list[str] = Field(default_factory=list)
-
-
-class GoalOutcomeNode(AttackProcessNode):
-    """Terminal outcome of the operation (success/fail + achieved level)."""
-
-    node_type: Literal[AttackProcessNodeType.GOAL_OUTCOME] = AttackProcessNodeType.GOAL_OUTCOME
 
 
 class AttackProcessEdge(BaseModel):
@@ -82,9 +73,7 @@ __all__ = [
     "AttackProcessEdge",
     "AttackProcessEdgeType",
     "AttackStepNode",
-    "GoalOutcomeNode",
     "AttackProcessNode",
     "AttackProcessNodeType",
-    "GraphRef",
     "stable_node_id",
 ]

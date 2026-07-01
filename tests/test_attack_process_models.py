@@ -13,7 +13,6 @@ from src.core.models.attack_process import (
     AttackProcessNode,
     AttackProcessNodeType,
     AttackStepNode,
-    GraphRef,
     stable_node_id,
 )
 
@@ -36,7 +35,6 @@ def test_attack_process_node_records_attack_step_result() -> None:
         agent_name="execution_agent",
         status="succeeded",
         summary="Recon found an exposed service.",
-        refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
         evidence_refs=["evidence-1"],
         capability="recon",
         kg_node_refs=["host-1"],
@@ -46,7 +44,7 @@ def test_attack_process_node_records_attack_step_result() -> None:
     assert node.id.startswith("ap-node::")
     assert node.node_type == AttackProcessNodeType.ATTACK_STEP
     assert node.capability == "recon"
-    assert node.refs[0].key() == "kg:host-1"
+    assert node.kg_node_refs == ["host-1"]
     assert node.evidence_refs == ["evidence-1"]
     assert node.properties["execution_id"] == "exec-1"
     assert node.created_at.tzinfo is not None
@@ -73,8 +71,8 @@ def test_attack_process_models_forbid_extra_fields() -> None:
     try:
         AttackProcessNode(
             id="node-1",
-            node_type=AttackProcessNodeType.GOAL_OUTCOME,
-            label="Goal outcome",
+            node_type=AttackProcessNodeType.ATTACK_STEP,
+            label="Attack step",
             operation_id="op-1",
             unexpected=True,
         )

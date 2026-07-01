@@ -12,9 +12,8 @@ from src.core.models.attack_process import (
     AttackProcessNode,
     AttackProcessNodeType,
     AttackStepNode,
-    GoalOutcomeNode,
 )
-from src.core.models.graph_common import GraphRef, stable_node_id as stable_node_id
+from src.core.models.graph_common import GraphRef as GraphRef, stable_node_id as stable_node_id
 
 
 AGNode: TypeAlias = AttackProcessNode
@@ -30,7 +29,6 @@ class AttackGraph:
         self._node_type_index: dict[str, set[str]] = defaultdict(set)
         self._outgoing_index: dict[str, set[str]] = defaultdict(set)
         self._incoming_index: dict[str, set[str]] = defaultdict(set)
-        self._subject_ref_index: dict[str, set[str]] = defaultdict(set)
         self._version: int = 0
         self._source_kg_version: int | None = None
         self._projection_batch_id: str | None = None
@@ -88,8 +86,6 @@ class AttackGraph:
             raise ValueError(f"node '{node.id}' already exists")
         self._nodes[node.id] = node
         self._node_type_index[self._node_type_key(node)].add(node.id)
-        for ref in self._refs_for_index(node):
-            self._subject_ref_index[ref.key()].add(node.id)
         self._version += 1
         return node
 
@@ -225,14 +221,6 @@ class AttackGraph:
     def _node_type_key(node: AGNode) -> str:
         return node.node_type.value
 
-    @staticmethod
-    def _refs_for_index(node: AGNode) -> list[GraphRef]:
-        refs: list[GraphRef] = []
-        if isinstance(node, AttackProcessNode):
-            refs.extend(node.refs)
-        unique: dict[str, GraphRef] = {ref.key(): ref for ref in refs}
-        return list(unique.values())
-
 
 def parse_ag_node(data: dict[str, Any]) -> AGNode:
     """Instantiate a typed AG node from serialized data."""
@@ -246,7 +234,6 @@ def parse_ag_node(data: dict[str, Any]) -> AGNode:
         node_data.pop("kind", None)
         process_node_map = {
             AttackProcessNodeType.ATTACK_STEP.value: AttackStepNode,
-            AttackProcessNodeType.GOAL_OUTCOME.value: GoalOutcomeNode,
         }
         model = process_node_map.get(node_type_key)
         if model is None:
@@ -265,3 +252,16 @@ def parse_ag_edge(data: dict[str, Any]) -> AGEdge:
         return AttackProcessEdge.model_validate(data)
 
     raise ValueError(f"unknown AG edge_type: {edge_type_key}")
+
+
+__all__ = [
+    "AttackGraph",
+    "AGNode",
+    "AGEdge",
+    "parse_ag_node",
+    "parse_ag_edge",
+    # Re-exported for callers that build AG records (execution/models, graph_tools,
+    # graph_initializer) so they have one import site for these graph primitives.
+    "GraphRef",
+    "stable_node_id",
+]
