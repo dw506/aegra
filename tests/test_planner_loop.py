@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.core.agents.packy_llm import PackyLLMResponse
+from src.core.llm.packy_llm import PackyLLMResponse
 from src.core.graph.kg_store import KnowledgeGraph
 from src.core.models.ag import AttackGraph
 from src.core.models.runtime import OperationRuntime, RuntimeState

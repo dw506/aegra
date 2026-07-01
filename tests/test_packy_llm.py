@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from src.core.agents.packy_llm import (
+from src.core.llm.packy_llm import (
     PackyLLMClient,
     PackyLLMConfig,
     PackyLLMError,
@@ -151,7 +151,7 @@ def test_packy_client_retries_retryable_gateway_status(monkeypatch: pytest.Monke
             json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
         )
 
-    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    monkeypatch.setattr("src.core.llm.packy_llm.time.sleep", lambda _: None)
     transport = httpx.MockTransport(handler)
     with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
         client = PackyLLMClient(
@@ -184,7 +184,7 @@ def test_packy_client_retries_empty_200_completion(monkeypatch: pytest.MonkeyPat
             json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
         )
 
-    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    monkeypatch.setattr("src.core.llm.packy_llm.time.sleep", lambda _: None)
     transport = httpx.MockTransport(handler)
     with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
         client = PackyLLMClient(
@@ -212,7 +212,7 @@ def test_packy_client_retries_transient_upstream_error_body(monkeypatch: pytest.
             json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
         )
 
-    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    monkeypatch.setattr("src.core.llm.packy_llm.time.sleep", lambda _: None)
     transport = httpx.MockTransport(handler)
     with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
         client = PackyLLMClient(
@@ -239,7 +239,7 @@ def test_packy_client_does_not_retry_genuine_client_error(monkeypatch: pytest.Mo
         calls += 1
         return httpx.Response(status_code=401, json={"error": {"code": "invalid_api_key"}})
 
-    monkeypatch.setattr("src.core.agents.packy_llm.time.sleep", lambda _: None)
+    monkeypatch.setattr("src.core.llm.packy_llm.time.sleep", lambda _: None)
     transport = httpx.MockTransport(handler)
     with httpx.Client(base_url="https://www.packyapi.com/v1", transport=transport) as http_client:
         client = PackyLLMClient(

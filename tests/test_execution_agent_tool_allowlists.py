@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.core.agents.packy_llm import PackyLLMResponse
+from src.core.llm.packy_llm import PackyLLMResponse
 from src.core.execution.mcp_client import MCPToolCallResult
 from src.core.execution.execution_agent import ExecutionAgent
 from src.core.execution.models import ExecutionRequest

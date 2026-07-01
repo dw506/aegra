@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
+from src.core.llm.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.execution.mcp_client import MCPClient, MCPToolCallResult, UnavailableMCPClient
 from src.core.models.graph_common import utc_now
 from src.core.runtime.txt_trace_logger import TxtTraceLogger

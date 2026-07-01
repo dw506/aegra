@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from src.core.agents.packy_llm import PackyLLMResponse
+from src.core.llm.packy_llm import PackyLLMResponse
 from src.core.planning.planner import Planner
 from src.core.planning.models import PlannerOutcome
 

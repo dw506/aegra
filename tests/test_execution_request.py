@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.core.agents.packy_llm import PackyLLMResponse
+from src.core.llm.packy_llm import PackyLLMResponse
 from src.core.models.ag import GraphRef
 from src.core.execution.execution_agent import ExecutionAgent
 from src.core.execution.models import ExecutionRequest, ExecutionResult

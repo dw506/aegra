@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
+from src.core.llm.packy_llm import PackyLLMClient, PackyLLMError
 from src.core.planning.models import PlannerOutcome
 from src.core.planning.planner_loop import PlannerLoopState, run_planner_loop
 
