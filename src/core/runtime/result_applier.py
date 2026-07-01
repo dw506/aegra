@@ -150,37 +150,46 @@ class PhaseTwoResultApplier:
     def _fact_deltas(self, execution_result: ExecutionResult) -> list[dict[str, Any]]:
         # KG machine facts derive SOLELY from channel ① now: the deterministic
         # ToolTraceFactExtractor over tool_trace, plus tool-derived evidence_refs
-        # and the goal-proof runtime hint. The former channel-② self-report inputs
-        # (discovered_entities/relations, observation payloads, self-declared
-        # findings) are gone — every tool that yields a contract-relevant node has
-        # a dedicated _extract_* function and owns its id scheme.
-        records: list[dict[str, Any]] = []
+        # and the goal-proof runtime hint. Each source builds its entity delta
+        # directly (no intermediate flat-record dict); every tool that yields a
+        # contract-relevant node has a dedicated _extract_* function owning its id.
+        deltas: list[dict[str, Any]] = []
+        # source ①: extractor facts.
         for trace_result in self._facts.extract_all(execution_result.tool_trace):
             for fact in trace_result.facts:
-                records.append({"id": f"{fact.entity_type.lower()}::{self._hash({'label': fact.label, 'tool': fact.source_tool})}", "type": fact.entity_type, "label": fact.label, **fact.properties, "confidence": fact.confidence})
+                entity_id = f"{fact.entity_type.lower()}::{self._hash({'label': fact.label, 'tool': fact.source_tool})}"
+                if not (self._string(entity_id) and self._string(fact.entity_type)):
+                    continue
+                deltas.append(self._entity_delta(entity_id, fact.entity_type, fact.label, dict(fact.properties), fact.confidence, execution_result))
+                # Synthesize a HOSTS edge for a Service fact, binding it to its host.
+                if fact.entity_type.lower() == "service":
+                    host = self._string(fact.properties.get("address") or fact.properties.get("host"))
+                    if host:
+                        deltas.append(self._relation_delta(f"host::{host}", entity_id, {"type": "HOSTS"}, execution_result))
+        # source ②: tool-derived evidence_refs.
         for evidence_ref in execution_result.evidence_refs:
-            records.append({"id": evidence_ref, "type": "Evidence", "label": evidence_ref, "payload_ref": evidence_ref})
+            if self._string(evidence_ref):
+                deltas.append(self._entity_delta(evidence_ref, "Evidence", evidence_ref, {"payload_ref": evidence_ref}, None, execution_result))
+        # source ③: goal-proof runtime hint.
         hints = execution_result.runtime_hints
         if hints.get("goal_satisfied") and hints.get("goal_id"):
-            records.append({"id": f"goal-proof::{hints['goal_id']}", "type": "GoalProof", "label": f"goal proof: {hints['goal_id']}", "goal_id": hints["goal_id"], "evidence_refs": list(hints.get("goal_evidence_refs") or hints.get("evidence_refs") or []), "proof_token": hints.get("proof_token"), "redacted_summary": hints.get("goal_summary") or execution_result.summary})
-        deltas = [self._entity_delta(record, execution_result) for record in records if self._string(record.get("id")) and self._string(record.get("type"))]
-        # Synthesize HOSTS edges for any Service node the extractor produced (e.g.
-        # from nmap / run_command output), binding it to its host.
-        for record in records:
-            if str(record.get("type", "")).lower() != "service": continue
-            host = self._string(record.get("address") or record.get("host"))
-            if host:
-                host_id, service_id = f"host::{host}", self._string(record.get("id"))
-                if service_id:
-                    deltas.append(self._relation_delta(host_id, service_id, {"type": "HOSTS", "id": f"hosts::{host_id}::{service_id}"}, execution_result))
+            deltas.append(self._entity_delta(
+                f"goal-proof::{hints['goal_id']}", "GoalProof", f"goal proof: {hints['goal_id']}",
+                {
+                    "goal_id": hints["goal_id"],
+                    "evidence_refs": list(hints.get("goal_evidence_refs") or hints.get("evidence_refs") or []),
+                    "proof_token": hints.get("proof_token"),
+                    "redacted_summary": hints.get("goal_summary") or execution_result.summary,
+                },
+                None, execution_result))
         return deltas
 
-    def _entity_delta(self, record: dict[str, Any], execution_result: ExecutionResult) -> dict[str, Any]:
-        entity_id, entity_type = str(record["id"]), str(record["type"])
-        attributes = {k: v for k, v in record.items() if k not in {"id", "type", "entity_type", "label", "summary", "confidence"} and v is not None}
+    def _entity_delta(self, entity_id: str, entity_type: str, label: Any, attributes: dict[str, Any], confidence: float | None, execution_result: ExecutionResult) -> dict[str, Any]:
+        entity_id, entity_type = str(entity_id), str(entity_type)
+        attributes = {k: v for k, v in attributes.items() if k not in {"id", "type", "entity_type", "label", "summary", "confidence"} and v is not None}
         if execution_result.evidence_refs:
             attributes.setdefault("evidence_refs", list(execution_result.evidence_refs))
-        return {"id": f"entity::{entity_id}", "payload": {"patch_kind": "entity"}, "patch": {"entity_kind": "node", "entity_id": entity_id, "entity_type": entity_type, "label": str(record.get("label") or record.get("summary") or entity_id), "attributes": attributes, "confidence": float(record.get("confidence") or execution_result.confidence)}}
+        return {"id": f"entity::{entity_id}", "payload": {"patch_kind": "entity"}, "patch": {"entity_kind": "node", "entity_id": entity_id, "entity_type": entity_type, "label": str(label or entity_id), "attributes": attributes, "confidence": float(confidence or execution_result.confidence)}}
 
     def _relation_delta(self, source: str, target: str, relation: dict[str, Any], execution_result: ExecutionResult) -> dict[str, Any]:
         relation_type = str(relation.get("relation_type") or relation.get("type") or "HOSTS")
