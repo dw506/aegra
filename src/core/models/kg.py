@@ -167,19 +167,6 @@ class Goal(BaseNode):
     description: str | None = None
 
 
-class PostAccessObservation(BaseNode):
-    type: Literal[NodeType.POST_ACCESS_OBSERVATION] = NodeType.POST_ACCESS_OBSERVATION
-    target_ref: str | None = None
-    zone_ref: str | None = None
-
-
-class GoalCheck(BaseNode):
-    type: Literal[NodeType.GOAL_CHECK] = NodeType.GOAL_CHECK
-    goal_id: str | None = None
-    passed: bool = False
-    redacted_summary: str | None = None
-
-
 class GoalProof(BaseNode):
     type: Literal[NodeType.GOAL_PROOF] = NodeType.GOAL_PROOF
     goal_id: str | None = None
@@ -223,8 +210,6 @@ NODE_MODEL_BY_TYPE: dict[NodeType, type[BaseNode]] = {
     NodeType.FINDING: Finding,
     NodeType.NETWORK_ZONE: NetworkZone,
     NodeType.GOAL: Goal,
-    NodeType.POST_ACCESS_OBSERVATION: PostAccessObservation,
-    NodeType.GOAL_CHECK: GoalCheck,
     NodeType.GOAL_PROOF: GoalProof,
     NodeType.PIVOT_ROUTE: PivotRouteNode,
 }

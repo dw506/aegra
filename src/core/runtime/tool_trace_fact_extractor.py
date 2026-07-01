@@ -306,15 +306,14 @@ def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
     else:
         kind = "post_access"
 
-    # Proof/hint flavors are generic Evidence; a plain post-access read keeps
-    # the generic PostAccessObservation node type.
-    entity_type = "PostAccessObservation" if kind == "post_access" else "Evidence"
-
+    # Every post-access flavor is generic Evidence discriminated by `kind`
+    # (post_access / proof / hint); the specialised PostAccessObservation node
+    # type was collapsed into Evidence{kind}.
     content_summary = str(parsed.get("content_summary") or parsed.get("summary") or "")
     facts.append(
         ExtractedFact(
-            fact_type=entity_type,
-            entity_type=entity_type,
+            fact_type="Evidence",
+            entity_type="Evidence",
             label=f"{kind}:{target}",
             properties={
                 "kind": kind,
@@ -423,7 +422,7 @@ def _extract_pivot_route(trace: dict[str, Any]) -> list[ExtractedFact]:
 
 
 def _extract_goal_check(trace: dict[str, Any]) -> list[ExtractedFact]:
-    """Extract GoalCheck/GoalProof from goal check tools."""
+    """Extract GoalProof + Evidence{kind:goal_check} from goal check tools."""
     facts: list[ExtractedFact] = []
     parsed = trace.get("parsed_output") or {}
     args = trace.get("arguments") or {}
@@ -448,12 +447,17 @@ def _extract_goal_check(trace: dict[str, Any]) -> list[ExtractedFact]:
                 source_tool=str(trace.get("tool_name") or ""),
             )
         )
+    # A goal-check attempt (pass or fail) is generic Evidence{kind:goal_check};
+    # the specialised GoalCheck node type was collapsed into Evidence{kind}. The
+    # passing proof is still the separate GoalProof node above.
     facts.append(
         ExtractedFact(
-            fact_type="GoalCheck",
-            entity_type="GoalCheck",
+            fact_type="Evidence",
+            entity_type="Evidence",
             label=f"goal-check:{goal_id}",
             properties={
+                "kind": "goal_check",
+                "evidence_kind": "goal_check",
                 "goal_id": goal_id,
                 "passed": passed,
                 "redacted_summary": redacted_summary,

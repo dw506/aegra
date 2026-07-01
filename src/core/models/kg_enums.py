@@ -26,8 +26,6 @@ class NodeType(str, Enum):
     NETWORK_ZONE = "NetworkZone"
     GOAL = "Goal"
     # Extended types for profile-driven evaluation
-    POST_ACCESS_OBSERVATION = "PostAccessObservation"
-    GOAL_CHECK = "GoalCheck"
     GOAL_PROOF = "GoalProof"
     PIVOT_ROUTE = "PivotRoute"
 

@@ -141,10 +141,7 @@ condition_bindings:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - PostAccessObservation
-          - Evidence
+      type: Evidence
       filters:
         kind: post_access
 

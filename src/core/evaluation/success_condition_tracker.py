@@ -260,11 +260,12 @@ class SuccessConditionTracker:
         kg_nodes: list[dict[str, Any]],
     ) -> Any:
         """Run GoalOracle and return output, never exposing secrets."""
-        # Collect evidence from GoalProof KG nodes
+        # Collect evidence from GoalProof + Evidence KG nodes (goal-check attempts
+        # are now Evidence{kind:goal_check}).
         evidence_refs = [
             str(n.get("id") or "")
             for n in kg_nodes
-            if n.get("type") in ("GoalProof", "GoalCheck", "Evidence")
+            if n.get("type") in ("GoalProof", "Evidence")
         ]
         # Collect session/pivot refs from runtime
         session_refs = list((runtime_state.get("sessions") or {}).keys())
