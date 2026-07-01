@@ -1,8 +1,8 @@
-"""Stage-level execution and result contracts."""
+"""Objective-scoped execution and result contracts."""
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypeAlias, get_args
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,7 +12,7 @@ from uuid import uuid4
 
 
 class ToolTrace(BaseModel):
-    """Audit record for one tool call inside a bounded stage loop."""
+    """Audit record for one tool call inside a bounded execution loop."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -37,19 +37,17 @@ class ToolTrace(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-CapabilityName: TypeAlias = Literal["recon", "analysis", "exploit", "pivot", "lateral", "goal", "evidence"]
-
-CAPABILITY_NAMES: tuple[str, ...] = get_args(CapabilityName)
-
-
 class RoundDirective(BaseModel):
-    """Planner-to-executor contract for one capability-scoped execution round."""
+    """Planner-to-executor contract for one bounded, objective-scoped round.
+
+    The planner states a free-text objective and the executor does whatever that
+    objective needs.
+    """
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     operation_id: str = Field(min_length=1)
     cycle_index: int = Field(ge=0)
-    capability: CapabilityName
     objective: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
@@ -97,7 +95,6 @@ class ExecutionRequest(BaseModel):
     operation_id: str = Field(min_length=1)
     cycle_index: int = Field(ge=0)
     agent_name: str = Field(min_length=1)
-    capability: CapabilityName
     objective: str = Field(min_length=1)
     target_refs: list[GraphRef] = Field(default_factory=list)
     required_context: dict[str, Any] = Field(default_factory=dict)
@@ -113,7 +110,7 @@ class ExecutionRequest(BaseModel):
     # routes/sessions so the tool boundary can resolve transport behind the call.
     pivot_routes: list[dict[str, Any]] = Field(default_factory=list)
     sessions: list[dict[str, Any]] = Field(default_factory=list)
-    task_brief: str | None = None
+    execution_brief: str | None = None
     autonomy_level: str | None = None
     allowed_tool_names: list[str] | str | None = None
     target_selection: str | None = None
@@ -128,9 +125,6 @@ class ExecutionResult(BaseModel):
     result_id: str = Field(default_factory=lambda: f"execution-result-{uuid4().hex}")
     operation_id: str = Field(default="operation", min_length=1)
     execution_id: str = Field(min_length=1)
-    # v3 capability tag, authoritative from the planner directive. ExecutionAgent
-    # stamps it from RoundDirective.capability; the result tier reads it directly.
-    capability: CapabilityName = "evidence"
     agent_name: str = Field(min_length=1)
     status: Literal["success", "succeeded", "partial", "failed", "blocked", "need_more_info", "needs_replan"]
     summary: str = Field(min_length=1)
@@ -168,8 +162,6 @@ class ExecutionResult(BaseModel):
 
 
 __all__ = [
-    "CAPABILITY_NAMES",
-    "CapabilityName",
     "RoundDirective",
     "ExecutionRequest",
     "ExecutionResult",

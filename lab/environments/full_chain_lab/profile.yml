@@ -30,7 +30,7 @@ zone_bindings:
     directly_reachable: false
     requires:
       - pivot_route
-      - capability
+      - session
 
 authorization:
   docker_lab_only: true
@@ -80,7 +80,7 @@ mission:
     Starting only from the imported target, autonomously complete an authorized
     Docker lab multi-host penetration chain. The system must discover entry-zone
     services, identify vulnerability candidates, execute lab-authorized exploit
-    primitives, obtain a capability or session, perform post-access observation,
+    primitives, obtain a session, perform post-access observation,
     establish an authorized pivot route, discover restricted-zone services, and
     submit a final goal proof. Do not follow a hard-coded stage order.
 

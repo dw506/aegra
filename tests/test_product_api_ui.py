@@ -79,7 +79,7 @@ def test_graph_rendering_contract_has_host_service_vulnerability_evidence_chain(
             "kind": "validation",
             "summary": "safe validation evidence",
             "payload_ref": "runtime://worker-results/evidence-1",
-            "task_ref": "task-1",
+            "execution_ref": "execution-1",
             "refs": [],
             "created_at": "2026-05-12T00:00:00+00:00",
         }

@@ -14,7 +14,7 @@ def _state() -> RuntimeState:
             "kind": "vulnerability_validation",
             "summary": "curl Authorization: Bearer secret-token",
             "payload_ref": "runtime://worker-results/evidence-1",
-            "task_ref": "task-1",
+            "execution_ref": "execution-1",
             "tool_output_ref": "runtime://worker-results/evidence-1",
             "metadata": {"api_key": "secret-key", "safe": "ok"},
             "refs": [],

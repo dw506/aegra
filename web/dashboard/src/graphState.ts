@@ -19,7 +19,6 @@ export const emptyGraphState = (): GraphState => ({
 export const emptyDashboardGraphs = (): DashboardGraphs => ({
   kg: emptyGraphState(),
   ag: emptyGraphState(),
-  tg: emptyGraphState(),
   runtime: emptyGraphState(),
 });
 

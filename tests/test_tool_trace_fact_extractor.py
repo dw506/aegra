@@ -8,7 +8,7 @@ def _extract(trace: dict) -> list:
 
 
 def test_pivot_exec_nmap_argv_yields_pivot_route_and_internal_service() -> None:
-    # cg.md G.5 stage 1 (#12): a pivot_exec that ran nmap is the real-tool source
+    # cg.md G.5 phase 1 (#12): a pivot_exec that ran nmap is the real-tool source
     # for restricted-zone service discovery — it must record BOTH the live route
     # and the internal Service (zone_ref=restricted) so service_discovered_via_route
     # resolves without the canned internal_service_discover.
@@ -89,7 +89,7 @@ def test_nuclei_scan_no_hit_still_yields_scan_evidence() -> None:
 
 
 def test_metasploit_exec_session_yields_session_node() -> None:
-    # cg.md G.5 stage 1a: a real metasploit_exec opens a session whose id flows
+    # cg.md G.5 phase 1a: a real metasploit_exec opens a session whose id flows
     # to a KG Session node (real-tool source for contract #7/#8).
     facts = _extract(
         {
@@ -183,3 +183,4 @@ def test_whatweb_fingerprint_yields_fingerprint_evidence() -> None:
     evidence = next(f for f in facts if f.fact_type == "Evidence")
     assert evidence.properties["evidence_kind"] == "web_fingerprint"
     assert evidence.properties["technology"] == "Apache Struts"
+

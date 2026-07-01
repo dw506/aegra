@@ -69,11 +69,11 @@ class BaseRuntimeModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-#最近任务结果的缓存条目
+#最近执行结果的缓存条目
 class OutcomeCacheEntry(BaseRuntimeModel):
 
     outcome_id: str = Field(min_length=1)
-    task_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=utc_now)
     outcome_type: str = Field(min_length=1)
     summary: str = Field(min_length=1)
@@ -160,7 +160,7 @@ class ReplanRequest(BaseRuntimeModel):
     request_id: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=utc_now)
     reason: str = Field(min_length=1)
-    task_ids: list[str] = Field(default_factory=list)
+    execution_ids: list[str] = Field(default_factory=list)
     scope: Literal["local", "branch", "full"] = "local"
     metadata: dict[str, Any] = Field(default_factory=dict)
 

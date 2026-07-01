@@ -16,7 +16,6 @@ class FixedPlanner:
             directive=RoundDirective(
                 operation_id="operation",
                 cycle_index=0,
-                capability="recon",
                 objective="collect environment facts",
                 max_tools=2,
                 risk_level="low",
@@ -32,7 +31,6 @@ class FixedReconAgent:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=f"execution-{request.operation_id}-{request.cycle_index}-recon_agent",
-            capability=request.capability,
             agent_name=self.agent_name,
             status="succeeded",
             summary="host discovered",

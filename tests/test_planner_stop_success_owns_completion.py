@@ -16,7 +16,6 @@ class GoalSatisfiedAgent:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=f"execution-{request.operation_id}-{request.cycle_index}-goal_agent",
-            capability="goal",
             agent_name=self.agent_name,
             status="succeeded",
             summary="goal evidence satisfied",
@@ -36,10 +35,9 @@ class GoalWithoutExplicitSatisfiedHintAgent:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=f"execution-{request.operation_id}-{request.cycle_index}-goal_agent",
-            capability="goal",
             agent_name=self.agent_name,
             status="succeeded",
-            summary="goal stage succeeded but did not prove completion",
+            summary="goal execution round succeeded but did not prove completion",
             evidence_refs=["evidence::goal"],
         )
 
@@ -58,7 +56,6 @@ class SequencedPlanner:
                 directive=RoundDirective(
                     operation_id="operation",
                     cycle_index=0,
-                    capability="goal",
                     objective="verify goal evidence",
                     max_tools=1,
                     risk_level="low",
@@ -95,7 +92,7 @@ def test_goal_agent_hint_does_not_complete_until_planner_stop_success(tmp_path) 
     assert second.stop_reason == "goal_satisfied"
 
 
-def test_goal_stage_success_without_explicit_hint_does_not_mark_goal_satisfied(tmp_path) -> None:
+def test_goal_execution_success_without_explicit_hint_does_not_mark_goal_satisfied(tmp_path) -> None:
     settings = AppSettings(runtime_store_backend="file", runtime_store_dir=tmp_path)
     orchestrator = AppOrchestrator(settings=settings, graph_memory_store=GraphMemoryStore(tmp_path / "graphs"))
     orchestrator.execution_agent = ExecutionAgent(GoalWithoutExplicitSatisfiedHintAgent())  # type: ignore[arg-type]
@@ -107,3 +104,4 @@ def test_goal_stage_success_without_explicit_hint_does_not_mark_goal_satisfied(t
     assert first.runtime_state.operation_status == RuntimeStatus.READY
     assert first.runtime_state.execution.metadata.get("goal_satisfied") is not True
     assert first.stopped is False
+

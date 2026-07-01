@@ -43,7 +43,7 @@ export function AgTimelineView({ ag, runtime, operation, selectedNode, onSelectN
           {cycles.length ? cycles.map((cycle) => (
             <button key={cycle.cycleIndex} className="cycleListItem" onClick={() => cycle.nodes[0] && onSelectNode(cycle.nodes[0])}>
               <span>{cycle.title}</span>
-              <small>{cycle.selectedStage} / {cycle.selectedAgent}</small>
+              <small>{cycle.selectedObjective} / {cycle.selectedAgent}</small>
               <CycleStatus stopped={cycle.stopped} success={cycle.executionSuccess} />
             </button>
           )) : <div className="emptyState compact">No AG cycles</div>}
@@ -55,7 +55,7 @@ export function AgTimelineView({ ag, runtime, operation, selectedNode, onSelectN
               <header className="cycleHeader">
                 <div>
                   <h2>{cycle.title}</h2>
-                  <p>{cycle.selectedStage} / {cycle.selectedAgent}</p>
+                  <p>{cycle.selectedObjective} / {cycle.selectedAgent}</p>
                 </div>
                 <dl>
                   <div><dt>execution_success</dt><dd>{cycle.executionSuccess}</dd></div>

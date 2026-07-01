@@ -9,7 +9,7 @@ from src.core.runtime.result_applier import PhaseTwoResultApplier
 from src.core.execution.models import RoundDirective, ExecutionResult, ToolTrace
 
 
-def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> None:
+def test_result_applier_writes_planner_execution_tool_and_kg_facts_without_legacy_graph() -> None:
     state = RuntimeState(operation_id="op-apply", execution=OperationRuntime(operation_id="op-apply"))
     kg = KnowledgeGraph()
     ag = AttackGraph()
@@ -22,7 +22,6 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
         directive=RoundDirective(
             operation_id="op-apply",
             cycle_index=1,
-            capability="recon",
             objective="map exposed service",
             max_tools=2,
             risk_level="low",
@@ -33,8 +32,7 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
 
     execution_result = ExecutionResult(
         operation_id="op-apply",
-        execution_id="stage-op-apply-1-recon_agent",
-        capability="recon",
+        execution_id="execution-op-apply-1-recon_agent",
         agent_name="recon_agent",
         status="succeeded",
         summary="host and service observed",
@@ -53,7 +51,7 @@ def test_result_applier_writes_planner_stage_tool_and_kg_facts_without_tg() -> N
 
 
 def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None:
-    """A stage asserting goal_satisfied with an explicit goal_id mints a typed
+    """An execution round asserting goal_satisfied with an explicit goal_id mints a typed
     GoalProof KG node (so success-contract oracle predicates can resolve it).
     A bare goal_satisfied without goal_id must NOT mint a proof node."""
 
@@ -65,8 +63,7 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     # No goal_id -> no GoalProof node.
     bare = ExecutionResult(
         operation_id="op-proof",
-        execution_id="stage-op-proof-1-goal_agent",
-        capability="goal",
+        execution_id="execution-op-proof-1-goal_agent",
         agent_name="goal_agent",
         status="succeeded",
         summary="reachability goal check passed",
@@ -78,8 +75,7 @@ def test_result_applier_mints_goal_proof_node_from_goal_satisfied_hint() -> None
     # goal_satisfied + explicit goal_id -> typed GoalProof node carrying goal_id.
     proof = ExecutionResult(
         operation_id="op-proof",
-        execution_id="stage-op-proof-2-access_pivot_agent",
-        capability="pivot",
+        execution_id="execution-op-proof-2-access_pivot_agent",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="controlled internal DB read proof recorded",
@@ -109,8 +105,7 @@ def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -
 
     execution_result = ExecutionResult(
         operation_id="op-toolonly",
-        execution_id="stage-op-toolonly-1-recon_agent",
-        capability="recon",
+        execution_id="execution-op-toolonly-1-recon_agent",
         agent_name="recon_agent",
         status="succeeded",
         summary="unstructured tool output",
@@ -133,7 +128,7 @@ def test_result_applier_writes_tool_result_evidence_when_no_structured_shape() -
 
 
 def test_result_applier_reports_diagnostics_when_no_deltas() -> None:
-    """B5: an empty stage records a reason instead of writing silently."""
+    """B5: an empty execution round records a reason instead of writing silently."""
 
     state = RuntimeState(operation_id="op-empty", execution=OperationRuntime(operation_id="op-empty"))
     kg = KnowledgeGraph()
@@ -142,8 +137,7 @@ def test_result_applier_reports_diagnostics_when_no_deltas() -> None:
 
     execution_result = ExecutionResult(
         operation_id="op-empty",
-        execution_id="stage-op-empty-1-recon_agent",
-        capability="recon",
+        execution_id="execution-op-empty-1-recon_agent",
         agent_name="recon_agent",
         status="needs_replan",
         summary="nothing produced",
@@ -196,5 +190,6 @@ def test_apply_patch_batch_tolerates_one_bad_delta() -> None:
     assert kg.get_node("host::10.0.0.9") is not None
     assert "bad-edge" in result["failed_delta_ids"]
     assert result["errors"]
+
 
 

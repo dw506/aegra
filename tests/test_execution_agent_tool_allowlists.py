@@ -64,13 +64,12 @@ class StructuredMCP:
         )
 
 
-def test_recon_agent_passes_catalog_tool_without_stage_allowlist_filtering() -> None:
+def test_recon_agent_passes_catalog_tool_without_execution_allowlist_filtering() -> None:
     result = ExecutionAgent(llm_client=StaticLLM("nuclei_scan"), mcp_client=MCP()).run(
         ExecutionRequest(
             operation_id="op-tools",
             cycle_index=1,
             agent_name="recon_agent",
-            capability="recon",
             objective="recon",
             policy_context={"authorized": True},
             max_steps=1,
@@ -92,7 +91,6 @@ def test_server_prefixed_tool_name_resolves_to_bare_catalog_tool() -> None:
             operation_id="op-tools",
             cycle_index=1,
             agent_name="recon_agent",
-            capability="recon",
             objective="recon",
             policy_context={"authorized": True},
             max_steps=1,
@@ -111,7 +109,6 @@ def test_policy_denylist_is_audit_only_without_blocking() -> None:
             operation_id="op-tools",
             cycle_index=1,
             agent_name="goal_agent",
-            capability="goal",
             objective="goal",
             policy_context={"authorized": True, "mcp_tool_denylist": ["pivot_route_probe"]},
             max_steps=1,
@@ -131,7 +128,6 @@ def test_max_steps_partial_preserves_successful_tool_evidence_and_parsed_output(
             operation_id="op-tools",
             cycle_index=2,
             agent_name="recon_agent",
-            capability="recon",
             objective="fingerprint web service",
             policy_context={"authorized": True},
             max_steps=1,
@@ -167,7 +163,6 @@ def test_need_replan_preserves_successful_tool_evidence_and_parsed_output() -> N
             operation_id="op-tools",
             cycle_index=2,
             agent_name="recon_agent",
-            capability="recon",
             objective="fingerprint web service",
             policy_context={"authorized": True},
             max_steps=2,

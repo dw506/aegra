@@ -287,7 +287,7 @@ def _extract_post_access(trace: dict[str, Any]) -> list[ExtractedFact]:
     The semantic flavor (a captured proof artifact, a discovered hint, or a
     plain observation) is carried as a ``kind`` property, never as a
     lab-specific node type. The tool may declare ``fact_kind`` directly; absent
-    that, the flavor is inferred from the tool name for legacy lab tools.
+    that, the flavor is inferred from the tool name for compatibility.
     """
     facts: list[ExtractedFact] = []
     parsed = trace.get("parsed_output") or {}
@@ -365,7 +365,7 @@ def _extract_msf(trace: dict[str, Any]) -> list[ExtractedFact]:
     Running the exploit module is itself an exploit attempt (recorded as
     Evidence{kind:exploit_attempt} for contract #6, success or not); a successful
     run additionally opens a real Session (via _extract_session, satisfying
-    #7/#8). cg.md G.6 stage 2: kind is the cross-cutting ToolFact discriminator.
+    #7/#8). cg.md G.6 phase 2: kind is the cross-cutting ToolFact discriminator.
     """
     facts: list[ExtractedFact] = list(_extract_session(trace))
     args = trace.get("arguments") or {}
@@ -564,7 +564,7 @@ def _extract_pivot_exec(trace: dict[str, Any]) -> list[ExtractedFact]:
     via ``_extract_pivot_route``). When the argv ran an nmap scan, also parse the
     raw stdout into restricted-zone Service facts so internal service discovery
     has a real-tool source — the freeform replacement for the bespoke
-    ``internal_service_discover`` / ``pivoted_nmap_scan`` (cg.md G.5 stage 1).
+    ``internal_service_discover`` / ``pivoted_nmap_scan`` (cg.md G.5 phase 1).
     """
     facts: list[ExtractedFact] = list(_extract_pivot_route(trace))
     args = trace.get("arguments") or {}
@@ -581,7 +581,7 @@ def _extract_nuclei_scan(trace: dict[str, Any]) -> list[ExtractedFact]:
     A nuclei match is a real vulnerability signal; record it as generic
     ``Evidence{kind:vuln_candidate}`` — the collapse target for the deprecated
     ``VulnerabilityCandidate`` node type (cg.md G.3). The contract migration
-    (G.6 stage 2) will switch vuln_candidate conditions to read this kind.
+    (G.6 phase 2) will switch vuln_candidate conditions to read this kind.
     """
     facts: list[ExtractedFact] = []
     parsed = trace.get("parsed_output") or {}
@@ -646,7 +646,7 @@ _TOOL_EXTRACTORS: dict[str, Any] = {
     "post_access_observe": _extract_post_access,
     "read_lab_marker": _extract_post_access,
     "list_lab_hints": _extract_post_access,
-    # Step 5 / G.5 stage 1a: a real metasploit_exec opens a real session (Session,
+    # Step 5 / G.5 phase 1a: a real metasploit_exec opens a real session (Session,
     # #7/#8) and records the attempt (Evidence{kind:exploit_attempt}, #6).
     "metasploit_exec": _extract_msf,
     # Step 5 generic transport primitive: a successful pivot_exec is causal proof
@@ -663,7 +663,7 @@ _TOOL_EXTRACTORS: dict[str, Any] = {
 class ToolTraceFactExtractor:
     """Extract KG-writable facts from successful ToolTraces.
 
-    Called by ResultApplier after every stage cycle, even when LLM
+    Called by ResultApplier after every execution cycle, even when LLM
     post-processing has failed. Only processes traces with success=True.
     """
 

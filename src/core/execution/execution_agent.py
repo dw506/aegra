@@ -1,4 +1,4 @@
-"""Single public execution module for capability-scoped execution rounds."""
+"""Single public execution module for objective-scoped execution rounds."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.agents.packy_llm import PackyLLMClient, PackyLLMError
@@ -57,15 +58,6 @@ class ExecutionAgent:
             default_timeout_seconds=default_timeout_seconds,
         )
 
-    def capability_summary(self) -> list[dict[str, str]]:
-        agent = self._agent
-        return [
-            {
-                "agent_name": agent.agent_name,
-                "context_builder": getattr(agent, "context_builder_name", "execution_agent_context"),
-            }
-        ]
-
     def run(
         self,
         directive: RoundDirective | ExecutionRequest,
@@ -78,7 +70,7 @@ class ExecutionAgent:
         pivot_routes: list[dict[str, Any]] | None = None,
         sessions: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
-        """Execute one capability round through the single execution agent."""
+        """Execute one objective-scoped round through the single execution agent."""
 
         agent = self._agent
         if isinstance(directive, ExecutionRequest):
@@ -93,13 +85,9 @@ class ExecutionAgent:
             operation_id=directive.operation_id,
             cycle_index=directive.cycle_index,
             agent_name=agent.agent_name,
-            capability=directive.capability,
             objective=directive.objective,
             target_refs=list(directive.target_refs),
             required_context={
-                # capability is intentionally NOT propagated into the request's
-                # decision context (Step 4 / cg.md E.4): it must stay an AG label,
-                # not steer the executor. It is stamped onto the result separately.
                 **dict(directive.required_context),
                 "tool_hints": list(directive.tool_hints),
             },
@@ -115,11 +103,7 @@ class ExecutionAgent:
             pivot_routes=list(pivot_routes or []),
             sessions=list(sessions or []),
         )
-        execution_result = agent.run(request)
-        # Capability is authoritative from the directive; stamp it on the result
-        # so the result tier reads it directly.
-        execution_result.capability = directive.capability
-        return execution_result
+        return agent.run(request)
 
 
 __all__ = [
@@ -138,11 +122,28 @@ class _ExecutionToolCall(BaseModel):
     timeout_seconds: int = Field(default=120, ge=1)
 
 
+class _ExecutionLoopState(BaseModel):
+    """LangGraph state for one bounded execution round."""
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    request: ExecutionRequest
+    logger: TxtTraceLogger
+    memory: list[dict[str, Any]] = Field(default_factory=list)
+    tool_traces: list[ToolTrace] = Field(default_factory=list)
+    seen_signatures: set[str] = Field(default_factory=set)
+    unproductive_streak: int = 0
+    step: int = 1
+    decision: dict[str, Any] | None = None
+    action: str = ""
+    result: ExecutionResult | None = None
+
+
 class _ExecutionLoop:
     """Autonomous bounded execution loop used by the single ExecutionAgent.
 
-    Capability-agnostic: the round capability is a per-request tag
-    (``ExecutionRequest.capability``), not a stage binding on the agent.
+    Objective-driven and phase-agnostic: it runs whatever tools the round's
+    objective needs, with no fixed phase binding.
     """
 
     agent_name: str = "execution_agent"
@@ -178,7 +179,7 @@ class _ExecutionLoop:
         logger = self._logger(request.operation_id)
         logger.write_header(
             f"Operation: {request.operation_id}",
-            {"cycle_index": request.cycle_index, "agent_name": request.agent_name, "capability": request.capability},
+            {"cycle_index": request.cycle_index, "agent_name": request.agent_name},
         )
         logger.write_block(
             "CYCLE_START",
@@ -186,109 +187,138 @@ class _ExecutionLoop:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "capability": request.capability,
                 "objective": request.objective,
-                "task_brief": request.task_brief,
+                "execution_brief": request.execution_brief,
                 "max_steps": request.max_steps,
             },
         )
 
+        graph = self._build_execution_graph()
+        final_state = _ExecutionLoopState.model_validate(
+            graph.invoke(_ExecutionLoopState(request=request, logger=logger))
+        )
+        if final_state.result is None:
+            final_state.result = self._partial_result_from_tool_memory(request, final_state.tool_traces)
+        self._log_execution_finish(logger, request, final_state.result)
+        return final_state.result
+
+    def _build_execution_graph(self):
+        """Compile the execution round as a LangGraph state machine."""
+
+        graph = StateGraph(_ExecutionLoopState)
+        graph.add_node("start", self._execution_start_node)
+        graph.add_node("decide", self._execution_decide_node)
+        graph.add_node("call_tool", self._execution_call_tool_node)
+        graph.add_node("partial_result", self._execution_partial_result_node)
+        graph.set_entry_point("start")
+        graph.add_conditional_edges("start", self._execution_after_start, {"decide": "decide", END: END})
+        graph.add_conditional_edges("decide", self._execution_after_decide, {"call_tool": "call_tool", END: END})
+        graph.add_conditional_edges("call_tool", self._execution_after_call_tool, {"decide": "decide", "partial_result": "partial_result", END: END})
+        graph.add_edge("partial_result", END)
+        return graph.compile()
+
+    def _execution_start_node(self, state: _ExecutionLoopState) -> _ExecutionLoopState:
         if self._llm_client is None:
-            result = self._replan_result(request, "llm_client unavailable", [], [])
-            self._log_execution_finish(logger, request, result)
-            return result
+            state.result = self._replan_result(state.request, "llm_client unavailable", [], [])
+        return state
 
-        memory: list[dict[str, Any]] = []
-        tool_traces: list[ToolTrace] = []
-        seen_signatures: set[str] = set()
-        unproductive_streak = 0
-        messages = self._build_messages(request, memory)
-        for step in range(1, request.max_steps + 1):
-            try:
-                raw_text = self._call_llm(messages)
-            except PackyLLMError as exc:
-                logger.write_block("ERROR", "llm call failed", {"phase": "llm_decision", "type": type(exc).__name__, "message": str(exc)})
-                result = self._replan_result(request, f"llm call failed: {exc}", memory, tool_traces)
-                self._log_execution_finish(logger, request, result)
-                return result
+    def _execution_decide_node(self, state: _ExecutionLoopState) -> _ExecutionLoopState:
+        try:
+            raw_text = self._call_llm(self._build_messages(state.request, state.memory))
+        except PackyLLMError as exc:
+            state.logger.write_block("ERROR", "llm call failed", {"phase": "llm_decision", "type": type(exc).__name__, "message": str(exc)})
+            state.result = self._replan_result(state.request, f"llm call failed: {exc}", state.memory, state.tool_traces)
+            return state
 
-            decision = self._extract_json_object(raw_text)
-            if decision is None:
-                logger.write_block("LLM_DECISION", "invalid json", {"step_index": step, "raw_response": raw_text[:2000]})
-                result = self._replan_result(request, "LLM decision JSON parse failed", memory, tool_traces)
-                self._log_execution_finish(logger, request, result)
-                return result
+        decision = self._extract_json_object(raw_text)
+        if decision is None:
+            state.logger.write_block("LLM_DECISION", "invalid json", {"step_index": state.step, "raw_response": raw_text[:2000]})
+            state.result = self._replan_result(state.request, "LLM decision JSON parse failed", state.memory, state.tool_traces)
+            return state
 
-            action = str(decision.get("action") or "")
-            logger.write_block(
-                "LLM_DECISION",
-                "execution agent decision",
+        action = str(decision.get("action") or "")
+        state.logger.write_block(
+            "LLM_DECISION",
+            "execution agent decision",
+            {
+                "cycle_index": state.request.cycle_index,
+                "agent_name": state.request.agent_name,
+                "step_index": state.step,
+                "action": action,
+                "reasoning_summary": decision.get("reasoning_summary") or decision.get("rationale"),
+                "decision_json": decision,
+            },
+        )
+        state.decision = decision
+        state.action = action
+
+        if action == "finish":
+            state.result = self._finish_result(state.request, decision, state.memory, state.tool_traces)
+        elif action == "need_replan":
+            summary = str(decision.get("summary") or decision.get("replan_reason") or "execution agent requested replanning")
+            state.result = self._replan_result(state.request, summary, state.memory, state.tool_traces, decision=decision)
+        elif action != "call_mcp_tool":
+            state.result = self._replan_result(state.request, f"unsupported LLM action: {action}", state.memory, state.tool_traces)
+        return state
+
+    def _execution_call_tool_node(self, state: _ExecutionLoopState) -> _ExecutionLoopState:
+        decision = state.decision or {}
+        trace = self._call_mcp_tool(step=state.step, request=state.request, decision=decision, logger=state.logger)
+        state.tool_traces = [*state.tool_traces, trace]
+        state.memory = [*state.memory, {"decision": decision, "tool_trace": trace.model_dump(mode="json")}]
+        signature = self._tool_call_signature(trace)
+        if trace.success and signature not in state.seen_signatures:
+            state.unproductive_streak = 0
+        else:
+            state.unproductive_streak += 1
+        state.seen_signatures = {*state.seen_signatures, signature}
+        if state.unproductive_streak >= self.NO_PROGRESS_LIMIT:
+            state.logger.write_block(
+                "NO_PROGRESS_GUARD",
+                "no-progress guard tripped",
                 {
-                    "cycle_index": request.cycle_index,
-                    "agent_name": request.agent_name,
-                    "capability": request.capability,
-                    "step_index": step,
-                    "action": action,
-                    "reasoning_summary": decision.get("reasoning_summary") or decision.get("rationale"),
-                    "decision_json": decision,
+                    "step_index": state.step,
+                    "unproductive_streak": state.unproductive_streak,
+                    "tool_count": len(state.tool_traces),
                 },
             )
+            state.result = self._replan_result(
+                state.request,
+                f"no progress after {state.unproductive_streak} unproductive tool call(s) "
+                f"(repeated or failing); stopping before max_steps",
+                state.memory,
+                state.tool_traces,
+                decision=decision,
+            )
+            return state
+        state.step += 1
+        state.decision = None
+        state.action = ""
+        return state
 
-            if action == "call_mcp_tool":
-                trace = self._call_mcp_tool(step=step, request=request, decision=decision, logger=logger)
-                tool_traces.append(trace)
-                memory.append({"decision": decision, "tool_trace": trace.model_dump(mode="json")})
-                # No-progress guard: a step is "productive" only if the tool
-                # succeeded AND its (tool, arguments) signature is new. A run of
-                # failing/duplicate calls means the executor is stuck — bail out
-                # instead of burning the rest of max_steps (Step 4 / cg.md E.3).
-                signature = self._tool_call_signature(trace)
-                if trace.success and signature not in seen_signatures:
-                    unproductive_streak = 0
-                else:
-                    unproductive_streak += 1
-                seen_signatures.add(signature)
-                if unproductive_streak >= self.NO_PROGRESS_LIMIT:
-                    logger.write_block(
-                        "NO_PROGRESS_GUARD",
-                        "no-progress guard tripped",
-                        {
-                            "step_index": step,
-                            "unproductive_streak": unproductive_streak,
-                            "tool_count": len(tool_traces),
-                        },
-                    )
-                    result = self._replan_result(
-                        request,
-                        f"no progress after {unproductive_streak} unproductive tool call(s) "
-                        f"(repeated or failing); stopping before max_steps",
-                        memory,
-                        tool_traces,
-                        decision=decision,
-                    )
-                    self._log_execution_finish(logger, request, result)
-                    return result
-                messages = self._build_messages(request, memory)
-                continue
+    def _execution_partial_result_node(self, state: _ExecutionLoopState) -> _ExecutionLoopState:
+        state.result = self._partial_result_from_tool_memory(state.request, state.tool_traces)
+        return state
 
-            if action == "finish":
-                result = self._finish_result(request, decision, memory, tool_traces)
-                self._log_execution_finish(logger, request, result)
-                return result
+    @staticmethod
+    def _execution_after_start(state: _ExecutionLoopState) -> str:
+        return END if state.result is not None else "decide"
 
-            if action == "need_replan":
-                summary = str(decision.get("summary") or decision.get("replan_reason") or "execution agent requested replanning")
-                result = self._replan_result(request, summary, memory, tool_traces, decision=decision)
-                self._log_execution_finish(logger, request, result)
-                return result
+    @staticmethod
+    def _execution_after_decide(state: _ExecutionLoopState) -> str:
+        if state.result is not None:
+            return END
+        if state.action == "call_mcp_tool":
+            return "call_tool"
+        return END
 
-            result = self._replan_result(request, f"unsupported LLM action: {action}", memory, tool_traces)
-            self._log_execution_finish(logger, request, result)
-            return result
-
-        result = self._partial_result_from_tool_memory(request, tool_traces)
-        self._log_execution_finish(logger, request, result)
-        return result
+    @staticmethod
+    def _execution_after_call_tool(state: _ExecutionLoopState) -> str:
+        if state.result is not None:
+            return END
+        if state.step > state.request.max_steps:
+            return "partial_result"
+        return "decide"
 
     def _partial_result_from_tool_memory(
         self,
@@ -299,7 +329,6 @@ class _ExecutionLoop:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=self._request_id(request),
-            capability=request.capability,
             agent_name=self.agent_name,
             status="partial",
             summary=f"{self.agent_name} reached max_steps for {self._request_id(request)}",
@@ -363,7 +392,6 @@ class _ExecutionLoop:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "capability": request.capability,
                 "step_index": step,
                 "server_id": call.server_id,
                 "tool_name": call.tool_name,
@@ -502,7 +530,7 @@ class _ExecutionLoop:
         system_prompt = (
             "You are Aegra's bounded ExecutionAgent for an authorized assessment. "
             "Return strict JSON only. Allowed actions are call_mcp_tool, finish, need_replan. "
-            "Reason from planner_objective and success_criteria ONLY; there is no phase/capability "
+            "Reason from planner_objective and success_criteria ONLY; there is no phase "
             "label to follow — pick whatever tools the objective needs. "
             "success_criteria is your stop condition: the moment the gathered tool evidence satisfies it, "
             "emit finish immediately (do not keep calling tools past the objective just because budget "
@@ -525,13 +553,10 @@ class _ExecutionLoop:
         )
         context = {
             "agent_name": request.agent_name,
-            # NOTE: capability is deliberately omitted here (Step 4 / cg.md E.4).
-            # The executor reasons from objective + success_criteria only; the
-            # capability tag survives on the request/result for AG labelling and
-            # logging, but must not bias tool selection.
+            # The executor reasons from objective + success_criteria only.
             "role_prompt": self.role_prompt,
             "planner_objective": request.objective,
-            "task_brief": request.task_brief,
+            "execution_brief": request.execution_brief,
             "target_refs": [ref.model_dump(mode="json") for ref in request.target_refs],
             "success_criteria": request.success_criteria,
             "graph_summary": request.graph_summary,
@@ -539,7 +564,7 @@ class _ExecutionLoop:
             "runtime_context": request.runtime_context,
             "policy_context": request.policy_context,
             "mcp_tool_catalog": request.mcp_tool_catalog,
-            "stage_memory": memory[-10:],
+            "execution_memory": memory[-10:],
         }
         return [
             {"role": "system", "content": system_prompt},
@@ -593,7 +618,7 @@ class _ExecutionLoop:
             tool_traces=tool_traces,
         ):
             status = "needs_replan"
-            payload.setdefault("replan_recommendation", "stage returned no tool results, evidence, or structured output")
+            payload.setdefault("replan_recommendation", "execution round returned no tool results, evidence, or structured output")
         try:
             return self._build_execution_result_from_finish(
                 request=request,
@@ -629,7 +654,6 @@ class _ExecutionLoop:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=self._request_id(request),
-            capability=request.capability,
             agent_name=self.agent_name,
             status=status,  # type: ignore[arg-type]
             summary=str(payload.get("summary") or f"{self.agent_name} finished"),
@@ -656,7 +680,6 @@ class _ExecutionLoop:
             "Keep summary, status, evidence_refs, confidence, runtime_hints and writeback_hints.\n\n"
             f"operation_id={request.operation_id}\n"
             f"execution_id={self._request_id(request)}\n"
-            f"capability={request.capability}\n"
             f"agent_name={self.agent_name}\n"
             f"Validation error: {validation_error}\n\n"
             f"Payload:\n{json.dumps(payload, ensure_ascii=False, default=str)[:6000]}"
@@ -692,7 +715,7 @@ class _ExecutionLoop:
                     for key, value in parsed.items():
                         merged.setdefault(key, value)
                     if not isinstance(parsed.get("summary"), str):
-                        merged["summary"] = parsed.get("status") or "structured stage output"
+                            merged["summary"] = parsed.get("status") or "structured execution output"
         return merged
 
     @staticmethod
@@ -764,7 +787,6 @@ class _ExecutionLoop:
             return ExecutionResult(
                 operation_id=request.operation_id,
                 execution_id=self._request_id(request),
-                capability=request.capability,
                 agent_name=self.agent_name,
                 status="partial",
                 summary=f"{self.agent_name}: tools succeeded, LLM postprocess failed - {summary}",
@@ -782,7 +804,6 @@ class _ExecutionLoop:
         return ExecutionResult(
             operation_id=request.operation_id,
             execution_id=self._request_id(request),
-            capability=request.capability,
             agent_name=self.agent_name,
             status="needs_replan",
             summary=summary,
@@ -820,7 +841,6 @@ class _ExecutionLoop:
             {
                 "cycle_index": request.cycle_index,
                 "agent_name": request.agent_name,
-                "capability": request.capability,
                 "status": result.status,
                 "summary": result.summary,
                 "evidence_count": len(result.evidence_refs),

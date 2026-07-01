@@ -97,10 +97,10 @@ class ReportGenerator:
         for item in evidence:
             evidence_id = str(item.get("evidence_id"))
             add_node(evidence_id, "Evidence", item.get("summary"))
-            task_ref = str(item.get("task_ref") or "")
-            if task_ref:
-                add_node(task_ref, "Task")
-                edges.append({"source": evidence_id, "target": task_ref, "type": "DERIVED_FROM"})
+            execution_ref = str(item.get("execution_ref") or "")
+            if execution_ref:
+                add_node(execution_ref, "Execution")
+                edges.append({"source": evidence_id, "target": execution_ref, "type": "DERIVED_FROM"})
 
         return self._sanitize(
             {"nodes": nodes, "edges": edges},

@@ -34,26 +34,26 @@ describe("applyDelta", () => {
     const state = applyDelta(emptyGraphState(), {
       type: "graph_delta",
       operation_id: "op-1",
-      graph: "tg",
+      graph: "ag",
       version: 1,
       timestamp: "2026-05-27T00:00:00Z",
       changes: [
-        { operation: "upsert_node", entity_id: "task-1", entity_type: "Task", label: "scan", properties: { attempt: 1 } },
+        { operation: "upsert_node", entity_id: "execution-1", entity_type: "Execution", label: "scan", properties: { attempt: 1 } },
       ],
     });
 
     const updated = applyDelta(state, {
       type: "graph_delta",
       operation_id: "op-1",
-      graph: "tg",
+      graph: "ag",
       version: 2,
       timestamp: "2026-05-27T00:00:01Z",
       changes: [
-        { operation: "update_status", entity_id: "task-1", status: "running", properties: { worker: "LLMWorker" } },
+        { operation: "update_status", entity_id: "execution-1", status: "running", properties: { worker: "ExecutionAgent" } },
       ],
     });
 
-    expect(updated.nodes["task-1"].status).toBe("running");
-    expect(updated.nodes["task-1"].properties).toMatchObject({ attempt: 1, worker: "LLMWorker" });
+    expect(updated.nodes["execution-1"].status).toBe("running");
+    expect(updated.nodes["execution-1"].properties).toMatchObject({ attempt: 1, worker: "ExecutionAgent" });
   });
 });

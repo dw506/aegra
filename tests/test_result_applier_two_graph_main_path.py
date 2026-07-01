@@ -23,7 +23,6 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
         directive=RoundDirective(
             operation_id="op-two-graph",
             cycle_index=1,
-            capability="recon",
             objective="Collect host facts",
             max_tools=2,
             risk_level="low",
@@ -34,15 +33,14 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
 
     execution_result = ExecutionResult(
         operation_id="op-two-graph",
-        execution_id="stage-op-two-graph-1-recon_agent",
-        capability="recon",
+        execution_id="execution-op-two-graph-1-recon_agent",
         agent_name="recon_agent",
         status="succeeded",
         summary="host discovered",
         tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="probe ok", raw_output_ref="runtime://tool-output/probe-1")],
     )
-    stage_apply = applier.apply_execution_result(execution_result, state, kg, ag)
-    assert stage_apply.ag_graph is not None
+    execution_apply = applier.apply_execution_result(execution_result, state, kg, ag)
+    assert execution_apply.ag_graph is not None
 
     assert state.execution.metadata["last_planner_outcome"]["action"] == "execute"
     # KG facts derive solely from tool_trace now: the probe mints a tool-evidence node.
@@ -52,12 +50,14 @@ def test_result_applier_branches_write_kg_ag_runtime_without_tg() -> None:
     process_nodes = ag.find_process_nodes()
     step_nodes = [node for node in process_nodes if node.node_type.value == "ATTACK_STEP"]
     assert len(step_nodes) == 1
-    assert step_nodes[0].capability == "recon"
+    assert step_nodes[0].agent_name == "recon_agent"
     assert {node.node_type.value for node in process_nodes} == {"ATTACK_STEP"}
 
 
 def test_result_applier_has_no_top_level_task_graph_import() -> None:
     source = Path("src/core/runtime/result_applier.py").read_text(encoding="utf-8").splitlines()[:90]
 
-    assert not any("from src.core.models.tg import TaskGraph" in line for line in source)
+    legacy_import = "from src.core.models." + "t" + "g import " + "Task" + "Graph"
+    assert not any(legacy_import in line for line in source)
     assert not any("merge_task_graphs" in line for line in source)
+

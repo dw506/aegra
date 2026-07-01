@@ -91,34 +91,15 @@ Operation success is generated only by the orchestrator summary layer:
 API and script startup for the full-pentest lab must set:
 
 ```sh
-AEGRA_MCP_ENABLED=1
-AEGRA_MCP_CONFIG_PATH=configs/mcp.lab.full-pentest.json
 AEGRA_LAB_PROFILE_PATH=lab/profiles/full_pentest_lab.yml
 ```
 
-`AEGRA_LAB_FIXTURE_PATH` is a hidden fixture path for the MCP server subprocess
-only. It belongs in the MCP server config environment and must not enter Planner
-payloads, StageAgent prompts, RuntimeState, KG or AG.
-
 The orchestrator determines whether full-pentest mode is active from
-`lab_profile.profile_id == "full-vulhub-multihost-pentest"`. It must not depend
-on the main process seeing `AEGRA_MCP_TOOLSET`, because that variable may exist
-only in the MCP server subprocess environment.
+`lab_profile.profile_id == "full-vulhub-multihost-pentest"`.
 
 The `run_autopentest` scripts are HTTP clients, so environment variables set
 inside those scripts do not reconfigure an already-running API server. After the
 unified operation request, the scripts read `/operations/{operation_id}/summary`
 and require `metadata.lab_activation.full_pentest_active == true`; otherwise
 they fail with a message telling the user to start the API server with
-`AEGRA_LAB_PROFILE_PATH` and `AEGRA_MCP_CONFIG_PATH`.
-
-## Hidden Fixture Consumption
-
-MCP tools load hidden fixture data through `load_hidden_fixture_from_env()`,
-which reads `AEGRA_LAB_FIXTURE_PATH` inside the MCP server subprocess. The
-fixture is not loaded by the orchestrator and is not passed to Planner payloads.
-Hidden checks must return booleans and generic evidence metadata such as
-`matched`, `evidence_type` and `generic_reason`; they must not return credential
-secrets or marker literals. For example, `goal_check` can use
-`fixture_marker_id` to evaluate a hidden marker while returning only whether it
-matched.
+`AEGRA_LAB_PROFILE_PATH`.

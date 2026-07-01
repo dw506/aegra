@@ -1,8 +1,0 @@
-{
-  "servers": {
-    "pentest-tools": {
-      "transport": "http",
-      "url": "http://localhost:8765/mcp"
-    }
-  }
-}

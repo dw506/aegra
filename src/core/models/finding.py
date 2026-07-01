@@ -40,7 +40,7 @@ class EvidenceArtifactRecord(BaseFindingModel):
     kind: str = Field(min_length=1)
     summary: str = Field(min_length=1)
     payload_ref: str = Field(min_length=1)
-    task_ref: str = Field(min_length=1)
+    execution_ref: str = Field(min_length=1)
     tool_output_ref: str | None = None
     refs: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

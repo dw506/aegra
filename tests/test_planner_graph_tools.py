@@ -30,19 +30,17 @@ def test_planner_graph_tools_query_and_record_finding() -> None:
     findings = [node.model_dump(mode="json") for node in kg.list_nodes(type="Finding")]
     attack_step = tools.record_attack_step(
         {
-            "capability": "recon",
             "target_ref": "host::10.0.0.5",
             "status": "success",
             "summary": "Recon objective selected",
             "evidence_refs": ["evidence::probe"],
-            "kg_node_refs": [findings[0]["id"]],
         }
     )
 
     assert result["applied_entity_ids"]
     assert findings[0]["properties"]["title"] == "Service exposure needs validation"
     assert attack_step["recorded"] is True
-    assert state.execution.metadata["planner_attack_step_records"][0]["capability"] == "recon"
+    assert state.execution.metadata["planner_attack_step_records"][0]["summary"] == "Recon objective selected"
 
 
 def test_planner_graph_tools_read_surface() -> None:

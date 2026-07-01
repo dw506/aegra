@@ -21,18 +21,18 @@ describe("graphTransforms", () => {
 
   it("infers AG step order", () => {
     expect(inferStepOrder(agNode("cycle1", "ATTACK_CYCLE"))).toBe(1);
-    expect(inferStepOrder(agNode("result1", "STAGE_RESULT"))).toBe(5);
+    expect(inferStepOrder(agNode("result1", "EXECUTION_RESULT"))).toBe(5);
     expect(inferStepOrder(agNode("custom1", "CUSTOM", { step_order: 7 }))).toBe(7);
   });
 
   it("groups AG timeline nodes by cycle and sorts execution chain", () => {
     const graph = graphState([
-      agNode("result2", "STAGE_RESULT", { cycle_index: 2, status: "blocked", stop_reason: "policy" }),
-      agNode("plan1", "PLANNER_DECISION", { cycle_index: 1, selected_stage: "recon" }),
+      agNode("result2", "EXECUTION_RESULT", { cycle_index: 2, status: "blocked", stop_reason: "policy" }),
+      agNode("plan1", "PLANNER_DECISION", { cycle_index: 1, objective: "collect service evidence" }),
       agNode("cycle1", "ATTACK_CYCLE", { cycle_index: 1 }),
       agNode("agent1", "AGENT_EXECUTION", { cycle_index: 1, selected_agent: "recon_agent" }),
       agNode("tool1", "TOOL_CALL", { cycle_index: 1, tool_name: "nmap" }),
-      agNode("result1", "STAGE_RESULT", { cycle_index: 1, status: "success", execution_success: true }),
+      agNode("result1", "EXECUTION_RESULT", { cycle_index: 1, status: "success", execution_success: true }),
     ]);
 
     const cycles = groupCycles(graph);
@@ -40,7 +40,7 @@ describe("graphTransforms", () => {
     expect(cycles).toHaveLength(2);
     expect(cycles[0].cycleIndex).toBe(1);
     expect(cycles[0].nodes.map((node) => node.id)).toEqual(["cycle1", "plan1", "agent1", "tool1", "result1"]);
-    expect(cycles[0].selectedStage).toBe("recon");
+    expect(cycles[0].selectedObjective).toBe("collect service evidence");
     expect(cycles[0].selectedAgent).toBe("recon_agent");
     expect(cycles[0].executionSuccess).toBe("yes");
     expect(cycles[1].stopReason).toBe("policy");

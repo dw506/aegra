@@ -19,12 +19,10 @@ scope and policy files.
 - `lab_net`: Docker bridge network shared by Aegra and the three target hosts.
 - `internal_net`: Docker bridge network marked `internal: true`, shared only by Aegra and `internal-service`.
 
-The Aegra container enables the lab MCP server through:
+The Aegra container can enable configured MCP tools through:
 
 ```text
 AEGRA_MCP_ENABLED=1
-AEGRA_MCP_CONFIG_PATH=/app/configs/mcp.lab.docker.json
-AEGRA_LAB_MODE=1
 ```
 
 LLM configuration is injected from `.env`:
@@ -61,7 +59,7 @@ curl --noproxy "*" http://127.0.0.1:8000/ready
 From the host workspace:
 
 ```powershell
-python -m pytest tests/test_api_operation_cycle.py tests/test_mcp_lab.py tests/test_tool_execution.py tests/test_execution_end_to_end_smoke.py -q
+python -m pytest
 ```
 
 ## Run Docker Multihost Smoke Tests

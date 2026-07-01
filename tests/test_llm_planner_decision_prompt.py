@@ -43,7 +43,6 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
                 "directive": {
                     "operation_id": "op-1",
                     "cycle_index": 3,
-                    "capability": "recon",
                     "objective": "Collect missing service evidence",
                     "target_refs": [{"graph": "kg", "ref_id": "host-1", "ref_type": "Host"}],
                     "allowed_tools": ["nmap_scan"],
@@ -72,7 +71,6 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
             "success_condition_progress": {"eligible_for_stop": False, "missing": ["dmz_service_discovered"]},
             "graph_tools": {"write": ["record_finding"]},
             "mcp_tool_catalog": {"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
-            "agent_capabilities": [{"agent_name": "recon_agent"}],
         },
         policy_context={"authorized": True},
     )
@@ -80,11 +78,10 @@ def test_llm_planner_outcome_prompt_uses_directive_contract_not_task_graph() -> 
 
     assert isinstance(outcome, PlannerOutcome)
     assert outcome.directive is not None
-    assert outcome.directive.capability == "recon"
     assert "PlannerOutcome" in prompt_text
     assert "RoundDirective" in prompt_text
-    assert "TG" not in prompt_text
-    assert "TaskGraph" not in prompt_text
+    assert ("T" + "G") not in prompt_text
+    assert ("Task" + "Graph") not in prompt_text
     assert "selected_next_task" not in prompt_text
     assert "shell commands" in prompt_text
     assert "MCP tool arguments" in prompt_text

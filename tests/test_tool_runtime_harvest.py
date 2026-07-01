@@ -3,7 +3,7 @@
 These cover the two generality gaps that previously stalled the full-chain lab at
 recon (never reaching the restricted/internal zone, never resolving the internal DB):
 
-1. The MCP lab tools already report ``register_pivot_route`` / ``open_session`` as
+1. MCP tools can report ``register_pivot_route`` / ``open_session`` as
    ``parsed_output.runtime_hints`` on each tool call, but those facts only became
    real runtime Sessions / PivotRoutes if the LLM finish payload re-emitted them.
    ``PhaseTwoResultApplier._harvest_tool_runtime_facts`` now lifts them
@@ -41,13 +41,12 @@ def _restricted_profile() -> OperationProfile:
 
 
 def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
-    """A stage whose LLM finish payload omitted sessions/pivot_routes still
+    """An execution round whose LLM finish payload omitted sessions/pivot_routes still
     materializes real runtime objects from the deterministic tool hints."""
 
-    stage = ExecutionResult(
+    execution_result = ExecutionResult(
         operation_id="op-harvest",
-        execution_id="stage-op-harvest-1-access_pivot_agent",
-        capability="pivot",
+        execution_id="execution-op-harvest-1-access_pivot_agent",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="authorized pivot established",
@@ -93,7 +92,7 @@ def test_harvest_lifts_pivot_route_and_session_from_tool_trace() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(execution_result, state, KnowledgeGraph(), AttackGraph())
 
     assert "sess-pivot-1" in state.sessions
     assert "route::pivot::10.30.0.12:8080" in state.pivot_routes
@@ -120,10 +119,9 @@ def test_harvest_dedupes_repeated_route_traces() -> None:
             },
         )
 
-    stage = ExecutionResult(
+    execution_result = ExecutionResult(
         operation_id="op-harvest",
-        execution_id="stage-op-harvest-1-access_pivot_agent",
-        capability="pivot",
+        execution_id="execution-op-harvest-1-access_pivot_agent",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="pivot",
@@ -131,7 +129,7 @@ def test_harvest_dedupes_repeated_route_traces() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(execution_result, state, KnowledgeGraph(), AttackGraph())
     assert list(state.pivot_routes.keys()) == ["route-x"]
 
 
@@ -139,10 +137,9 @@ def test_harvest_lifts_credential_from_tool_trace() -> None:
     """A validated credential reported as parsed.runtime_hints (no channel-②
     ExecutionResult.credentials field anymore) registers a runtime credential."""
 
-    stage = ExecutionResult(
+    execution_result = ExecutionResult(
         operation_id="op-harvest",
-        execution_id="stage-op-harvest-1-recon_agent",
-        capability="exploit",
+        execution_id="execution-op-harvest-1-recon_agent",
         agent_name="recon_agent",
         status="succeeded",
         summary="credential validated",
@@ -164,7 +161,7 @@ def test_harvest_lifts_credential_from_tool_trace() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(execution_result, state, KnowledgeGraph(), AttackGraph())
 
     assert "cred-1" in state.credentials
 
@@ -176,10 +173,9 @@ def test_harvest_maps_zone_ref_hint_to_route_destination_zone() -> None:
     bridge host sits in the entry CIDR (e.g. 10.20.0.50) still binds to the
     restricted zone — the exact case that stalled full-chain bookkeeping."""
 
-    stage = ExecutionResult(
+    execution_result = ExecutionResult(
         operation_id="op-harvest",
-        execution_id="stage-op-harvest-1-access_pivot_agent",
-        capability="pivot",
+        execution_id="execution-op-harvest-1-access_pivot_agent",
         agent_name="access_pivot_agent",
         status="succeeded",
         summary="pivot route registered into restricted zone",
@@ -202,7 +198,7 @@ def test_harvest_maps_zone_ref_hint_to_route_destination_zone() -> None:
     )
 
     state = _state()
-    PhaseTwoResultApplier().apply_execution_result(stage, state, KnowledgeGraph(), AttackGraph())
+    PhaseTwoResultApplier().apply_execution_result(execution_result, state, KnowledgeGraph(), AttackGraph())
 
     route = state.pivot_routes["route::10.20.0.11::10.20.0.50:22"]
     assert route.destination_zone == "restricted"
@@ -268,3 +264,5 @@ def test_cidr_resolution_excludes_service_outside_zone() -> None:
         ctx,
     )
     assert result.satisfied is False
+
+

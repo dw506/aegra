@@ -101,7 +101,6 @@ class Planner:
             max_steps=self._config.max_steps,
         )
         outcome = run_planner_loop(state, planner=self, graph_tools=graph_tools)
-        outcome = _prefer_real_exploit_tools(outcome, seed.get("mcp_tool_catalog") or {})
 
         # Apply advisory write-tool calls the final turn emitted (record_finding,
         # record_attack_step, link_evidence). Machine facts are written elsewhere.
@@ -214,7 +213,6 @@ class Planner:
             "directive": {
                 "operation_id": "operation id string",
                 "cycle_index": 0,
-                "capability": "recon | analysis | exploit | pivot | lateral | goal | evidence",
                 "objective": "bounded one-round objective",
                 "target_refs": [{"graph": "kg", "ref_id": "node id copied from min_summary", "ref_type": "Host"}],
                 "allowed_tools": [],
@@ -239,7 +237,6 @@ class Planner:
                 "min_summary": seed.get("min_summary") or {},
                 "success_condition_progress": seed.get("success_condition_progress") or {},
                 "graph_tools": seed.get("graph_tools") or {},
-                "agent_capabilities": seed.get("agent_capabilities") or [],
                 "mcp_tool_catalog": _slim_tool_catalog(seed.get("mcp_tool_catalog") or {}),
                 "recent_results": list(state.recent_execution_results or []),
                 "read_tools": read_manifest,
@@ -256,26 +253,26 @@ class Planner:
             "The min_summary/success_condition_progress are a starting seed; use read_tools to drill into "
             "specific nodes/edges/runtime state when the seed is insufficient. You have a bounded read budget "
             "(read_budget); prior read results are in read_log. When you have enough, return a final PlannerOutcome. "
-            "AG is a result timeline: one ATTACK_STEP per execution round plus terminal outcomes. "
+            "AG is a result timeline: one ATTACK_STEP per execution round. "
             "Do not output shell commands. Do not output MCP tool arguments. "
-            "Do not micro-control tool calls; output one RoundDirective with a capability and bounded objective. "
+            "Do not micro-control tool calls; output one RoundDirective with a bounded objective. "
             "ExecutionAgent may autonomously choose allowed tools, including run_command, inside authorized scope. "
             "PlannerAgent is the only global controller that may output stop_success or stop_failed. "
-            "Do not use a fixed stage sequence and do not require every capability to run. "
-            "When choosing an exploit round and ToolCatalog contains metasploit_exec, put metasploit_exec "
-            "first in directive.allowed_tools/tool_hints for real session proof. "
-            "Select the next capability from success_condition_progress.missing, min_summary, Policy, "
+            "Do not use a fixed execution sequence and do not require any fixed set of steps to run. "
+            "For an objective that needs real exploit/session proof, when ToolCatalog contains metasploit_exec, put "
+            "metasploit_exec first in directive.allowed_tools/tool_hints. "
+            "Choose the next objective from success_condition_progress.missing, min_summary, Policy, "
             "recent results, and ToolCatalog. "
             "Treat recent ExecutionResult control hints as hard constraints: if a recent result contains "
-            "next_step_guidance or capability guidance, "
+            "next_step_guidance, "
             "follow it unless it conflicts with Policy or newer evidence. If a recent result contains "
-            "supported_bounded_validation_candidate=false, do not choose capability=exploit for that target. "
+            "supported_bounded_validation_candidate=false, do not attempt exploitation of that target. "
             "target_refs MUST be a list of objects {\"graph\":\"kg\"|\"ag\", \"ref_id\":\"<exact node id from min_summary>\"}, "
             "never bare id strings; use [] when no specific node applies. Plain ids may go in required_context. "
             "You may emit planner_tool_calls ONLY for write-level judgment records "
             "(record_finding/record_attack_step/link_evidence); these are advisory and do not change this "
             "turn's decision. Machine facts from tools are written deterministically after execution. "
-            "If evidence is insufficient, choose action=execute with an appropriate capability or choose replan. "
+            "If evidence is insufficient, choose action=execute with an appropriate objective or choose replan. "
             "If policy does not allow the next action, choose pause_for_review. "
             "Never select a target whose host appears in policy.blocked_hosts; treat those hosts as strictly out of scope "
             "(they are control-plane infrastructure, not assessment targets). "
@@ -325,7 +322,7 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
 def _slim_tool_catalog(catalog: dict[str, Any]) -> dict[str, Any]:
     """Project the MCP catalog to tool names + short descriptions for the planner.
 
-    The planner only selects a capability and is told never to emit tool
+    The planner only selects an objective and is told never to emit tool
     arguments, so the per-tool inputSchemas (the bulk of the catalog, ~3.6k
     tokens) are dead weight in its prompt. Keep name/description/availability and
     drop the schemas; the executor still receives the full catalog.
@@ -349,42 +346,6 @@ def _slim_tool_catalog(catalog: dict[str, Any]) -> dict[str, Any]:
             slim_tools.append(entry)
         slim[server_id] = {"tools": slim_tools}
     return slim
-
-
-def _prefer_real_exploit_tools(outcome: PlannerOutcome, catalog: dict[str, Any]) -> PlannerOutcome:
-    """Bias exploit rounds toward real session tooling while preserving the LLM decision."""
-
-    directive = outcome.directive
-    if outcome.action != "execute" or directive is None or directive.capability != "exploit":
-        return outcome
-    if not _catalog_has_tool(catalog, "metasploit_exec"):
-        return outcome
-    allowed = list(directive.allowed_tools)
-    for tool in ("metasploit_exec", "session_exec"):
-        if _catalog_has_tool(catalog, tool) and tool not in allowed:
-            allowed.insert(0 if tool == "metasploit_exec" else len(allowed), tool)
-    hints = list(directive.tool_hints)
-    hints.append(
-        {
-            "preferred_tool": "metasploit_exec",
-            "purpose": "real exploit/session proof",
-            "no_session_policy": "return evidence and replan/tune exploit parameters; do not fabricate success",
-        }
-    )
-    outcome.directive = directive.model_copy(update={"allowed_tools": allowed, "tool_hints": hints})
-    return outcome
-
-
-def _catalog_has_tool(catalog: dict[str, Any], tool_name: str) -> bool:
-    if not isinstance(catalog, dict):
-        return False
-    for server in catalog.values():
-        if not isinstance(server, dict):
-            continue
-        for tool in server.get("tools") or []:
-            if isinstance(tool, dict) and tool.get("name") == tool_name and tool.get("available") is not False:
-                return True
-    return False
 
 
 def _truncate_json(payload: dict[str, Any], max_chars: int) -> str:

@@ -76,7 +76,7 @@ class RuntimeSessionManager:
                 reusability=self._model_reusability(policy),
                 metadata={
                     "reuse_policy": policy.value,
-                    "bound_task_ids": [],
+                    "bound_execution_ids": [],
                 },
             )
             state.sessions[session_id] = session
@@ -88,7 +88,7 @@ class RuntimeSessionManager:
             session.heartbeat_at = now
             session.reusability = self._model_reusability(policy)
             session.metadata["reuse_policy"] = policy.value
-            session.metadata.setdefault("bound_task_ids", [])
+            session.metadata.setdefault("bound_execution_ids", [])
 
         state.last_updated = now
         return session
@@ -109,13 +109,13 @@ class RuntimeSessionManager:
             return False
         return session.is_session_usable()
 
-    def bind_task_to_session(self, state: RuntimeState, task_id: str, session_id: str) -> SessionRuntime:
-        """Attach one source task ID to the session metadata."""
+    def bind_execution_to_session(self, state: RuntimeState, execution_id: str, session_id: str) -> SessionRuntime:
+        """Attach one source execution ID to the session metadata."""
 
         session = self.get_session(state, session_id)
-        task_ids = session.metadata.setdefault("bound_task_ids", [])
-        if task_id not in task_ids:
-            task_ids.append(task_id)
+        execution_ids = session.metadata.setdefault("bound_execution_ids", [])
+        if execution_id not in execution_ids:
+            execution_ids.append(execution_id)
         state.last_updated = utc_now()
         return session
 

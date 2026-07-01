@@ -6,7 +6,7 @@ export const AG_STEP_ORDER: Record<string, number> = {
   PLANNER_DECISION: 2,
   AGENT_EXECUTION: 3,
   TOOL_CALL: 4,
-  STAGE_RESULT: 5,
+  EXECUTION_RESULT: 5,
   HANDOFF_SUGGESTION: 6,
   BLOCKED_REASON: 6,
 };
@@ -15,7 +15,7 @@ export interface CycleGroup {
   cycleIndex: number;
   title: string;
   nodes: VisualNode[];
-  selectedStage: string;
+  selectedObjective: string;
   selectedAgent: string;
   executionSuccess: string;
   stopped: string;
@@ -57,7 +57,7 @@ export function buildDisplayName(node: VisualNode): string {
   const service = firstString(readValue(node, "service"), readValue(node, "service_name"), meta.service, meta.service_name);
   const cycle = firstString(readValue(node, "cycle_index"), meta.cycle_index);
   const agent = firstString(readValue(node, "agent_name"), readValue(node, "selected_agent"), meta.agent_name, meta.selected_agent);
-  const stage = firstString(readValue(node, "selected_stage"), readValue(node, "stage"), readValue(node, "capability"), meta.selected_stage, meta.stage, meta.capability);
+  const objective = firstString(readValue(node, "objective"), readValue(node, "planner_objective"), meta.objective, meta.planner_objective);
   const tool = firstString(readValue(node, "tool_name"), meta.tool_name);
   const status = firstString(node.status, readValue(node, "status"), meta.status);
   const reason = firstString(readValue(node, "reason"), readValue(node, "stop_reason"), meta.reason, meta.stop_reason);
@@ -84,17 +84,17 @@ export function buildDisplayName(node: VisualNode): string {
     case "ATTACK_CYCLE":
       return `Cycle ${cycle || "?"}`;
     case "PLANNER_DECISION":
-      return `规划决策：${stage || firstString(meta.decision, readValue(node, "decision"), "未命名决策")}`;
+      return `规划决策：${objective || firstString(meta.decision, readValue(node, "decision"), "未命名决策")}`;
     case "AGENT_EXECUTION":
       return `执行 Agent：${agent || "未知 Agent"}`;
     case "TOOL_CALL":
       return `工具调用：${tool || "未知工具"}`;
-    case "STAGE_RESULT":
-      return `阶段结果：${status || "unknown"}`;
+    case "EXECUTION_RESULT":
+      return `执行结果：${status || "unknown"}`;
     case "BLOCKED_REASON":
       return `阻断原因：${reason || "未知原因"}`;
     case "HANDOFF_SUGGESTION":
-      return `下一步建议：${firstString(meta.suggested_stage, meta.suggested_agent, readValue(node, "suggested_stage"), readValue(node, "suggested_agent"), "待规划")}`;
+      return `下一步建议：${firstString(meta.suggested_execution, meta.suggested_agent, readValue(node, "suggested_execution"), readValue(node, "suggested_agent"), "待规划")}`;
     case "Host":
       return firstString(readValue(node, "address"), readValue(node, "hostname"), node.label, node.id);
     case "Service":
@@ -148,7 +148,7 @@ export function groupCycles(graph: GraphState): CycleGroup[] {
         cycleIndex,
         title: `Cycle ${cycleIndex}`,
         nodes: sorted,
-        selectedStage: firstString(merged.selected_stage, merged.stage, merged.capability, "n/a"),
+        selectedObjective: firstString(merged.objective, merged.planner_objective, "n/a"),
         selectedAgent: firstString(merged.selected_agent, merged.agent_name, "n/a"),
         executionSuccess: formatBoolean(merged.execution_success ?? merged.success),
         stopped: formatBoolean(merged.stopped),

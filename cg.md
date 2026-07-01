@@ -212,7 +212,7 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 |---|---|---|
 | `orchestrator.py:1483-1563` | `_runtime_success_signals`/`_inline_*` 硬编码 `dmz_service_discovered`/`database_file_read`/`goal_check_recorded` + `"dmz" in text` 文本启发式 | 🔴 真污染（核心编排认识 lab 里程碑名） |
 | `tool_trace_fact_extractor.py:346,620` | 按 lab 工具名（`read_lab_marker`/`list_lab_hints`/`credential_discover_lab`）分发，造 `LabFlag`/`LabHint` 节点类型 | 🔴 真污染（核心抽取认识 lab 专用工具 + 专用节点类型） |
-| `tools.py:1519,1621,1883,2066,2078` | 条件名 emit（`restricted_data_service_discovered`/`vulnerability_candidate_recorded`）+ `post_access_observable` | 🟡 集成层（mcp_lab 是罐头 toolset，本就偏 lab；但泄漏到框架合约的条件名要切断） |
+| `tools.py:1519,1621,1883,2066,2078` | 条件名 emit（`restricted_data_service_discovered`/`vulnerability_candidate_recorded`）+ `post_access_observable` | 🟡 集成层旧实现；泄漏到框架合约的条件名要切断 |
 | `execution_agent.py:430-431` `10.20.0.x` | 在**注释**里举例说明 token 匹配 bug 修复；逻辑读 `policy_context["blocked_hosts"]` | ✅ 误报（纯注释，逻辑通用） |
 | `evaluation/models.py:157` `/flag` | 在 **docstring** 里描述"raw flag 永不入图"不变量 | ✅ 误报（文档，非硬编码） |
 
@@ -224,7 +224,7 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
         + 通用 predicate 引擎 + 按"通用能力语义"分发的 tool→fact 抽取
 环境 (配置 + 隔离适配器) —— 所有特异性
   lab/*/success_contract.yml(用通用 predicate 表达的条件) + profile.yml
-  + configs/*(vuln/exploit profile) + 具体 toolset(mcp_lab 是其一)
+  + configs/*(vuln/exploit profile) + 外部工具适配器
 ```
 
 `success_contract.yml` 在 `lab/` 下、用通用 predicate 表达 —— 这是**正确的环境特异位置**；框架只提供评估机器，合约是每次交战的**输入**。这点架构本就对了，无需动。
@@ -236,7 +236,7 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - ✅ `_update_success_condition_progress`：`if condition_bindings:` 改为**强制有 bindings**，无 bindings 直接 `raise ValueError`（不再静默走 inline）。
 - ✅ `tools.py` 停止 emit 合约条件名（删 `satisfied_conditions`，原行 1519/1620-1621），连带删孤儿 `_is_restricted_data_service_name`；工具只回原始 `services/evidence`。
 - ✅ 切 hint 桥：`execution_runtime_hints` 删消费方后已零读者，停写（`result_applier.py:98`）。
-- ✅ 删"测被删行为"的死测试（`test_success_contract_loop_e2e.py` 整文件 + `test_operation_run_summary_contract.py` 两个 inline 用例）；`test_mcp_lab.py` 两个用例改为断言原始事实 + 加"不得再 emit 条件名"回归守卫。全量回归 **135 passed / 1 skipped**。
+- ✅ 删"测被删行为"的死测试（`test_success_contract_loop_e2e.py` 整文件 + `test_operation_run_summary_contract.py` 两个 inline 用例）；旧工具直测改为断言原始事实 + 加"不得再 emit 条件名"回归守卫。全量回归 **135 passed / 1 skipped**。
 - **保留为原始事实**：`post_access_observable`（extractor:307 当 `ExploitCapability` 属性消费）；`goal_satisfied`（GoalOracle/HMAC 终局，§6 不动）。
 
 **1-B 事实词汇通用化 —— 移至 Step 2（收信封）一起做。** 原 B.5 把 1-B 捆进 Step 1 是错的；1-B 含两件待遇不同的事：
@@ -402,7 +402,7 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 
 > 分支 `refactor/step5-real-tools`。决策（与 user 定）：**不做"真/罐头并存 + toolset 切换"，直接收敛到单一真工具集**。本附录是动手前定调 + 分阶段落地记录。
 
-### F.1 当前工具盘点（2026-06-29 快照，`mcp_lab/tools.py`）
+### F.1 当前工具盘点（2026-06-29 快照，旧内置工具集）
 - **已是真工具（留，零改）**：`run_command`/`nmap_scan`/`http_probe`/`web_fingerprint`/`web_discover`/`dns_lookup`/`tls_probe`/`tcp_connect_probe`/`http_basic_auth_check`/`nuclei_scan`/`whatweb_fingerprint`/`ffuf_discover`（真二进制/真发包/真 socket）。
 - **罐头/模拟（待删，F3）**：`lab_authorized_exploit_execute`（profile-YAML 假利用）、`vuln_profile_match`（关键字判断，归 agent LLM）、`safe_vuln_validate`/`validation_precheck`（安全验证姿态，v3 已反转）、`session_open_lab`/`session_probe`（回显假 session）、`credential_check`（假凭证）、`identity_context_probe`/`privilege_context_probe`、`pivoted_nmap_scan`/`internal_service_discover`/`controlled_data_read_proof`（bespoke SSH 罐头）、`pivot_route_probe`/`pivot_route_register`、`post_access_observe`/`read_lab_marker`。
 - **oracle/eval（留 lab 侧）**：`goal_check`/`internal_goal_check`/`chain_goal_check`/`success_condition_check`/`artifact_store`。
@@ -428,7 +428,7 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - **F4（todo）**：补全 ToolFact 通用词汇（真工具新事实种类）；多主机成功合约形态（objective-over-子图/变量绑定/因果路径判定，依赖 F2 的真因果边）。
 
 ### F.5 权衡：罐头兼作离线测试 fixture
-罐头让套件无需真 msf/docker 离线确定性跑通。去罐头后：executor 层测试不受影响（`RecordingMCP`/`FakeStageLLM` mock）；`test_mcp_lab.py` 直测罐头实现的用例 F3 要重写；建议保留**最小 mock MCP server**（只回固定字节，无 profile 判断逻辑）供 CI，而非保留罐头业务逻辑。2 个 deferred option-C exploit-execute 红测随 F3 删罐头自然消失。
+罐头让套件无需真 msf/docker 离线确定性跑通。去罐头后：executor 层测试不受影响（`RecordingMCP`/`FakeStageLLM` mock）；旧内置工具直测用例要重写；建议保留**最小 mock MCP server**（只回固定字节，无 profile 判断逻辑）供 CI，而非保留罐头业务逻辑。2 个 deferred option-C exploit-execute 红测随 F3 删罐头自然消失。
 
 ## 附录 G：工具 × KG 节点 × 合约 统一迁移矩阵（去罐头的"读侧"维度）
 
@@ -500,11 +500,11 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - **阶段1 剩余**：~~(a) msf→Session（live env）~~ 已落（见下）；之后进阶段2 合约迁移。
 
 **阶段1(a) msf→Session DONE + live e2e 验证通过（2026-06-30，suite 152 passed/1 skip，零回归）**：用户选 msfrpcd RPC 路线。**架构**：msf 本体跑在独立 sidecar（`metasploitframework/metasploit-framework` 镜像，`docker-compose.msf.yml`，dmz_net @ 10.20.0.60），mcp-tools 只装薄客户端 pymetasploit3 经 msgpack RPC 连它——msf 不进 mcp-tools 镜像。落地：
-- `tools.py` 新增 `metasploit_exec`（跑 exploit 模块→开真 session，只回 session_id）+ `session_exec`（在 session 里跑命令）；连接配置读 `runtime_policy.full-chain.json` 新增的 `adapter_policy.metasploit`（host/port/ssl/password/lhost，复用 `_load_runtime_pivot_routes` 范式）；薄客户端 `_msf_client` 隔离便于测试 monkeypatch；可用性 gate `_msf_available`（配置存在 + pymetasploit3 可导入），`lab_tool_specs` 对 `MSF_TOOLS` 特判 unavailable。
+- `tools.py` 新增 `metasploit_exec`（跑 exploit 模块→开真 session，只回 session_id）+ `session_exec`（在 session 里跑命令）；连接配置读 `runtime_policy.full-chain.json` 新增的 `adapter_policy.metasploit`（host/port/ssl/password/lhost，复用 `_load_runtime_pivot_routes` 范式）；薄客户端 `_msf_client` 隔离便于测试 monkeypatch；可用性 gate `_msf_available`（配置存在 + pymetasploit3 可导入），工具目录对 `MSF_TOOLS` 特判 unavailable。
 - extractor `_TOOL_EXTRACTORS["metasploit_exec"]=_extract_session`（读 `parsed.session_id`→KG `Session`，无需改 `_extract_session`）。
 - `requirements.txt` +pymetasploit3。新 `docker-compose.msf.yml`（external dmz_net、msfrpcd 前台/SSL off/no-db）。
-- 测试：`test_mcp_lab` +2（mock `_msf_client`/`_load_msf_config` 验开 session + 无配置阻断）、`test_tool_trace_fact_extractor` +1（metasploit_exec→Session）。
-- **live e2e**：`call_lab_tool('metasploit_exec')` 真实代码 → 真 msfrpcd → S2-045 打 `dmz-struts 10.20.0.10` → 真 shell session → extractor 产 `Session('2',bound=10.20.0.10)`，`E2E_OK`。
+- 测试：旧工具目录测试 +2（mock `_msf_client`/`_load_msf_config` 验开 session + 无配置阻断）、`test_tool_trace_fact_extractor` +1（metasploit_exec→Session）。
+- **live e2e**：`metasploit_exec` 真实代码 → 真 msfrpcd → S2-045 打 `dmz-struts 10.20.0.10` → 真 shell session → extractor 产 `Session('2',bound=10.20.0.10)`，`E2E_OK`。
 - **durability 缺口**：pymetasploit3 是临时 pip 装在 mcp-tools（requirements 已改但镜像未 rebuild）；mcp-tools 重启即失，需 **rebuild mcp-tools 镜像**才持久。sidecar 用 `docker run` 起的，长期应 `docker compose -f docker-compose.yml -f docker-compose.msf.yml` 起。
 
 **阶段2 合约迁移 DONE（2026-06-30，suite 153 passed/1 skip，零回归）—— NodeType→ToolFact `kind` 判据**：核心机制——`exists_node` 的 `_match_filters` 本就按任意 key 匹配 `node`/`node.properties`，故 `filters:{kind:X}` **零谓词引擎改动**即生效。`_check_chain_integrity` 按**条件名**判（非节点），所以若多个条件都读「任意 Evidence」，一个 Evidence 节点会同时假满足它们——这正是 kind 判据要解决的。落地：
@@ -580,3 +580,23 @@ LangGraph 的"单一共享 state"是此问题的一个答案，但**原则比库
 - 核验:零悬空引用;事件溯源测试早在 `b5657a7` 删净;task/worker/lock/checkpoint RuntimeState 字段亦早已无。
 
 **这条线现在只剩 LangGraph（Step 6）** —— B 已把 checkpoint 的位置腾好（持久化恢复现只规整最新快照,LangGraph checkpoint 直接接管）。数据层（C/A1/A2 + evidence 合并 + B）已删到终态,可开始 LangGraph 包裹一个 lean 的 state。
+
+### G.10 KG/AG 收敛 + capability 移除 + LangGraph 落地（branch `refactor/step5-node-collapse`）
+
+**KG 双图收敛到纯真终态**（committed `e6f8f28`→`a6d2572` + 后续未提交）：
+- **evidence 字段合并**：`BaseGraphEntity.evidence_ids`（写路上恒空的死字段）并入项目通用名 `evidence_refs`；Finding/GoalCheck/GoalProof 的 typed 重声明改继承。
+- **BaseGraphEntity 死字段**：删 `evidence_chain`/`fact_kind`/`ttl`/`tags`（+ list_nodes tags 过滤 + graph_initializer 生产者）；删 `source_refs` 整套只写不查的 source-ref 索引子系统；删 `source_task_id`（写而不读）。8 通用字段 → 6。
+- **死边类型**：12 → 4（留 HOSTS/BELONGS_TO_ZONE/SUPPORTED_BY/TARGETS；删 CanReach[9字段]/PivotsTo[8字段]/SessionOn/AppliesToHost/ObservedOn/DerivedFrom/RelatedTo/Contains——合约零边谓词、无生产者）。
+- **死/冗余节点类型**：14 → 9。删孤儿 `Vulnerability`；`ControlledDataReadProof`（extractor 产但不是 NodeType→真运行时永远写不进的 bug）改产 `Evidence{kind:controlled_read}`；`Observation`/`Credential`（合约 OR 兜底但无生产者）删+合约 OR 收窄；`PostAccessObservation`→`Evidence{kind:post_access}`、`GoalCheck`→`Evidence{kind:goal_check}`。**Evidence 现按 kind 判别承载 vuln_candidate/exploit_attempt/post_access/credential/controlled_read/goal_check + generic**。删各节点死字段（PostAccessObservation.session_ref/observation_path、GoalCheck.proof_token、PivotRoute.session_ref）。
+- **AG 收敛**：删无生产者的 `GOAL_OUTCOME`+`GoalOutcomeNode`、`ADVANCED` 边、`AttackProcessNode.refs`+只写死索引 `_subject_ref_index`/`_refs_for_index`。**AG = 1 NodeType(ATTACK_STEP) + 1 EdgeType(NEXT)**。AG `from_dict` 容错跳过未知类型,删 AG 类型无反序列化断裂。
+- 铁律：真工具就位→合约改读侧→删罐头/节点,节点永远最后删。KG=9 NodeType/4 EdgeType,每个都有真生产者+消费者。
+
+**capability 移除（相模型最后残留）**：Step 4 已把 capability 从执行 agent 决策上下文摘掉→它已不约束 executor;剩下只是①planner 的 exploit-tool 软 nudge(`_prefer_real_exploit_tools`)②展示/历史标签(AG "Stage"/outcome_type)。因 objective(自由文本)已承载意图、单一 capability 标签既不约束又会误导(标 recon 的轮实际在 exploit),**整体删除**:`CapabilityName`/`CAPABILITY_NAMES` 类型、`RoundDirective`/`ExecutionRequest`/`ExecutionResult`/`AttackStepNode` 的 capability 字段、`_prefer_real_exploit_tools`+`_catalog_has_tool`、planner 提示词(planner.py + planner_global_control.md)的 capability 选择、result_applier(AG 标签/`outcome_type`→常量 "execution_round"/audit)、orchestrator cycle 记录。RoundDirective 加 `_drop_legacy_capability` before-validator + ExecutionResult normalize 丢弃残留 capability(容 LLM 漂移/旧 payload)。执行 agent 系统提示本就说"exploit 目标优先 metasploit_exec"+全 catalog 可调,故删 planner nudge 无损。
+
+**LangGraph（Step 6）DONE —— 三层控制流全是真 `StateGraph` + `graph.invoke()` 在活路径**（`langgraph>=0.2` 已入 requirements）:
+- **Operation 控制周期**:`orchestrator._build_operation_cycle_graph`(load_context→prepare_planner_context→planner_decide→apply_planner_outcome→execute_round→finalize_cycle + 条件边),`graph.invoke(OperationGraphState)`。
+- **执行轮**:`execution_agent._build_execution_graph`(`_ExecutionLoopState`,`graph.invoke(...)`)——取代原手搓 for-loop。
+- **Planner decide/act 循环**:`planner_loop.run_planner_loop`(`PlannerLoopState`,`graph.invoke`)。
+- B(事件溯源删除)已把 checkpoint 位置腾好,持久化恢复现只规整最新快照。
+
+**同批清理**:删整个 `src/integrations/mcp_lab/` 包(罐头 lab 工具服务端)+`src/core/capabilities/`+相关 configs/scripts/tests(纯真工具方向)。**suite 117 passed / 1 skip 全绿**(测试数 145→117 = capability 测试删除 + mcp_lab/config 带走的相应测试)。六步(§8)全部到位。剩:full_chain E2E / 工具硬化(nuclei 安装、真 post_access·credential 工具、pivot register hint 等,与框架无关)。

@@ -45,14 +45,11 @@ class AttackProcessNode(BaseModel):
 class AttackStepNode(AttackProcessNode):
     """One execution round's *result*, recorded as a single AG node.
 
-    Coarse as a node, precise via links: ``kg_node_refs`` points at the KG nodes
-    this round produced/used. Full per-round detail lives in the operation trace
-    log (operation-trace.txt) and KG, not in AG.
+    Coarse as a node; full per-round detail lives in the operation trace log
+    (operation-trace.txt) and the KG, not in AG.
     """
 
     node_type: Literal[AttackProcessNodeType.ATTACK_STEP] = AttackProcessNodeType.ATTACK_STEP
-    capability: str | None = None
-    kg_node_refs: list[str] = Field(default_factory=list)
 
 
 class AttackProcessEdge(BaseModel):

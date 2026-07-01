@@ -43,12 +43,12 @@ def main() -> None:
     trace = run_dir / "operation-trace.txt"
     text = trace.read_text(encoding="utf-8", errors="replace") if trace.exists() else ""
     cycles = re.findall(r"cycle_index: (\d+)", text)
-    caps = re.findall(r"capability: ([a-z]+)", text)
+    objectives = re.findall(r"objective: (.+)", text)
     last_action = re.findall(r"action: ([a-z_]+)", text)
     last_reason = re.findall(r"reason: (.+)", text)
 
     print(f"op={op}")
-    print(f"  cycle={cycles[-1] if cycles else '-'}  last_capability={caps[-1] if caps else '-'}")
+    print(f"  cycle={cycles[-1] if cycles else '-'}  last_objective={objectives[-1][:120] if objectives else '-'}")
     print(f"  last_planner_action={last_action[-1] if last_action else '-'}")
     if last_reason:
         print(f"  last_reason={last_reason[-1][:160]}")

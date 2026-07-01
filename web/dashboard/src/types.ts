@@ -1,4 +1,4 @@
-export type GraphName = "kg" | "ag" | "tg" | "runtime";
+export type GraphName = "kg" | "ag" | "runtime";
 
 export type GraphOperation =
   | "upsert_node"
@@ -162,7 +162,6 @@ export interface UnifiedAgNode {
   action_summary: string;
   result_summary: string;
   cycle_index?: number;
-  capability?: string | null;
   intent?: string;
   target_summary?: string;
   planner_reason?: string | null;
@@ -200,7 +199,6 @@ export interface UnifiedTimelineEvent {
   cycle_index?: number;
   phase: "planner_decision" | "agent_execution" | "tool_call" | "extraction" | "result_apply" | "goal_check" | "error";
   agent: string | null;
-  capability?: string | null;
   intent?: string | null;
   target: string | null;
   target_summary?: string | null;
@@ -242,9 +240,8 @@ export interface UnifiedAgentTrace {
   cycle_index?: number;
   round: number;
   selected_agent?: string | null;
-  selected_stage?: string | null;
   objective?: string | null;
-  task_brief?: string | null;
+  execution_brief?: string | null;
   status?: string;
   summary?: string;
   tool_traces?: UnifiedToolTrace[];
@@ -279,7 +276,7 @@ export interface UnifiedFinding {
   target: string | null;
   evidence_ids: string[];
   source_agent: string | null;
-  stage_task_id: string | null;
+  execution_id: string | null;
   recorded_at: string | null;
   metadata: Record<string, unknown>;
 }
@@ -288,7 +285,7 @@ export interface UnifiedToolTrace {
   id: string;
   round: number;
   agent: string | null;
-  stage: string | null;
+  execution_id: string | null;
   step: number | null;
   server_id: string | null;
   tool_name: string;
@@ -347,7 +344,7 @@ export interface UnifiedPlannerReasoning {
   cycle_index: number;
   input_summary: string[];
   selected_agent: string | null;
-  required_capability: string | null;
+  required_session: string | null;
   target_selector: string;
   decision: string | null;
   reason: string;

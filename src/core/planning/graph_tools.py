@@ -32,12 +32,10 @@ class LinkEvidenceRequest(BaseModel):
 class RecordAttackStepRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    capability: str
     target_ref: str | None = None
     status: str
     summary: str
     evidence_refs: list[str] = Field(default_factory=list)
-    kg_node_refs: list[str] = Field(default_factory=list)
 
 
 class PlannerGraphTools:

@@ -37,7 +37,7 @@ def _client(tmp_path):
             "kind": "validation",
             "summary": "validated with token=secret-token",
             "payload_ref": "runtime://worker-results/evidence-1",
-            "task_ref": "task-1",
+            "execution_ref": "execution-1",
             "tool_output_ref": "runtime://worker-results/evidence-1",
             "metadata": {"password": "pw-1"},
             "refs": [],

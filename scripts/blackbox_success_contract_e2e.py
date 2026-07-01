@@ -6,7 +6,7 @@ the authoritative gate: it only emits stop_success when the runtime metadata say
 success_condition_progress.eligible_for_stop is true. This proves the whole
 flow end to end without needing a live LLM, MCP server, or docker lab:
 
-    stage evidence -> ResultApplier/KG -> _update_success_condition_progress
+    execution evidence -> ResultApplier/KG -> _update_success_condition_progress
     -> eligible_for_stop -> planner stop_success -> loop terminates
     -> get_operation_run_summary reports success.
 """
@@ -24,23 +24,22 @@ ensure_repo_root_on_path()
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
 from src.core.execution.execution_agent import ExecutionAgent
+from src.core.execution.models import ExecutionRequest, ExecutionResult, RoundDirective, ToolTrace
 from src.core.planning.models import PlannerOutcome
-from src.core.stage.models import RoundDirective, StageExecutionRequest, StageResult
 
 
-def _agent(agent_name: str, capability: str, **result_kwargs: Any):
-    """One capability-scoped stub executor returning a fixed StageResult."""
+def _agent(agent_name: str, objective_key: str, **result_kwargs: Any):
+    """One objective-scoped stub executor returning a fixed ExecutionResult."""
 
     class _StubAgent:
         def __init__(self) -> None:
             self.agent_name = agent_name
-            self.capability = capability
+            self.objective_key = objective_key
 
-        def run(self, request: StageExecutionRequest) -> StageResult:
-            return StageResult(
+        def run(self, request: ExecutionRequest) -> ExecutionResult:
+            return ExecutionResult(
                 operation_id=request.operation_id,
-                stage_task_id=f"stage-{request.operation_id}-{request.cycle_index}-{agent_name}",
-                capability=capability,
+                execution_id=f"execution-{request.operation_id}-{request.cycle_index}-{agent_name}",
                 agent_name=agent_name,
                 status="succeeded",
                 **result_kwargs,
@@ -50,21 +49,20 @@ def _agent(agent_name: str, capability: str, **result_kwargs: Any):
 
 
 def _executor(agents) -> ExecutionAgent:
-    """Wrap per-capability stub agents into the single ExecutionAgent, routing
-    each round to the stub matching request.capability."""
+    """Wrap objective-scoped stub agents into the single ExecutionAgent."""
 
-    by_capability = {agent.capability: agent for agent in agents}
+    by_objective = {agent.objective_key: agent for agent in agents}
 
     class _Dispatch:
         agent_name = "execution_agent"
 
-        def run(self, request: StageExecutionRequest) -> StageResult:
-            return by_capability[request.capability].run(request)
+        def run(self, request: ExecutionRequest) -> ExecutionResult:
+            return by_objective[request.objective].run(request)
 
     return ExecutionAgent(_Dispatch())  # type: ignore[arg-type]
 
 
-# condition name -> (selected_agent, capability) used to advance the chain
+# condition name -> (selected_agent, objective key) used to advance the chain
 _CONDITION_CHAIN = [
     ("dmz_service_discovered", "recon_agent", "recon"),
     ("vulnerability_candidate_recorded", "vuln_analysis_agent", "analysis"),
@@ -97,21 +95,20 @@ class GateAwarePlanner:
             )
 
         missing = set(progress.get("missing") or [c for c, _, _ in _CONDITION_CHAIN])
-        for condition, agent, capability in _CONDITION_CHAIN:
+        for condition, agent, objective_key in _CONDITION_CHAIN:
             if condition in missing:
                 self.decisions.append(f"dispatch:{agent}")
-                return _execute_outcome(operation_id, cycle_index, goal, capability, 0.9)
+                return _execute_outcome(operation_id, cycle_index, objective_key, 0.9)
 
         # Nothing missing but gate not yet set -> dispatch goal as a fallback.
         self.decisions.append("dispatch:goal_agent")
-        return _execute_outcome(operation_id, cycle_index, goal, "goal", 0.5)
+        return _execute_outcome(operation_id, cycle_index, "goal", 0.5)
 
 
 def _execute_outcome(
     operation_id: str,
     cycle_index: int,
-    goal: str,
-    capability: str,
+    objective: str,
     confidence: float,
 ) -> PlannerOutcome:
     return PlannerOutcome(
@@ -121,8 +118,7 @@ def _execute_outcome(
         directive=RoundDirective(
             operation_id=operation_id,
             cycle_index=cycle_index,
-            capability=capability,
-            objective=goal,
+            objective=objective,
             max_tools=1,
             risk_level="low",
         ),
@@ -157,22 +153,22 @@ def main() -> int:
                     "recon_agent",
                     "recon",
                     summary="entry-zone service discovery completed",
-                    findings=[{"type": "service_discovery", "summary": "http service discovered"}],
                     evidence_refs=["evidence::recon-service"],
+                    tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="http service discovered")],
                 ),
                 _agent(
                     "vuln_analysis_agent",
                     "analysis",
                     summary="vulnerability candidate recorded",
-                    findings=[{"kind": "candidate_finding", "summary": "candidate recorded"}],
                     evidence_refs=["evidence::vuln-candidate"],
+                    tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="candidate recorded")],
                 ),
                 _agent(
                     "goal_agent",
                     "goal",
                     summary="goal proof validated",
-                    findings=[{"kind": "GoalCheck", "goal_satisfied": True}],
                     evidence_refs=["evidence::goal-proof"],
+                    tool_trace=[ToolTrace(tool_name="safe_probe", success=True, summary="goal proof validated")],
                     runtime_hints={"goal_satisfied": True, "goal_evidence_refs": ["evidence::goal-proof"]},
                 ),
             ]
@@ -223,3 +219,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

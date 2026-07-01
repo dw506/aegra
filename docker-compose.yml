@@ -14,8 +14,6 @@ services:
       AEGRA_ENABLE_GRAPH_LLM_PLANNER_ADVISOR: "1"
       AEGRA_ENABLE_CRITIC_LLM_ADVISOR: "1"
       AEGRA_MCP_ENABLED: "1"
-      AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
-      AEGRA_LAB_MODE: "1"
     ports:
       - "8000:8000"
     depends_on:

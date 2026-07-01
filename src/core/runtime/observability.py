@@ -94,7 +94,7 @@ def build_recovery_snapshot(state: RuntimeState) -> dict[str, Any]:
         "operation_status": state.operation_status.value,
         "last_updated": state.last_updated.isoformat(),
         "unclean_shutdown": bool(recovery.get("unclean_shutdown", False)),
-        "inflight_task_ids": [],
+        "inflight_execution_ids": [],
         "recovery_metadata": recovery,
         "last_phase_checkpoint": dict(recovery.get("last_phase_checkpoint", {})),
         "replan_request_count": len(state.replan_requests),
@@ -107,8 +107,8 @@ def record_phase_checkpoint(
     cycle_index: int,
     phase: str,
     status: str,
-    selected_task_ids: list[str] | None = None,
-    applied_task_ids: list[str] | None = None,
+    selected_execution_ids: list[str] | None = None,
+    applied_execution_ids: list[str] | None = None,
     runtime_update_count: int | None = None,
     step_count: int | None = None,
     success: bool | None = None,
@@ -123,8 +123,8 @@ def record_phase_checkpoint(
         "phase": phase,
         "status": status,
         "at": now,
-        "selected_task_ids": list(selected_task_ids or []),
-        "applied_task_ids": list(applied_task_ids or []),
+        "selected_execution_ids": list(selected_execution_ids or []),
+        "applied_execution_ids": list(applied_execution_ids or []),
         "runtime_update_count": int(runtime_update_count or 0),
     }
     if step_count is not None:
@@ -167,7 +167,7 @@ def prepare_state_for_resume(
     """Normalize in-flight runtime fields so the operation can safely resume."""
 
     now = utc_now()
-    resumed_task_ids: list[str] = []
+    resumed_execution_ids: list[str] = []
     resumed_worker_ids: list[str] = []
     released_lock_ids: list[str] = []
     expired_session_ids: list[str] = []
@@ -184,21 +184,21 @@ def prepare_state_for_resume(
         session.failure_count += 1
         session.metadata["expiry_reason"] = reason
         session.metadata["expired_by_recovery"] = True
-        session.metadata["bound_task_ids"] = []
+        session.metadata["bound_execution_ids"] = []
         expired_session_ids.append(session.session_id)
 
     metadata = _recovery_metadata(state)
     metadata["last_resume_at"] = now.isoformat()
     metadata["last_resume_reason"] = reason
     metadata["unclean_shutdown"] = False
-    metadata["resumed_task_ids"] = resumed_task_ids
+    metadata["resumed_execution_ids"] = resumed_execution_ids
     metadata["resumed_worker_ids"] = resumed_worker_ids
     metadata["released_lock_ids"] = released_lock_ids
     metadata["expired_session_ids"] = expired_session_ids
     _drop_legacy_replay_metadata(state)
     state.last_updated = now
     return {
-        "resumed_task_ids": resumed_task_ids,
+        "resumed_execution_ids": resumed_execution_ids,
         "resumed_worker_ids": resumed_worker_ids,
         "released_lock_ids": released_lock_ids,
         "expired_session_ids": expired_session_ids,

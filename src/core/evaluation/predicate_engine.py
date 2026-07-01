@@ -483,13 +483,13 @@ def _route_authorized(ctx: PredicateContext, args: dict[str, Any]) -> ConditionR
     zone = ctx.profile.resolve_zone(to_zone_ref)
     requires = zone.requires if zone else []
     route_satisfied = len(routes) > 0
-    # Check that required capabilities are also present
+    # Check that required active sessions are also present.
     creds_or_sessions = ctx.runtime_state.get("sessions") or {}
-    capability_ok = True
-    if "capability" in requires:
+    session_ok = True
+    if "session" in requires:
         active_sessions = [s for s in creds_or_sessions.values() if isinstance(s, dict) and s.get("status") == "active"]
-        capability_ok = len(active_sessions) > 0
-    satisfied = route_satisfied and capability_ok
+        session_ok = len(active_sessions) > 0
+    satisfied = route_satisfied and session_ok
     return ConditionResult(
         condition="",
         satisfied=satisfied,

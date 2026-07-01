@@ -11,9 +11,7 @@ services:
         - ../.env
     environment:
         PYTHONPATH: /app
-        AEGRA_LAB_MODE: "1"
         AEGRA_MCP_ENABLED: "1"
-        AEGRA_MCP_CONFIG_PATH: /app/configs/mcp.lab.docker.json
         AEGRA_LAB_PROFILE_PATH: /app/lab/profiles/full_pentest_lab.yml
         AEGRA_RUNTIME_STORE_BACKEND: file
         AEGRA_RUNTIME_STORE_DIR: /app/lab/outputs/runtime

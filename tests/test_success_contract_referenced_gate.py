@@ -44,7 +44,7 @@ def _full_chain_kg_nodes() -> list[dict[str, Any]]:
         {"id": "host-1", "type": "Host", "zone_ref": "entry"},
         {"id": "svc-1", "type": "Service", "zone_ref": "entry"},
         {"id": "ev-1", "type": "Evidence", "zone_ref": "entry"},
-        # Stage 2 (cg.md G.6): chain steps that collapse into Evidence are
+        # Phase 2 (cg.md G.6): chain steps that collapse into Evidence are
         # discriminated by the ToolFact `kind`, so each condition reads a distinct
         # fact. Canned producers stamp the same kind the real tools do.
         {"id": "vc-1", "type": "Evidence", "kind": "vuln_candidate"},
@@ -133,7 +133,7 @@ def test_referenced_contract_gate_stays_closed_without_database_proof() -> None:
 
 
 def test_kind_discriminator_blocks_false_condition_satisfaction() -> None:
-    """Stage 2 (cg.md G.6): a plain fingerprint Evidence must not leak into the
+    """Phase 2 (cg.md G.6): a plain fingerprint Evidence must not leak into the
     exploit/credential chain steps now that they are discriminated by ToolFact kind."""
     if not PROFILE_PATH.exists():
         import pytest
@@ -185,3 +185,4 @@ def test_referenced_contract_gate_stays_closed_without_pivot_route() -> None:
     assert progress["level_results"]["standard"]["satisfied"] is False
     assert "restricted_zone_service_discovered" in progress["missing"]
     assert "pivot_route_recorded" in progress["missing"]
+

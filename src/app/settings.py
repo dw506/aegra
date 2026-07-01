@@ -85,7 +85,7 @@ class AppSettings(BaseModel):
         )
 
     def load_lab_profile(self) -> dict[str, Any]:
-        """Load stable lab profile metadata used by PlannerAgent and StageAgents."""
+        """Load stable lab profile metadata used by PlannerAgent and ExecutionAgent."""
 
         payload: dict[str, Any] = dict(self.lab_profile)
         loaded_from = "settings"

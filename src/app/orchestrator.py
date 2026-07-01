@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
@@ -11,6 +12,7 @@ from src.core.agents.agent_protocol import GraphRef as AgentGraphRef
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.execution.execution_agent import ExecutionAgent
+from src.core.execution.models import ExecutionResult
 from src.core.graph.graph_initializer import GraphInitializer
 from src.core.graph.graph_memory_store import GraphMemoryStore
 from src.core.graph.kg_store import KnowledgeGraph
@@ -35,7 +37,6 @@ from src.core.runtime.report_generator import ReportFormat, ReportGenerator
 from src.core.runtime.result_applier import PhaseTwoApplyResult, PhaseTwoResultApplier
 from src.core.runtime.txt_trace_logger import TxtTraceLogger
 from src.core.runtime.store import FileRuntimeStore, InMemoryRuntimeStore, RuntimeStore
-from src.integrations.mcp_lab.catalog import build_default_lab_tool_catalog
 
 #把用户输入的目标转换成标准 Asset  用户输入目标 → 标准资产对象 → 写入 runtime policy 的 engagement scope
 class TargetHost(BaseModel): 
@@ -93,8 +94,7 @@ class OperationSummary(BaseModel):
 
     operation_id: str
     operation_status: RuntimeStatus
-    runtime_task_count: int = 0
-    worker_count: int = 0
+    runtime_execution_count: int = 0
     target_count: int = 0
     last_cycle_phase: str | None = None
     unclean_shutdown: bool = False
@@ -113,11 +113,48 @@ class OperationCycleResult(BaseModel):
     planner_outcome: dict[str, Any] | None = None
     execution_result: dict[str, Any] | None = None
     apply_results: list[PhaseTwoApplyResult] = Field(default_factory=list)
-    selected_task_ids: list[str] = Field(default_factory=list)
-    applied_task_ids: list[str] = Field(default_factory=list)
+    selected_execution_ids: list[str] = Field(default_factory=list)
+    applied_execution_ids: list[str] = Field(default_factory=list)
     stopped: bool = False
     stop_reason: str | None = None
     runtime_state: RuntimeState
+
+
+class OperationGraphState(BaseModel):
+    """LangGraph state for one operation control cycle."""
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    operation_id: str
+    graph_refs: list[AgentGraphRef] = Field(default_factory=list)
+    planner_payload: dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] | None = None
+    state: RuntimeState | None = None
+    kg: KnowledgeGraph | None = None
+    ag: AttackGraph | None = None
+    stored_runtime_loaded: bool = False
+    cycle_index: int = 0
+    trace_logger: TxtTraceLogger | None = None
+    goal: str = ""
+    policy_context: dict[str, Any] = Field(default_factory=dict)
+    blackbox_policy_context: dict[str, Any] = Field(default_factory=dict)
+    tool_catalog: dict[str, Any] = Field(default_factory=dict)
+    planner_tools: PlannerGraphTools | None = None
+    min_summary: dict[str, Any] = Field(default_factory=dict)
+    success_progress: dict[str, Any] = Field(default_factory=dict)
+    planner_context: dict[str, Any] = Field(default_factory=dict)
+    planner_outcome: PlannerOutcome | None = None
+    planner_outcome_dump: dict[str, Any] | None = None
+    execution_result: ExecutionResult | None = None
+    execution_result_dump: dict[str, Any] | None = None
+    apply_results: list[PhaseTwoApplyResult] = Field(default_factory=list)
+    planning_success: bool = False
+    execution_success: bool = True
+    applied_execution_ids: list[str] = Field(default_factory=list)
+    stopped: bool = False
+    stop_reason: str | None = None
+    cycle_result: OperationCycleResult | None = None
+    failed: bool = False
 
 #表示 /run 最终返回结果
 class OperationRunSummary(BaseModel):
@@ -160,20 +197,20 @@ class AppOrchestrator:
             else None
         )
         llm_client_config = self.settings.to_packy_llm_config()
-        stage_llm_client = (
+        llm_client = (
             PackyLLMClient(llm_client_config)
             if llm_client_config is not None
             else None
         )
         # Tools are called over MCP only; the executor talks to the MCP client
-        # directly. Pivot transport is resolved server-side by the mcp_lab tools
-        # (route_id in tool arguments / runtime policy), not a client-side adapter.
+        # directly. Pivot transport is resolved server-side by the configured MCP
+        # tools (route_id in tool arguments / runtime policy), not a client-side adapter.
         self.execution_agent = ExecutionAgent.from_clients(
-            llm_client=stage_llm_client,
+            llm_client=llm_client,
             mcp_client=self.mcp_client,
             default_timeout_seconds=self.settings.mcp_default_timeout_seconds,
         )
-        self.planner = Planner(client=stage_llm_client)
+        self.planner = Planner(client=llm_client)
 
 #创建 operation 的初始 RuntimeState，状态为 CREATED
     def create_operation(self, operation_id: str, metadata: dict[str, Any] | None = None) -> RuntimeState:
@@ -310,8 +347,7 @@ class AppOrchestrator:
         return OperationSummary(
             operation_id=state.operation_id,
             operation_status=state.operation_status,
-            runtime_task_count=0,
-            worker_count=0,
+            runtime_execution_count=len(state.recent_outcomes),
             target_count=int(state.execution.metadata.get("target_count", 0)),
             last_cycle_phase=str(last_phase_checkpoint.get("phase")) if last_phase_checkpoint.get("phase") is not None else None,
             unclean_shutdown=bool(recovery.get("unclean_shutdown", False)),
@@ -393,7 +429,6 @@ class AppOrchestrator:
         if isinstance(recovery, dict):
             recovery["lifecycle_state"] = "ready_to_resume"
             recovery["active_cycle_id"] = None
-            recovery["active_stage_id"] = None
             recovery["runtime_lock"] = "released"
         state.execution.metadata["lifecycle_state"] = "ready_to_resume"
         state.execution.summary = f"operation recovered: {reason}"
@@ -496,20 +531,69 @@ class AppOrchestrator:
     ) -> OperationCycleResult:
         del feedback_payload
 
+        graph = self._build_operation_cycle_graph()
+        final_state = OperationGraphState.model_validate(
+            graph.invoke(
+                OperationGraphState(
+                    operation_id=operation_id,
+                    graph_refs=list(graph_refs),
+                    planner_payload=dict(planner_payload),
+                    context=dict(context) if isinstance(context, dict) else None,
+                )
+            )
+        )
+        if final_state.cycle_result is None:
+            raise RuntimeError("operation cycle graph ended without an OperationCycleResult")
+        return final_state.cycle_result
+
+    def _build_operation_cycle_graph(self):
+        """Compile the operation-level LangGraph for one control cycle."""
+
+        graph = StateGraph(OperationGraphState)
+        graph.add_node("load_context", self._operation_load_context_node)
+        graph.add_node("prepare_planner_context", self._operation_prepare_planner_context_node)
+        graph.add_node("planner_decide", self._operation_planner_decide_node)
+        graph.add_node("apply_planner_outcome", self._operation_apply_planner_outcome_node)
+        graph.add_node("execute_round", self._operation_execute_round_node)
+        graph.add_node("finalize_cycle", self._operation_finalize_cycle_node)
+        graph.set_entry_point("load_context")
+        graph.add_edge("load_context", "prepare_planner_context")
+        graph.add_edge("prepare_planner_context", "planner_decide")
+        graph.add_conditional_edges(
+            "planner_decide",
+            self._operation_after_planner_decide,
+            {"apply_planner_outcome": "apply_planner_outcome", END: END},
+        )
+        graph.add_conditional_edges(
+            "apply_planner_outcome",
+            self._operation_after_apply_planner,
+            {"execute_round": "execute_round", "finalize_cycle": "finalize_cycle", END: END},
+        )
+        graph.add_conditional_edges(
+            "execute_round",
+            self._operation_after_execute_round,
+            {"finalize_cycle": "finalize_cycle", END: END},
+        )
+        graph.add_edge("finalize_cycle", END)
+        return graph.compile()
+
+    def _operation_load_context_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        operation_id = graph_state.operation_id
         state = self.runtime_store.snapshot(operation_id)
         kg = self.graph_memory_store.load_kg(operation_id)
         ag = self.graph_memory_store.load_ag(operation_id)
         stored_runtime = self.graph_memory_store.load_runtime(operation_id)
         if stored_runtime is not None:
             state = stored_runtime
+            graph_state.stored_runtime_loaded = True
         if self.settings.recovery_enabled and self._needs_recovery(state):
             state = self.runtime_store.recover_operation(operation_id, reason="unclean_shutdown")
             resume_summary = dict(state.execution.metadata.get("recovery", {}))
             self._log_operation_event(state, event_type="operation_resumed", **resume_summary)
 
         cycle_index = self._next_cycle_index(state)
-        operation_trace_logger = TxtTraceLogger.operation_trace(operation_id)
-        operation_trace_logger.write_block(
+        trace_logger = TxtTraceLogger.operation_trace(operation_id)
+        trace_logger.write_block(
             "CYCLE_START",
             "operation cycle started",
             {
@@ -532,73 +616,85 @@ class AppOrchestrator:
         state.execution.status = RuntimeStatus.RUNNING
         mark_unclean_shutdown(state, cycle_index=cycle_index)
         self._log_operation_event(state, event_type="cycle_started", cycle_index=cycle_index)
-        operation_trace_logger.write("CYCLE", f"cycle={cycle_index} started")
+        trace_logger.write("CYCLE", f"cycle={cycle_index} started")
         self._checkpoint_phase(state, cycle_index=cycle_index, phase="cycle_started", status="running")
 
-        goal = self._mission_goal(planner_payload=planner_payload, context=context)
+        graph_state.state = state
+        graph_state.kg = kg
+        graph_state.ag = ag
+        graph_state.cycle_index = cycle_index
+        graph_state.trace_logger = trace_logger
+        return graph_state
+
+    def _operation_prepare_planner_context_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        state, kg, ag = self._operation_runtime_parts(graph_state)
+        goal = self._mission_goal(planner_payload=graph_state.planner_payload, context=graph_state.context)
         policy_context = self._mapping(
-            planner_payload.get("policy_context")
+            graph_state.planner_payload.get("policy_context")
             or state.execution.metadata.get("runtime_policy")
         )
         blackbox_policy_context = self._blackbox_policy_context(policy_context, state)
         tool_catalog = self._load_tool_catalog()
         state.execution.metadata["tool_catalog"] = tool_catalog
-        operation_trace_logger.write_block(
+        graph_state.trace_logger.write_block(
             "MISSION",
             "mission context",
             {
                 "mission_goal": goal,
                 "targets": state.execution.metadata.get("target_inventory", []),
                 "scope": blackbox_policy_context,
-                # The tool catalog (names + schemas) is static and lives in
-                # state.execution.metadata["tool_catalog"] for the planner; it is
-                # intentionally NOT written to the per-cycle trace to keep it readable.
             },
         )
-        #更新成功条件进度
         self._update_success_condition_progress(
             state=state,
             kg=kg,
             ag=ag,
-            cycle_index=cycle_index,
+            cycle_index=graph_state.cycle_index,
         )
-        #图查询/摘要工具，构造 Planner 所需的轻量图摘要
         planner_tools = PlannerGraphTools(
-            operation_id=operation_id,
-            cycle_index=cycle_index,
+            operation_id=graph_state.operation_id,
+            cycle_index=graph_state.cycle_index,
             kg=kg,
             ag=ag,
             runtime_state=state,
         )
         min_summary = planner_tools.build_min_summary()
         success_progress = self._mapping(state.execution.metadata.get("success_condition_progress"))
-        planner_context = {
-            "operation_id": operation_id,
-            "cycle_index": cycle_index,
+        graph_state.goal = goal
+        graph_state.policy_context = policy_context
+        graph_state.blackbox_policy_context = blackbox_policy_context
+        graph_state.tool_catalog = tool_catalog
+        graph_state.planner_tools = planner_tools
+        graph_state.min_summary = min_summary
+        graph_state.success_progress = success_progress
+        graph_state.planner_context = {
+            "operation_id": graph_state.operation_id,
+            "cycle_index": graph_state.cycle_index,
             "current_goal": goal,
             "min_summary": min_summary,
             "success_condition_progress": success_progress,
             "graph_tools": PlannerGraphTools.tool_manifest(),
-            "agent_capabilities": self.execution_agent.capability_summary(),
             "mcp_tool_catalog": tool_catalog,
         }
-        #调用 Planner 做决策
+        return graph_state
+
+    def _operation_planner_decide_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        state, kg, ag = self._operation_runtime_parts(graph_state)
         try:
             outcome = self._planner_decide(
-                goal=goal,
-                graph_context=planner_context,
-                policy_context=blackbox_policy_context,
-                recent_execution_results=self._planner_recent_execution_results(state),          #最近几轮 Stage 执行结果
-                graph_tools=planner_tools,
+                goal=graph_state.goal,
+                graph_context=graph_state.planner_context,
+                policy_context=graph_state.blackbox_policy_context,
+                recent_execution_results=self._planner_recent_execution_results(state),
+                graph_tools=graph_state.planner_tools,
             )
-            operation_trace_logger.write_block(
+            graph_state.trace_logger.write_block(
                 "PLANNER_OUTCOME",
                 "planner outcome",
                 {
-                    "cycle_index": cycle_index,
+                    "cycle_index": graph_state.cycle_index,
                     "action": outcome.action,
-                    "capability": outcome.directive.capability if outcome.directive else None,
-                    "objective": outcome.directive.objective if outcome.directive else goal,
+                    "objective": outcome.directive.objective if outcome.directive else graph_state.goal,
                     "max_tools": outcome.directive.max_tools if outcome.directive else None,
                     "risk_level": outcome.directive.risk_level if outcome.directive else "medium",
                     "confidence": outcome.confidence,
@@ -606,144 +702,167 @@ class AppOrchestrator:
                     "target_refs": list(outcome.directive.target_refs if outcome.directive else []),
                 },
             )
+            graph_state.planner_outcome = outcome
+            return graph_state
         except Exception as exc:
-            return self._fail_operation_cycle(
-                operation_id=operation_id,
-                cycle_index=cycle_index,
+            graph_state.cycle_result = self._fail_operation_cycle(
+                operation_id=graph_state.operation_id,
+                cycle_index=graph_state.cycle_index,
                 state=state,
                 kg=kg,
                 ag=ag,
                 phase="planning",
                 exc=exc,
-                trace_logger=operation_trace_logger,
+                trace_logger=graph_state.trace_logger,
             )
-        if outcome.operation_id != operation_id:
+            graph_state.failed = True
+            return graph_state
+
+    def _operation_apply_planner_outcome_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        state, kg, ag = self._operation_runtime_parts(graph_state)
+        outcome = graph_state.planner_outcome
+        if outcome is None:
+            raise RuntimeError("planner outcome is required before apply_planner_outcome")
+        if outcome.operation_id != graph_state.operation_id:
             original_operation_id = outcome.operation_id
-            outcome.operation_id = operation_id
+            outcome.operation_id = graph_state.operation_id
             self._log_operation_event(
                 state,
                 event_type="planner_outcome_operation_id_normalized",
-                cycle_index=cycle_index,
+                cycle_index=graph_state.cycle_index,
                 original_operation_id=original_operation_id,
-                normalized_operation_id=operation_id,
+                normalized_operation_id=graph_state.operation_id,
             )
             if outcome.directive is not None:
-                outcome.directive.operation_id = operation_id
-        outcome.cycle_index = cycle_index
+                outcome.directive.operation_id = graph_state.operation_id
+        outcome.cycle_index = graph_state.cycle_index
         if outcome.directive is not None:
-            outcome.directive.cycle_index = cycle_index
+            outcome.directive.cycle_index = graph_state.cycle_index
         planning_apply = self.result_applier.apply_planner_outcome(outcome, state, kg, ag)
 
-        planner_outcome_dump = outcome.model_dump(mode="json")
-        planning_success = outcome.action not in {"stop_failed"}
-        apply_results: list[PhaseTwoApplyResult] = [planning_apply]
-        execution_result_dump: dict[str, Any] | None = None
-        execution_success = True
-        applied_ids: list[str] = []
-        stopped = outcome.action in {"stop_success", "stop_failed", "pause_for_review"}
-        stop_reason = outcome.stop_condition or (outcome.action if stopped else None)
+        graph_state.planner_outcome = outcome
+        graph_state.planner_outcome_dump = outcome.model_dump(mode="json")
+        graph_state.planning_success = outcome.action not in {"stop_failed"}
+        graph_state.apply_results = [planning_apply]
+        graph_state.execution_success = True
+        graph_state.applied_execution_ids = []
+        graph_state.stopped = outcome.action in {"stop_success", "stop_failed", "pause_for_review"}
+        graph_state.stop_reason = outcome.stop_condition or (outcome.action if graph_state.stopped else None)
+        return graph_state
 
-        if outcome.action == "execute" and outcome.directive is not None:
-            try:
-                execution_result = self.execution_agent.run(
-                    outcome.directive,
-                    graph_summary={
-                        "operation_id": operation_id,
-                        "cycle_index": cycle_index,
-                        "current_goal": goal,
-                        "min_summary": min_summary,
-                        "success_condition_progress": success_progress,
-                    },
-                    graph_history={},
-                    runtime_context=self._blackbox_runtime_context(state),
-                    policy_context=blackbox_policy_context,
-                    mcp_tool_catalog=tool_catalog,
-                    pivot_routes=[route.model_dump(mode="json") for route in state.pivot_routes.values()],
-                    sessions=[session.model_dump(mode="json") for session in state.sessions.values()],
-                )
-                if execution_result.operation_id != operation_id:
-                    original_operation_id = execution_result.operation_id
-                    execution_result.operation_id = operation_id
-                    execution_result.runtime_hints = {
-                        **dict(execution_result.runtime_hints),
-                        "normalized_operation_id_from": original_operation_id,
-                    }
-                    self._log_operation_event(
-                        state,
-                        event_type="execution_result_operation_id_normalized",
-                        cycle_index=cycle_index,
-                        execution_id=execution_result.execution_id,
-                        original_operation_id=original_operation_id,
-                        normalized_operation_id=operation_id,
-                    )
-                stage_apply = self.result_applier.apply_execution_result(execution_result, state, kg, ag)
-                self._update_success_condition_progress(
-                    state=state,
-                    kg=kg,
-                    ag=ag,
-                    cycle_index=cycle_index,
-                )
-            except Exception as exc:
-                return self._fail_operation_cycle(
-                    operation_id=operation_id,
-                    cycle_index=cycle_index,
-                    state=state,
-                    kg=kg,
-                    ag=ag,
-                    phase="execution_round",
-                    exc=exc,
-                    trace_logger=operation_trace_logger,
-                    planning_success=planning_success,
-                    apply_results=apply_results,
-                )
-            stage_graph_write_payload = {
-                "cycle": cycle_index,
-                "capability": execution_result.capability,
-                "agent": execution_result.agent_name,
-                "execution_status": execution_result.status,
-                "kg_delta_count": len(stage_apply.kg_state_deltas or []),
-                "runtime_update_count": len(stage_apply.runtime_updates or []),
-                "created_ag_nodes": len((stage_apply.ag_graph or {}).get("nodes", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
-                "created_ag_edges": len((stage_apply.ag_graph or {}).get("edges", [])) if isinstance(stage_apply.ag_graph, dict) else 0,
-                "evidence_refs": list(execution_result.evidence_refs),
-            }
-            operation_trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", stage_graph_write_payload)
-            apply_results.append(stage_apply)
-            applied_ids.append(execution_result.execution_id)
-            execution_result_dump = execution_result.model_dump(mode="json")
-            execution_success = execution_result.status not in {"failed", "blocked"}
-            if self._goal_satisfied(state):
-                state.execution.metadata["goal_satisfied"] = True
-            if execution_result.status in {"failed", "blocked"}:
-                stop_reason = execution_result.summary
-                state.execution.metadata["needs_replan"] = True
-                state.execution.metadata["last_stage_stop_reason"] = {
-                    "status": execution_result.status,
-                    "summary": execution_result.summary,
-                    "execution_id": execution_result.execution_id,
-                    "recorded_at": utc_now().isoformat(),
+    def _operation_execute_round_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        state, kg, ag = self._operation_runtime_parts(graph_state)
+        outcome = graph_state.planner_outcome
+        if outcome is None or outcome.directive is None:
+            raise RuntimeError("execute_round requires an executable planner directive")
+        try:
+            execution_result = self.execution_agent.run(
+                outcome.directive,
+                graph_summary={
+                    "operation_id": graph_state.operation_id,
+                    "cycle_index": graph_state.cycle_index,
+                    "current_goal": graph_state.goal,
+                    "min_summary": graph_state.min_summary,
+                    "success_condition_progress": graph_state.success_progress,
+                },
+                graph_history={},
+                runtime_context=self._blackbox_runtime_context(state),
+                policy_context=graph_state.blackbox_policy_context,
+                mcp_tool_catalog=graph_state.tool_catalog,
+                pivot_routes=[route.model_dump(mode="json") for route in state.pivot_routes.values()],
+                sessions=[session.model_dump(mode="json") for session in state.sessions.values()],
+            )
+            if execution_result.operation_id != graph_state.operation_id:
+                original_operation_id = execution_result.operation_id
+                execution_result.operation_id = graph_state.operation_id
+                execution_result.runtime_hints = {
+                    **dict(execution_result.runtime_hints),
+                    "normalized_operation_id_from": original_operation_id,
                 }
-            else:
-                stop_reason = None
-            stopped = False
+                self._log_operation_event(
+                    state,
+                    event_type="execution_result_operation_id_normalized",
+                    cycle_index=graph_state.cycle_index,
+                    execution_id=execution_result.execution_id,
+                    original_operation_id=original_operation_id,
+                    normalized_operation_id=graph_state.operation_id,
+                )
+            execution_apply = self.result_applier.apply_execution_result(execution_result, state, kg, ag)
+            self._update_success_condition_progress(
+                state=state,
+                kg=kg,
+                ag=ag,
+                cycle_index=graph_state.cycle_index,
+            )
+        except Exception as exc:
+            graph_state.cycle_result = self._fail_operation_cycle(
+                operation_id=graph_state.operation_id,
+                cycle_index=graph_state.cycle_index,
+                state=state,
+                kg=kg,
+                ag=ag,
+                phase="execution_round",
+                exc=exc,
+                trace_logger=graph_state.trace_logger,
+                planning_success=graph_state.planning_success,
+                apply_results=graph_state.apply_results,
+            )
+            graph_state.failed = True
+            return graph_state
 
+        execution_graph_write_payload = {
+            "cycle": graph_state.cycle_index,
+            "agent": execution_result.agent_name,
+            "execution_status": execution_result.status,
+            "kg_delta_count": len(execution_apply.kg_state_deltas or []),
+            "runtime_update_count": len(execution_apply.runtime_updates or []),
+            "created_ag_nodes": len((execution_apply.ag_graph or {}).get("nodes", [])) if isinstance(execution_apply.ag_graph, dict) else 0,
+            "created_ag_edges": len((execution_apply.ag_graph or {}).get("edges", [])) if isinstance(execution_apply.ag_graph, dict) else 0,
+            "evidence_refs": list(execution_result.evidence_refs),
+        }
+        graph_state.trace_logger.write_block("GRAPH_WRITE", "ResultApplier graph write completed", execution_graph_write_payload)
+        graph_state.apply_results = [*graph_state.apply_results, execution_apply]
+        graph_state.applied_execution_ids = [*graph_state.applied_execution_ids, execution_result.execution_id]
+        graph_state.execution_result = execution_result
+        graph_state.execution_result_dump = execution_result.model_dump(mode="json")
+        graph_state.execution_success = execution_result.status not in {"failed", "blocked"}
+        if self._goal_satisfied(state):
+            state.execution.metadata["goal_satisfied"] = True
+        if execution_result.status in {"failed", "blocked"}:
+            graph_state.stop_reason = execution_result.summary
+            state.execution.metadata["needs_replan"] = True
+            state.execution.metadata["last_execution_stop_reason"] = {
+                "status": execution_result.status,
+                "summary": execution_result.summary,
+                "execution_id": execution_result.execution_id,
+                "recorded_at": utc_now().isoformat(),
+            }
+        else:
+            graph_state.stop_reason = None
+        graph_state.stopped = False
+        return graph_state
+
+    def _operation_finalize_cycle_node(self, graph_state: OperationGraphState) -> OperationGraphState:
+        state, kg, ag = self._operation_runtime_parts(graph_state)
+        outcome = graph_state.planner_outcome
+        if outcome is None:
+            raise RuntimeError("planner outcome is required before finalize_cycle")
         summary = {
-            "cycle_index": cycle_index,
+            "cycle_index": graph_state.cycle_index,
             "started_at": utc_now().isoformat(),
-            "architecture": "planner_stage_agent_graph_main_path",
-            "planning_success": planning_success,
-            "execution_success": execution_success,
+            "architecture": "operation_langgraph_main_path",
+            "planning_success": graph_state.planning_success,
+            "execution_success": graph_state.execution_success,
             "feedback_success": True,
             "planner_action": outcome.action,
-            "capability": outcome.directive.capability if outcome.directive else None,
-            "applied_results": len(apply_results),
-            "stopped": stopped,
-            "stop_reason": stop_reason,
+            "applied_results": len(graph_state.apply_results),
+            "stopped": graph_state.stopped,
+            "stop_reason": graph_state.stop_reason,
         }
         history = state.execution.metadata.setdefault("control_cycle_history", [])
         history.append(summary)
         state.execution.metadata["last_control_cycle"] = summary
-        state.execution.summary = f"control cycle {cycle_index} completed"
+        state.execution.summary = f"control cycle {graph_state.cycle_index} completed"
         if outcome.action == "stop_success":
             state.operation_status = RuntimeStatus.COMPLETED
         elif outcome.action == "stop_failed":
@@ -757,51 +876,74 @@ class AppOrchestrator:
         self._log_operation_event(
             state,
             event_type="cycle_completed",
-            cycle_index=cycle_index,
-            stopped=stopped,
-            stop_reason=stop_reason,
+            cycle_index=graph_state.cycle_index,
+            stopped=graph_state.stopped,
+            stop_reason=graph_state.stop_reason,
         )
-        operation_trace_logger.write_block(
+        graph_state.trace_logger.write_block(
             "CYCLE_END",
             "cycle completed",
             {
-                "cycle": cycle_index,
+                "cycle": graph_state.cycle_index,
                 "planner_action": outcome.action,
-                "capability": outcome.directive.capability if outcome.directive else None,
                 "status": state.operation_status.value,
-                "stop_reason": stop_reason,
-                "applied_results": len(apply_results),
+                "stop_reason": graph_state.stop_reason,
+                "applied_results": len(graph_state.apply_results),
             },
         )
-        mark_clean_shutdown(state, cycle_index=cycle_index)
-        self._mark_operation_cycle_clean(state, cycle_index=cycle_index)
+        mark_clean_shutdown(state, cycle_index=graph_state.cycle_index)
+        self._mark_operation_cycle_clean(state, cycle_index=graph_state.cycle_index)
         self._checkpoint_phase(
             state,
-            cycle_index=cycle_index,
+            cycle_index=graph_state.cycle_index,
             phase="cycle_completed",
             status="completed",
-            applied_task_ids=applied_ids,
-            stopped=stopped,
-            stop_reason=stop_reason,
+            applied_execution_ids=graph_state.applied_execution_ids,
+            stopped=graph_state.stopped,
+            stop_reason=graph_state.stop_reason,
             persist=False,
         )
         self.runtime_store.save_state(state)
-        self.graph_memory_store.save_kg(operation_id, kg)
-        self.graph_memory_store.save_ag(operation_id, ag)
-        self.graph_memory_store.save_runtime(operation_id, state)
-        self.graph_memory_store.save_snapshot(operation_id, cycle_index)
-        return OperationCycleResult(
-            operation_id=operation_id,
-            cycle_index=cycle_index,
-            planner_outcome=planner_outcome_dump,
-            execution_result=execution_result_dump,
-            apply_results=apply_results,
-            selected_task_ids=applied_ids,
-            applied_task_ids=list(applied_ids),
-            stopped=stopped,
-            stop_reason=stop_reason,
+        self.graph_memory_store.save_kg(graph_state.operation_id, kg)
+        self.graph_memory_store.save_ag(graph_state.operation_id, ag)
+        self.graph_memory_store.save_runtime(graph_state.operation_id, state)
+        self.graph_memory_store.save_snapshot(graph_state.operation_id, graph_state.cycle_index)
+        graph_state.cycle_result = OperationCycleResult(
+            operation_id=graph_state.operation_id,
+            cycle_index=graph_state.cycle_index,
+            planner_outcome=graph_state.planner_outcome_dump,
+            execution_result=graph_state.execution_result_dump,
+            apply_results=graph_state.apply_results,
+            selected_execution_ids=graph_state.applied_execution_ids,
+            applied_execution_ids=list(graph_state.applied_execution_ids),
+            stopped=graph_state.stopped,
+            stop_reason=graph_state.stop_reason,
             runtime_state=state.model_copy(deep=True),
         )
+        return graph_state
+
+    @staticmethod
+    def _operation_after_planner_decide(graph_state: OperationGraphState) -> str:
+        return END if graph_state.failed else "apply_planner_outcome"
+
+    @staticmethod
+    def _operation_after_apply_planner(graph_state: OperationGraphState) -> str:
+        if graph_state.failed:
+            return END
+        outcome = graph_state.planner_outcome
+        if outcome is not None and outcome.action == "execute" and outcome.directive is not None:
+            return "execute_round"
+        return "finalize_cycle"
+
+    @staticmethod
+    def _operation_after_execute_round(graph_state: OperationGraphState) -> str:
+        return END if graph_state.failed else "finalize_cycle"
+
+    @staticmethod
+    def _operation_runtime_parts(graph_state: OperationGraphState) -> tuple[RuntimeState, KnowledgeGraph, AttackGraph]:
+        if graph_state.state is None or graph_state.kg is None or graph_state.ag is None:
+            raise RuntimeError("operation graph runtime context is not loaded")
+        return graph_state.state, graph_state.kg, graph_state.ag
 
     @staticmethod
     def _mark_operation_cycle_clean(state: RuntimeState, *, cycle_index: int) -> None:
@@ -812,7 +954,6 @@ class AppOrchestrator:
         if isinstance(recovery, dict):
             recovery["lifecycle_state"] = "cycle_completed"
             recovery["active_cycle_id"] = None
-            recovery["active_stage_id"] = None
             recovery["runtime_lock"] = "released"
             recovery["unclean_shutdown"] = False
             recovery["last_phase"] = "cycle_completed"
@@ -822,7 +963,6 @@ class AppOrchestrator:
             recovery.pop("last_error", None)
         state.execution.metadata["lifecycle_state"] = "cycle_completed"
         state.execution.metadata["active_cycle_id"] = None
-        state.execution.metadata["active_stage_id"] = None
         state.execution.metadata["runtime_lock"] = "released"
         state.execution.metadata["unclean_shutdown"] = False
         state.execution.metadata.pop("last_error", None)
@@ -1154,7 +1294,7 @@ class AppOrchestrator:
                 continue
             results.append(
                 {
-                    "task_id": outcome.task_id,
+                    "execution_id": outcome.execution_id,
                     "outcome_id": outcome.outcome_id,
                     "outcome_type": outcome.outcome_type,
                     "summary": outcome.summary,
@@ -1163,7 +1303,6 @@ class AppOrchestrator:
                     "execution_result": AppOrchestrator._compact_execution_result(execution_result),
                     "runtime_hints": payload.get("runtime_hints") if isinstance(payload.get("runtime_hints"), dict) else {},
                     "writeback_hints": payload.get("writeback_hints") if isinstance(payload.get("writeback_hints"), dict) else {},
-                    "task_candidates": payload.get("task_candidates") if isinstance(payload.get("task_candidates"), list) else [],
                 }
             )
         return results
@@ -1229,7 +1368,7 @@ class AppOrchestrator:
         metadata = state.execution.metadata
         recent_outcomes = [
             {
-                "task_id": outcome.task_id,
+                "execution_id": outcome.execution_id,
                 "outcome_type": outcome.outcome_type,
                 "summary": outcome.summary,
                 "payload_ref": outcome.payload_ref,
@@ -1336,11 +1475,8 @@ class AppOrchestrator:
 
     def _load_tool_catalog(self) -> dict[str, Any]:
         if self.mcp_client is None:
-            catalog = build_default_lab_tool_catalog()
-            catalog["pentest-tools"]["available"] = False
-            catalog["pentest-tools"]["error"] = "MCP is not configured"
-            return catalog
-        return self.mcp_client.list_tools() or build_default_lab_tool_catalog()
+            return {}
+        return self.mcp_client.list_tools() or {}
 
     @staticmethod
     def _lab_activation_metadata(lab_profile: dict[str, Any]) -> dict[str, Any]:
@@ -1482,7 +1618,6 @@ class AppOrchestrator:
             recovery["lifecycle_state"] = "recoverable"
             recovery["last_error"] = dict(error_record)
             recovery["active_cycle_id"] = None
-            recovery["active_stage_id"] = None
             recovery["runtime_lock"] = "released"
         archived_errors = state.execution.metadata.setdefault("archived_errors", [])
         if isinstance(archived_errors, list):
@@ -1517,12 +1652,11 @@ class AppOrchestrator:
                 {
                     "cycle_index": cycle_index,
                     "started_at": error_record["recorded_at"],
-                    "architecture": "planner_stage_agent_graph_main_path",
+                    "architecture": "operation_langgraph_main_path",
                     "planning_success": planning_success,
                     "execution_success": False,
                     "feedback_success": False,
                     "selected_agent": None,
-                    "selected_stage": None,
                     "applied_results": len(apply_results or []),
                     "stopped": True,
                     "stop_reason": error_type,
@@ -1552,8 +1686,8 @@ class AppOrchestrator:
             planner_outcome=None,
             execution_result=None,
             apply_results=list(apply_results or []),
-            selected_task_ids=[],
-            applied_task_ids=[],
+            selected_execution_ids=[],
+            applied_execution_ids=[],
             stopped=True,
             stop_reason=error_type,
             runtime_state=state.model_copy(deep=True),
@@ -1575,8 +1709,8 @@ class AppOrchestrator:
         cycle_index: int,
         phase: str,
         status: str,
-        selected_task_ids: list[str] | None = None,
-        applied_task_ids: list[str] | None = None,
+        selected_execution_ids: list[str] | None = None,
+        applied_execution_ids: list[str] | None = None,
         runtime_update_count: int | None = None,
         step_count: int | None = None,
         success: bool | None = None,
@@ -1591,8 +1725,8 @@ class AppOrchestrator:
             cycle_index=cycle_index,
             phase=phase,
             status=status,
-            selected_task_ids=selected_task_ids,
-            applied_task_ids=applied_task_ids,
+            selected_execution_ids=selected_execution_ids,
+            applied_execution_ids=applied_execution_ids,
             runtime_update_count=runtime_update_count,
             step_count=step_count,
             success=success,
@@ -1631,7 +1765,7 @@ class AppOrchestrator:
             },
             "execution_agent": {
                 "implementation": "ExecutionAgent",
-                "kind": "single_capability_executor",
+                "kind": "single_objective_executor",
             },
             "verify_write": {
                 "implementation": "SuccessConditionTracker + PhaseTwoResultApplier",

@@ -20,7 +20,6 @@ type CycleRow = {
   cycle_index: number;
   title: string;
   agent: string;
-  capability: string;
   target: string;
   intent: string;
   result_summary: string;
@@ -313,7 +312,6 @@ function AttackCyclesView({ cycles }: { cycles: CycleRow[] }) {
             </header>
             <dl className="cycleFields">
               <div><dt>agent</dt><dd>{cycle.agent}</dd></div>
-              <div><dt>capability</dt><dd>{cycle.capability}</dd></div>
               <div><dt>target</dt><dd>{cycle.target}</dd></div>
               <div><dt>intent</dt><dd>{cycle.intent}</dd></div>
               <div><dt>result_summary</dt><dd>{cycle.result_summary}</dd></div>
@@ -430,7 +428,6 @@ function buildCycles(data: UnifiedVisualization | null): CycleRow[] {
         cycle_index: cycleIndex,
         title: title.startsWith("Cycle ") ? title : `Cycle ${cycleIndex} - ${title}`,
         agent: firstString(selected.agent, records.map((item) => item.agent).find(Boolean), "unknown"),
-        capability: firstString(selected.capability, records.map((item) => item.capability).find(Boolean), "unknown"),
         target: firstString(selected.target_summary, selected.target, records.map((item) => item.target).find(Boolean), "unknown"),
         intent: firstString(selected.intent, selected.action_summary, selected.summary, "No intent recorded"),
         result_summary: firstString(selected.result_summary, selected.summary, "No result summary recorded"),

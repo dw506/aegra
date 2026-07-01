@@ -91,7 +91,7 @@ class KnowledgeGraph:
                 else None
             ) or patch.get("entity_kind")
             delta_id = str(delta.get("id") or patch.get("entity_id") or patch.get("relation_id") or f"delta-{index}")
-            # 单条 delta 容错：一条坏 patch 不应拖垮整批写入（否则整个 stage 的写图全部丢失）。
+            # 单条 delta 容错：一条坏 patch 不应拖垮整批写入（否则整个执行轮次的写图全部丢失）。
             try:
                 if patch_kind == "entity" or patch.get("entity_kind") == "node":
                     entity = self._apply_entity_patch(patch)
@@ -152,7 +152,7 @@ class KnowledgeGraph:
             raise ValidationConstraintError("node type cannot be changed")
 
         payload = current.model_dump()
-        # properties 走合并而非整体替换：upsert 的精简 patch 不应抹掉之前 stage
+        # properties 走合并而非整体替换：upsert 的精简 patch 不应抹掉之前执行轮次
         # 写入的丰富 properties；新键覆盖同名旧键，缺失的旧键保留。
         merged_properties = dict(payload.get("properties") or {})
         if isinstance(patch.get("properties"), dict):
@@ -396,7 +396,7 @@ class KnowledgeGraph:
     def _normalize_node_type(value: str) -> NodeType:
         # Aliases map external/tool-reported shapes that have no dedicated NodeType
         # to the closest first-class kind. Vulnerability candidates and exploit
-        # capabilities are no longer first-class node types: real tools record them
+        # access/session facts are no longer first-class node types: real tools record them
         # as Evidence{kind:...} / Session, which the success contract reads directly.
         aliases = {
             "WebEndpoint": NodeType.SERVICE,

@@ -44,7 +44,6 @@ def _final_execute() -> str:
             "directive": {
                 "operation_id": "op-loop",
                 "cycle_index": 1,
-                "capability": "recon",
                 "objective": "collect entry-zone service evidence",
                 "target_refs": [],
                 "risk_level": "low",
@@ -77,7 +76,6 @@ def test_planner_loop_drills_with_read_tools_then_decides() -> None:
     assert client.calls == 3  # two read turns + one final
     assert outcome.action == "execute"
     assert outcome.directive is not None
-    assert outcome.directive.capability == "recon"
     assert outcome.metadata.get("read_steps") == 2  # two read tools were executed
 
 
@@ -92,7 +90,6 @@ def test_planner_advisory_write_tool_validation_failure_does_not_stop_decision()
                     "directive": {
                         "operation_id": "op-loop",
                         "cycle_index": 1,
-                        "capability": "pivot",
                         "objective": "check whether any pivot route exists",
                         "target_refs": [],
                         "risk_level": "low",
@@ -105,7 +102,6 @@ def test_planner_advisory_write_tool_validation_failure_does_not_stop_decision()
                                 "arguments": {
                                     "operation_id": "op-loop",
                                     "cycle_index": 1,
-                                    "capability": "pivot",
                                     "summary": "missing status and includes outer identity fields",
                                 },
                             }
@@ -131,7 +127,7 @@ def test_planner_advisory_write_tool_validation_failure_does_not_stop_decision()
     assert "planner_attack_step_records" not in state.execution.metadata
 
 
-def test_planner_exploit_round_prefers_metasploit_when_available() -> None:
+def test_planner_exploit_round_keeps_llm_tool_preference_when_available() -> None:
     state = RuntimeState(operation_id="op-loop", execution=OperationRuntime(operation_id="op-loop"))
     tools = _tools(state)
     client = ScriptedClient(
@@ -142,7 +138,6 @@ def test_planner_exploit_round_prefers_metasploit_when_available() -> None:
                     "directive": {
                         "operation_id": "op-loop",
                         "cycle_index": 1,
-                        "capability": "exploit",
                         "objective": "open a real session on the authorized Struts target",
                         "target_refs": [],
                         "allowed_tools": [],
@@ -173,8 +168,8 @@ def test_planner_exploit_round_prefers_metasploit_when_available() -> None:
     )
 
     assert outcome.directive is not None
-    assert outcome.directive.allowed_tools[:2] == ["metasploit_exec", "session_exec"]
-    assert outcome.directive.tool_hints[-1]["preferred_tool"] == "metasploit_exec"
+    assert outcome.directive.allowed_tools == []
+    assert outcome.directive.tool_hints == []
 
 
 def test_planner_loop_falls_back_to_replan_when_budget_exhausted() -> None:

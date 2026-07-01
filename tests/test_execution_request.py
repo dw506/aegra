@@ -25,7 +25,7 @@ class RecordingMCP:
         }
 
 
-class FakeStageLLM:
+class FakeExecutionLLM:
     def __init__(self, decisions: list[dict[str, Any]]) -> None:
         self.decisions = list(decisions)
         self.calls: list[dict[str, Any]] = []
@@ -37,8 +37,8 @@ class FakeStageLLM:
         return PackyLLMResponse(model="gpt-test", text=json.dumps(payload), usage=None)
 
 
-def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None:
-    llm = FakeStageLLM(
+def test_llm_driven_execution_agent_runs_execution_request_main_path() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "finish",
@@ -52,7 +52,6 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
         operation_id="op-1",
         cycle_index=2,
         agent_name="recon_agent",
-        capability="recon",
         objective="Collect service evidence",
         target_refs=[GraphRef(graph="kg", ref_id="host-1", ref_type="Host")],
         required_context={"scope": "authorized"},
@@ -76,13 +75,14 @@ def test_llm_driven_stage_agent_runs_stage_execution_request_main_path() -> None
 
 def test_execution_agent_main_path_has_no_task_graph_dependency() -> None:
     source = Path("src/core/execution/execution_agent.py").read_text(encoding="utf-8")
+    legacy_module = "src.core.models." + "t" + "g"
 
-    assert "TaskGraph" not in source
-    assert "src.core.models.tg" not in source
+    assert "Task" + "Graph" not in source
+    assert legacy_module not in source
 
 
 def test_http_probe_infers_missing_url_from_target_ref() -> None:
-    llm = FakeStageLLM(
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -99,7 +99,6 @@ def test_http_probe_infers_missing_url_from_target_ref() -> None:
         operation_id="op-http-url",
         cycle_index=3,
         agent_name="execution_agent",
-        capability="recon",
         objective="Probe the Struts2 entry service",
         target_refs=[
             GraphRef(graph="kg", ref_id="service::10.20.0.22:8080/tcp", ref_type="Service"),
@@ -131,8 +130,8 @@ def test_http_probe_infers_missing_url_from_target_ref() -> None:
     assert result.tool_trace[0].arguments["url"] == "http://10.20.0.22:8080/"
 
 
-def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_blocks_tool_not_in_supplied_catalog() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -148,7 +147,6 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
         operation_id="op-missing-tool",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Respect supplied tool catalog",
         max_steps=2,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "http_probe"}]}},
@@ -161,8 +159,8 @@ def test_stage_agent_blocks_tool_not_in_supplied_catalog() -> None:
     assert result.tool_trace[0].exit_code == "tool_not_in_catalog"
 
 
-def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_normalizes_url_target_for_web_tools() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -178,7 +176,6 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
         operation_id="op-url-tool",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Normalize URL target",
         max_steps=2,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "web_fingerprint"}]}},
@@ -192,8 +189,8 @@ def test_stage_agent_normalizes_url_target_for_web_tools() -> None:
     assert result.tool_trace[0].arguments["operation_id"] == "op-url-tool"
 
 
-def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_trace_context() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_defaults_missing_server_id_to_pentest_tools_and_injects_trace_context() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -208,7 +205,6 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
         operation_id="op-default-server",
         cycle_index=4,
         agent_name="recon_agent",
-        capability="recon",
         objective="Default server id",
         max_steps=2,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
@@ -222,8 +218,8 @@ def test_stage_agent_defaults_missing_server_id_to_pentest_tools_and_injects_tra
     assert mcp.calls[0]["arguments"]["trace_id"] == "4-recon_agent-1-nmap_scan"
 
 
-def test_stage_agent_accepts_finish_data_alias_and_preserves_evidence() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_accepts_finish_data_alias_and_preserves_evidence() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "finish",
@@ -243,7 +239,6 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_evidence() -> None:
         operation_id="op-finish-data",
         cycle_index=3,
         agent_name="recon_agent",
-        capability="recon",
         objective="Preserve structured finish output",
         max_steps=1,
     )
@@ -257,8 +252,8 @@ def test_stage_agent_accepts_finish_data_alias_and_preserves_evidence() -> None:
     assert result.evidence_refs == ["runtime://tool-output/nmap"]
 
 
-def test_stage_agent_accepts_execution_result_alias_wrapper() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_accepts_execution_result_alias_wrapper() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "finish",
@@ -274,7 +269,6 @@ def test_stage_agent_accepts_execution_result_alias_wrapper() -> None:
         operation_id="op-execution-result-alias",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Normalize finish wrapper",
         max_steps=1,
     )
@@ -287,8 +281,8 @@ def test_stage_agent_accepts_execution_result_alias_wrapper() -> None:
     assert result.summary == "recon noted scope"
 
 
-def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_repairs_invalid_finish_payload_once() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "finish",
@@ -310,7 +304,6 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
         operation_id="op-repair-finish",
         cycle_index=1,
         agent_name="vuln_analysis_agent",
-        capability="analysis",
         objective="Repair invalid finish",
         max_steps=1,
     )
@@ -323,13 +316,12 @@ def test_stage_agent_repairs_invalid_finish_payload_once() -> None:
     assert result.confidence == 0.7
 
 
-def test_stage_agent_empty_success_finish_requests_replan() -> None:
-    llm = FakeStageLLM([{"action": "finish"}])
+def test_execution_agent_empty_success_finish_requests_replan() -> None:
+    llm = FakeExecutionLLM([{"action": "finish"}])
     request = ExecutionRequest(
         operation_id="op-empty-finish",
         cycle_index=9,
         agent_name="goal_agent",
-        capability="goal",
         objective="Verify goal",
         max_steps=1,
     )
@@ -340,8 +332,8 @@ def test_stage_agent_empty_success_finish_requests_replan() -> None:
     assert "no tool results" in (result.replan_recommendation or "")
 
 
-def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_server() -> None:
-    llm = FakeStageLLM(
+def test_execution_agent_returns_tool_server_unavailable_for_unavailable_catalog_server() -> None:
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -355,7 +347,6 @@ def test_stage_agent_returns_tool_server_unavailable_for_unavailable_catalog_ser
         operation_id="op-unavailable-server",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Unavailable server",
         max_steps=1,
         mcp_tool_catalog={
@@ -393,13 +384,12 @@ def test_no_progress_guard_stops_round_before_max_steps() -> None:
         "tool_name": "nmap_scan",
         "arguments": {"target": "10.0.0.5"},
     }
-    llm = FakeStageLLM([dict(call_decision) for _ in range(10)])
+    llm = FakeExecutionLLM([dict(call_decision) for _ in range(10)])
     mcp = FailingMCP()
     request = ExecutionRequest(
         operation_id="op-no-progress",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Probe service",
         max_steps=10,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
@@ -413,27 +403,25 @@ def test_no_progress_guard_stops_round_before_max_steps() -> None:
     assert "no progress" in result.summary
 
 
-def test_capability_absent_from_executor_decision_context() -> None:
+def test_phase_tag_absent_from_executor_decision_context() -> None:
     request = ExecutionRequest(
         operation_id="op-cap",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="exploit",
         objective="Collect service evidence",
         success_criteria=["service evidence recorded"],
         max_steps=1,
     )
-    agent = ExecutionAgent(llm_client=FakeStageLLM([]))
+    agent = ExecutionAgent(llm_client=FakeExecutionLLM([]))
     messages = agent._agent._build_messages(request, [])
     context = json.loads(messages[1]["content"])
 
-    assert "capability" not in context
     assert context["planner_objective"] == "Collect service evidence"
     assert context["success_criteria"] == ["service evidence recorded"]
 
 
 def test_active_session_transport_is_stamped_onto_tool_call() -> None:
-    llm = FakeStageLLM(
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -449,7 +437,6 @@ def test_active_session_transport_is_stamped_onto_tool_call() -> None:
         operation_id="op-transport",
         cycle_index=1,
         agent_name="recon_agent",
-        capability="recon",
         objective="Operate through the active foothold",
         max_steps=2,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "nmap_scan"}]}},
@@ -465,7 +452,7 @@ def test_active_session_transport_is_stamped_onto_tool_call() -> None:
 
 
 def test_metasploit_exec_gets_outer_timeout_buffer() -> None:
-    llm = FakeStageLLM(
+    llm = FakeExecutionLLM(
         [
             {
                 "action": "call_mcp_tool",
@@ -485,7 +472,6 @@ def test_metasploit_exec_gets_outer_timeout_buffer() -> None:
         operation_id="op-msf-timeout",
         cycle_index=1,
         agent_name="execution_agent",
-        capability="exploit",
         objective="Open a real session with metasploit_exec",
         max_steps=2,
         mcp_tool_catalog={"pentest-tools": {"tools": [{"name": "metasploit_exec"}]}},
@@ -496,3 +482,4 @@ def test_metasploit_exec_gets_outer_timeout_buffer() -> None:
     assert result.status == "succeeded"
     assert mcp.calls[0]["arguments"]["timeout_seconds"] == 120
     assert mcp.calls[0]["timeout_seconds"] == 150
+

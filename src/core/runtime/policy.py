@@ -25,7 +25,7 @@ class PolicyDecision(BaseModel):
     reason: str = Field(min_length=1)
     gate: str = Field(min_length=1)
     target: str | None = None
-    task_id: str | None = None
+    execution_id: str | None = None
     approval_id: str | None = None
     matched_rule_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -41,7 +41,7 @@ class RuntimePolicy(BaseModel):
     authorized_hosts: list[str] = Field(default_factory=list)
     cidr_whitelist: list[str] = Field(default_factory=list)
     deny_egress: bool = False
-    sensitive_task_types: list[str] = Field(default_factory=list)
+    sensitive_execution_types: list[str] = Field(default_factory=list)
     sensitive_tags: list[str] = Field(default_factory=list)
     session_policies: dict[str, Literal["exclusive", "shared_readonly", "shared"]] = Field(default_factory=dict)
     max_concurrent_per_host: dict[str, int] = Field(default_factory=dict)
@@ -62,7 +62,7 @@ class RuntimePolicy(BaseModel):
     mcp_server_allowlist: list[str] = Field(default_factory=list)
     mcp_server_denylist: list[str] = Field(default_factory=list)
     retry_backoff_base_sec: int = Field(default=0, ge=0)
-    default_task_timeout_sec: int = Field(default=900, ge=1)
+    default_execution_timeout_sec: int = Field(default=900, ge=1)
     policy_version: str = "v1"
     loaded_from: str = "settings"
     loaded_at: datetime = Field(default_factory=utc_now)
@@ -71,7 +71,7 @@ class RuntimePolicy(BaseModel):
         "blocked_hosts",
         "authorized_hosts",
         "cidr_whitelist",
-        "sensitive_task_types",
+        "sensitive_execution_types",
         "sensitive_tags",
         "disabled_tools",
         "command_allowlist",
