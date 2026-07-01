@@ -478,10 +478,12 @@ def _extract_controlled_data_read(trace: dict[str, Any]) -> list[ExtractedFact]:
         service = str(evidence.get("service") or args.get("service") or "data_service")
         facts.append(
             ExtractedFact(
-                fact_type="ControlledDataReadProof",
-                entity_type="ControlledDataReadProof",
+                fact_type="Evidence",
+                entity_type="Evidence",
                 label=f"controlled-data-proof:{service}:{port}@{host}",
                 properties={
+                    "kind": "controlled_read",
+                    "evidence_kind": "controlled_read",
                     "host": host,
                     "port": port,
                     "service_name": service,

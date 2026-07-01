@@ -171,13 +171,12 @@ condition_bindings:
 
   # Terminal condition (option D): success == the internal database "file" was
   # read over the pivot route. controlled_data_read_proof writes a redacted
-  # ControlledDataReadProof node (proof_sha256 only, never raw rows) which this
-  # predicate matches. No marker/secret enters the graph.
+  # Evidence{kind:controlled_read} node (proof_sha256 only, never raw rows) which
+  # this predicate matches. No marker/secret enters the graph.
   database_proof_recorded:
     predicate: exists_node
     args:
       graph: kg
-      type:
-        in:
-          - ControlledDataReadProof
-      filters: {}
+      type: Evidence
+      filters:
+        kind: controlled_read

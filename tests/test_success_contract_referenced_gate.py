@@ -55,7 +55,8 @@ def _full_chain_kg_nodes() -> list[dict[str, Any]]:
         {"id": "isvc-1", "type": "Service", "zone_ref": "restricted"},
         {
             "id": "db-proof-1",
-            "type": "ControlledDataReadProof",
+            "type": "Evidence",
+            "kind": "controlled_read",
             "service": "postgres",
             "zone_ref": "restricted",
             "proof_sha256": "redacted-proof-hash",
@@ -117,7 +118,7 @@ def test_referenced_contract_gate_stays_closed_without_database_proof() -> None:
 
     orch = _orch()
     state = _state_with_route_and_session()
-    nodes = [n for n in _full_chain_kg_nodes() if n["type"] != "ControlledDataReadProof"]
+    nodes = [n for n in _full_chain_kg_nodes() if n.get("kind") != "controlled_read"]
     kg = _GraphStub({"nodes": nodes, "edges": []})
     ag = _GraphStub({"nodes": [], "edges": []})
 

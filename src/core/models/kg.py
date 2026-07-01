@@ -170,8 +170,6 @@ class Goal(BaseNode):
 class PostAccessObservation(BaseNode):
     type: Literal[NodeType.POST_ACCESS_OBSERVATION] = NodeType.POST_ACCESS_OBSERVATION
     target_ref: str | None = None
-    session_ref: str | None = None
-    observation_path: str | None = None
     zone_ref: str | None = None
 
 
@@ -180,7 +178,6 @@ class GoalCheck(BaseNode):
     goal_id: str | None = None
     passed: bool = False
     redacted_summary: str | None = None
-    proof_token: str | None = None
 
 
 class GoalProof(BaseNode):
@@ -198,7 +195,6 @@ class PivotRouteNode(BaseNode):
     from_zone_ref: str | None = None
     to_zone_ref: str | None = None
     via_host: str | None = None
-    session_ref: str | None = None
     route_type: str | None = None
 
 #边
