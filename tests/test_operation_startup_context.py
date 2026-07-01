@@ -6,7 +6,7 @@ from typing import Any
 
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.agents.agent_protocol import GraphRef, GraphScope
+from src.core.models.graph_common import GraphRef
 from src.core.planning.models import PlannerOutcome
 
 
@@ -99,7 +99,7 @@ def test_planner_receives_blackbox_policy_and_tool_catalog_without_lab_topology(
 
     orchestrator.run_operation_cycle(
         "op-startup-context",
-        graph_refs=[GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph")],
+        graph_refs=[GraphRef(graph="kg", ref_id="kg-root", ref_type="graph")],
         planner_payload={"mission_goal": "validate authorized internal reachability"},
     )
 
@@ -130,7 +130,7 @@ def test_run_until_quiescent_continues_after_planner_replan(tmp_path: Path) -> N
 
     results = orchestrator.run_until_quiescent(
         "op-replan-loop",
-        graph_refs=[GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph")],
+        graph_refs=[GraphRef(graph="kg", ref_id="kg-root", ref_type="graph")],
         planner_payload={"mission_goal": "validate authorized internal reachability"},
         max_cycles=5,
         max_replans=3,

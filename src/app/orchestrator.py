@@ -8,7 +8,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.settings import AppSettings
-from src.core.agents.agent_protocol import GraphRef as AgentGraphRef
+from src.core.models.graph_common import GraphRef as AgentGraphRef
 from src.core.agents.packy_llm import PackyLLMClient
 from src.core.execution.configured_mcp_client import ConfiguredMCPClient
 from src.core.execution.execution_agent import ExecutionAgent

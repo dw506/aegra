@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.orchestrator import AppOrchestrator, TargetHost
 from src.app.settings import AppSettings
-from src.core.agents.agent_protocol import GraphRef, GraphScope
+from src.core.models.graph_common import GraphRef
 from src.core.models.runtime import RuntimeStatus
 from src.core.runtime.policy import policy_from_runtime_state
 
@@ -110,8 +110,8 @@ class OperationSubmitRequest(OperationRunRequest):
 
 def _default_graph_refs() -> list[GraphRef]:
     return [
-        GraphRef(graph=GraphScope.KG, ref_id="kg-root", ref_type="graph"),
-        GraphRef(graph=GraphScope.AG, ref_id="ag-root", ref_type="graph"),
+        GraphRef(graph="kg", ref_id="kg-root", ref_type="graph"),
+        GraphRef(graph="ag", ref_id="ag-root", ref_type="graph"),
     ]
 
 
